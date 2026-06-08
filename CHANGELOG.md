@@ -43,6 +43,13 @@ pass with zero warnings in project code.
   YAML config, loads a COCO/YOLO dataset, runs epochs with per-epoch checkpoints,
   and `--resume` restores model + EMA + optimizer + epoch. Verified end to end
   (loss decreases across epochs; resume continues the descent).
+- **Evaluation + COCO mAP (`detr::eval`)** — `CocoEvaluate` is a faithful,
+  LibTorch-free reimplementation of pycocotools COCOeval (10 IoU thresholds,
+  101-point interpolation, crowd/ignore/area rules) reporting AP@[.5:.95],
+  AP50/75, the **small/medium/large breakdown**, and AR@{1,10,100}; unit-tested
+  against hand-computed cases. `infer::PostprocessImage` turns DETR outputs into
+  absolute-pixel detections. **`detrcpp --val`/`--test`** loads a checkpoint and
+  prints the COCO metric table.
 - **Dependencies**: simdjson, yaml-cpp; LibTorch via `find_package(Torch)`
   (gated `DETR_ENABLE_TORCH`); vendored stb image headers (public domain).
 
