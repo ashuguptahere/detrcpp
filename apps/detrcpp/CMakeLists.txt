@@ -15,4 +15,9 @@ set_target_properties(detrcpp PROPERTIES
   CXX_EXTENSIONS OFF
 )
 
+# When built with LibTorch, the CLI can enumerate/instantiate registered models.
+if(DETR_ENABLE_TORCH)
+  target_link_libraries(detrcpp PRIVATE detr::models)
+endif()
+
 install(TARGETS detrcpp RUNTIME DESTINATION bin)

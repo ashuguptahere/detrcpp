@@ -32,6 +32,10 @@
 #include "detr/log/log.hpp"
 #include "detr/version.hpp"
 
+#ifdef DETR_ENABLE_TORCH
+#include "detr/models/registry.hpp"
+#endif
+
 namespace {
 
 // Exit codes — kept stable so scripts and the GUI can rely on them.
@@ -112,10 +116,20 @@ bool Require(bool present, std::string_view flag, std::string_view verb) {
 }
 
 ExitCode RunListModels() {
-  // Registry is still empty in Phase 0 — model classes land in Phase 1.
-  detr::log::Get("cli").info("registered models: 0 (Phase 0 — registry not yet populated)");
-  std::cout << "name  imgsz  params  license  mAP\n";
-  std::cout << "(no models registered yet)\n";
+#ifdef DETR_ENABLE_TORCH
+  detr::models::RegisterBuiltins();
+  const auto models = detr::models::Registry::Instance().List();
+  detr::log::Get("cli").info("registered models: {}", models.size());
+  std::cout << fmt::format("{:<14}{:>7}{:>9}{:>9}  {}\n", "name", "imgsz", "queries",
+                           "classes", "license");
+  for (const auto& m : models) {
+    std::cout << fmt::format("{:<14}{:>7}{:>9}{:>9}  {}\n", m.name, m.imgsz, m.num_queries,
+                             m.num_classes, m.license);
+  }
+#else
+  detr::log::Get("cli").info("registered models: 0 (built without -DDETR_ENABLE_TORCH)");
+  std::cout << "(model registry requires building with -DDETR_ENABLE_TORCH=ON)\n";
+#endif
   return ExitCode::Ok;
 }
 

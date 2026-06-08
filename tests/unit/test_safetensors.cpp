@@ -90,6 +90,33 @@ TEST(Safetensors, RoundTripPreservesEverything) {
   std::filesystem::remove(path);
 }
 
+TEST(Safetensors, RoundTripsScalarTensor) {
+  // A rank-0 scalar (empty shape, numel 1) — e.g. BatchNorm's
+  // num_batches_tracked. Regression guard: empty shape must mean numel 1.
+  StateDict sd;
+  RawTensor s;
+  s.dtype = DType::I64;
+  s.shape = {};  // scalar
+  std::int64_t v = 123;
+  s.data.resize(sizeof(std::int64_t));
+  std::memcpy(s.data.data(), &v, sizeof(v));
+  EXPECT_EQ(s.Numel(), 1);
+  EXPECT_EQ(s.Nbytes(), sizeof(std::int64_t));
+  sd.Set("bn.num_batches_tracked", std::move(s));
+
+  const auto path = TempFile();
+  ASSERT_TRUE(SaveSafetensors(path, sd).has_value());
+  auto loaded = LoadSafetensors(path);
+  ASSERT_TRUE(loaded.has_value()) << loaded.error().message;
+  const RawTensor* got = loaded->Find("bn.num_batches_tracked");
+  ASSERT_NE(got, nullptr);
+  EXPECT_TRUE(got->shape.empty());
+  std::int64_t back = 0;
+  std::memcpy(&back, got->data.data(), sizeof(back));
+  EXPECT_EQ(back, 123);
+  std::filesystem::remove(path);
+}
+
 TEST(Safetensors, RejectsTruncatedFile) {
   const auto path = TempFile();
   {

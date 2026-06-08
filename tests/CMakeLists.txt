@@ -26,8 +26,11 @@ set_target_properties(detr_unit_tests PROPERTIES
 )
 
 if(DETR_ENABLE_TORCH)
-  target_sources(detr_unit_tests PRIVATE unit/test_torch_bridge.cpp)
-  target_link_libraries(detr_unit_tests PRIVATE detr::torch)
+  target_sources(detr_unit_tests PRIVATE
+    unit/test_torch_bridge.cpp
+    unit/test_detr.cpp
+  )
+  target_link_libraries(detr_unit_tests PRIVATE detr::torch detr::models)
 endif()
 
 gtest_discover_tests(detr_unit_tests

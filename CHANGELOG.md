@@ -10,11 +10,40 @@ section below.
 
 ## [Unreleased]
 
+Phase 1 (in progress). Verified against a real toolchain: portable
+cmake/ninja/vcpkg + LibTorch 2.5.1 CPU. Both the lightweight build
+(no LibTorch, 28 tests) and the full build (`-DDETR_ENABLE_TORCH=ON`, 34 tests)
+pass with zero warnings in project code.
+
 ### Added
+- **Weight interop (`detr::weights`)** — bidirectional compatibility with the
+  original repos, Python-free: `RawTensor`/`DType`, `StateDict`, a
+  simdjson-backed safetensors reader/writer, and a `WeightRemapper` that adapts
+  upstream parameter names without changing the models. A LibTorch bridge
+  (`StateDictFromModule`/`LoadStateDictInto`) makes it concrete; tests prove a
+  module's weights round-trip module→safetensors→fresh-module with identical
+  values, and that an upstream `model.` prefix is remapped on load.
+- **Data adapters (`detr::data`)** — format-independent `Dataset` from a COCO
+  adapter (simdjson; crowd-dropping, category remap, xywh→normalized cxcywh),
+  a YOLO adapter (yaml-cpp), format auto-detection, and a cross-platform
+  seed-reproducible shuffle (Fisher–Yates over mt19937_64). Native Parquet
+  "detr" format gated behind the `arrow` vcpkg feature.
+- **Model registry + DETR (`detr::models`)** — `IModel`/`ModelMeta`, a
+  `Registry` with `RegisterBuiltins()`, and a real DETR model (conv backbone +
+  sine positional encoding + multi-head-attention encoder/decoder + object
+  queries + class/box heads) that runs a forward pass, trains from scratch, and
+  serializes to safetensors. `detrcpp --list-models` lists it in torch builds.
+- **Dependencies**: simdjson, yaml-cpp; LibTorch via `find_package(Torch)`
+  (gated `DETR_ENABLE_TORCH`).
 
 ### Changed
 
 ### Fixed
+- `RawTensor::Numel()` now treats an empty shape as a rank-0 scalar (numel 1),
+  not numel 0 — so scalar buffers like BatchNorm's `num_batches_tracked`
+  serialize correctly (regression-tested).
+- `.gitignore`: anchored `data/`/`datasets/` to the repo root so the source
+  directories `src/data` and `include/detr/data` are not ignored.
 
 ## [0.1.0] - 2026-06-08
 

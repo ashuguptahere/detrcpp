@@ -64,15 +64,18 @@ struct RawTensor {
   std::vector<std::byte> data;  // raw little-endian element bytes, row-major.
 
   std::int64_t Numel() const {
+    // Product over the shape: an empty shape is a rank-0 scalar (numel 1); a
+    // dimension of size 0 makes the tensor empty (numel 0).
     std::int64_t n = 1;
     for (const std::int64_t d : shape) {
       n *= d;
     }
-    return shape.empty() ? 0 : n;  // scalar (rank-0) has numel 1; empty shape -> 0.
+    return n;
   }
 
   std::size_t Nbytes() const {
-    return static_cast<std::size_t>(Numel() < 0 ? 0 : Numel()) * DTypeSize(dtype);
+    const std::int64_t n = Numel();
+    return static_cast<std::size_t>(n < 0 ? 0 : n) * DTypeSize(dtype);
   }
 };
 

@@ -30,23 +30,33 @@ ordered for shippability; items inside a phase can parallelize.
 ## Phase 1 — MVP: train + predict + ONNX export
 
 ### Data
-- [ ] `data::Sample` / `data::BBox` core types
-- [ ] `data::CocoAdapter` — parse `instances_*.json` via **simdjson** (SIMD)
-- [ ] `data::YoloAdapter` — `*.txt` labels + `data.yaml`
+- [x] `data::Sample` / `data::BBox` core types (normalized cxcywh)
+- [x] `data::CocoAdapter` — parse `instances_*.json` via **simdjson** (SIMD)
+- [x] `data::YoloAdapter` — `*.txt` labels + `data.yaml` (yaml-cpp)
 - [ ] `data::DetrAdapter` — the new single-file **Parquet** format (Apache Arrow)
   - [ ] Schema: `image_path,width,height,boxes(list<struct>),split,fold,hash`
   - [ ] `split` column drives train/val/test selection
-  - [ ] Seeded deterministic shuffle (`std::mt19937_64{seed}`) — byte-identical per seed
+  - [x] Seeded deterministic shuffle (cross-platform Fisher–Yates) — done in Dataset
 - [ ] `data::Loader` — `std::jthread` pool + lock-free SPSC ring, double-buffered H2D
   - [ ] Image decode via libjpeg-turbo / stb_image
-- [ ] Format auto-detection + cross-format conversion utility
+- [x] Format auto-detection (`DetectFormat`) + `LoadDataset` dispatch
+
+### Weight interop (foundational — DONE, proven against LibTorch 2.5.1)
+- [x] safetensors reader/writer (Python-free, bidirectional with upstream)
+- [x] `StateDict` + `RawTensor` (LibTorch-independent)
+- [x] `WeightRemapper` (adapt upstream keys without changing models)
+- [x] torch bridge: `StateDictFromModule` / `LoadStateDictInto` (by name + report)
+- [ ] Direct `.pth` reader in pure C++ (currently a clear stub → use safetensors)
+- [ ] Per-variant remappers validated against official checkpoints
 
 ### Models
-- [ ] LibTorch integration into CMake (find_package Torch, CUDA optional)
-- [ ] `models::IModel` interface + `models::Registry` + `DETR_REGISTER_MODEL` macro
+- [x] LibTorch integration into CMake (`find_package(Torch)`, gated `DETR_ENABLE_TORCH`)
+- [x] `models::IModel` interface + `models::Registry` + `RegisterBuiltins()`
+- [x] YAML architecture config (hidden_dim/nheads/enc/dec/queries/classes…)
+- [x] DETR (conv backbone + transformer enc/dec + queries + class/box heads),
+      forward-pass + weight-roundtrip tested, registered, shown in `--list-models`
+- [ ] Swap compact backbone for ResNet-50 with torchvision-exact naming
 - [ ] Same-`imgsz` enforcement across registered models (default 640)
-- [ ] YAML architecture loader (backbone/neck/transformer/head/num_queries)
-- [ ] DETR (ResNet-50 backbone)
 - [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
 

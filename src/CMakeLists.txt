@@ -117,4 +117,27 @@ if(DETR_ENABLE_TORCH)
     CXX_EXTENSIONS OFF
   )
   add_library(detr::torch ALIAS detr_torch)
+
+  # detr_models — model registry + DETR variants (torch modules).
+  add_library(detr_models STATIC
+    models/registry.cpp
+    models/detr.cpp
+  )
+  target_link_libraries(detr_models
+    PUBLIC
+      detr_weights
+      "${TORCH_LIBRARIES}"
+      yaml-cpp::yaml-cpp
+    PRIVATE
+      fmt::fmt
+  )
+  target_include_directories(detr_models SYSTEM PUBLIC ${TORCH_INCLUDE_DIRS})
+  target_compile_definitions(detr_models PUBLIC DETR_ENABLE_TORCH)
+  target_compile_options(detr_models PUBLIC ${_detr_torch_flags})
+  set_target_properties(detr_models PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
+  add_library(detr::models ALIAS detr_models)
 endif()
