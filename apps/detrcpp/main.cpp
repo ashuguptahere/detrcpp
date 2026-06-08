@@ -543,6 +543,73 @@ ExitCode RunPredict(const Options& o) {
 #endif
 }
 
+#ifdef DETR_ENABLE_TORCH
+ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
+  auto& lg = detr::log::Get("cli.export");
+  detr::models::RegisterBuiltins();
+
+  YAML::Node cfg;
+  if (!o.config.empty()) {
+    try {
+      cfg = YAML::LoadFile(o.config);
+    } catch (const std::exception& e) {
+      lg.error("config '{}': {}", o.config, e.what());
+      return ExitCode::UsageError;
+    }
+  }
+  if (o.imgsz > 0) {
+    cfg["imgsz"] = o.imgsz;
+  }
+
+  auto model_r = detr::models::Registry::Instance().Build(o.model, cfg);
+  if (!model_r) {
+    lg.error("{}", model_r.error().message);
+    return ExitCode::UsageError;
+  }
+  auto model = *model_r;
+  auto sd_in = detr::weights::LoadSafetensors(o.weights);
+  if (!sd_in) {
+    lg.error("weights '{}': {}", o.weights, sd_in.error().message);
+    return ExitCode::UsageError;
+  }
+  if (auto rep = detr::weights::LoadStateDictInto(*model, *sd_in, model->UpstreamRemapper(), false);
+      !rep) {
+    lg.error("load weights: {}", rep.error().message);
+    return ExitCode::UsageError;
+  }
+
+  const std::filesystem::path out_dir =
+      o.save.empty() ? std::filesystem::path("runs/export") : std::filesystem::path(o.save);
+  std::error_code ec;
+  std::filesystem::create_directories(out_dir, ec);
+
+  // safetensors: a real, supported, Python-free export. Consolidates the loaded
+  // checkpoint into a clean weights file the original repos can also load.
+  if (o.export_format == "safetensors") {
+    auto sd = detr::weights::StateDictFromModule(*model);
+    sd.SetMeta("model", o.model);
+    sd.SetMeta("imgsz", std::to_string(model->Meta().imgsz));
+    const auto path = out_dir / (o.model + ".safetensors");
+    if (auto w = detr::weights::SaveSafetensors(path, sd); !w) {
+      lg.error("{}", w.error().message);
+      return ExitCode::InternalError;
+    }
+    lg.info("exported {} tensors -> {}", sd.Size(), path.string());
+    return ExitCode::Ok;
+  }
+
+  // onnx / trt / torchscript / coreml / vendor formats: not yet available from
+  // pure C++. Be explicit rather than emitting a broken artifact.
+  lg.error("export to '{}' is not yet available from pure C++/LibTorch.", o.export_format);
+  lg.error(
+      "Robust ONNX export needs the graph-lowering passes that today only "
+      "Python's torch.onnx orchestrates; a Python-free path requires a "
+      "hand-written ONNX graph exporter (planned). Weights are already portable "
+      "via `--export safetensors` (loadable by the upstream repos).");
+  return NotImplemented("export");
+}
+#endif  // DETR_ENABLE_TORCH
+
 ExitCode RunExport(const Options& o) {
   auto& lg = detr::log::Get("cli.export");
   if (!Require(!o.model.empty(), "model", "export") ||
@@ -551,7 +618,21 @@ ExitCode RunExport(const Options& o) {
   }
   lg.info("export: format={} model={} weights={} precision={}", o.export_format, o.model,
           o.weights, o.precision);
+#ifdef DETR_ENABLE_TORCH
+  const auto dev = detr::core::ParseDevice(o.device);
+  if (!dev) {
+    lg.error("device parse error: {}", dev.error().message);
+    return ExitCode::UsageError;
+  }
+  try {
+    return RunExportTorch(o, *dev);
+  } catch (const std::exception& e) {
+    lg.error("export failed: {}", e.what());
+    return ExitCode::InternalError;
+  }
+#else
   return NotImplemented("export");
+#endif
 }
 
 ExitCode RunDownload(const Options& o) {
