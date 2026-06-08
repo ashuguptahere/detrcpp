@@ -1,6 +1,7 @@
 add_library(detr_core STATIC
   log/log.cpp
   core/device.cpp
+  core/assignment.cpp
 )
 
 target_include_directories(detr_core
@@ -140,4 +141,32 @@ if(DETR_ENABLE_TORCH)
     CXX_EXTENSIONS OFF
   )
   add_library(detr::models ALIAS detr_models)
+
+  # detr_train — box ops, Hungarian matcher, set criterion (DETR loss), trainer.
+  add_library(detr_train STATIC
+    train/box_ops.cpp
+    train/matcher.cpp
+    train/criterion.cpp
+    train/ema.cpp
+    train/checkpoint.cpp
+    train/trainer.cpp
+  )
+  target_link_libraries(detr_train
+    PUBLIC
+      detr_models
+      detr_torch
+      detr_core
+      "${TORCH_LIBRARIES}"
+    PRIVATE
+      fmt::fmt
+  )
+  target_include_directories(detr_train SYSTEM PUBLIC ${TORCH_INCLUDE_DIRS})
+  target_compile_definitions(detr_train PUBLIC DETR_ENABLE_TORCH)
+  target_compile_options(detr_train PUBLIC ${_detr_torch_flags})
+  set_target_properties(detr_train PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
+  add_library(detr::train ALIAS detr_train)
 endif()

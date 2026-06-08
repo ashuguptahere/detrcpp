@@ -7,6 +7,7 @@ add_executable(detr_unit_tests
   unit/test_safetensors.cpp
   unit/test_remapper.cpp
   unit/test_dataset.cpp
+  unit/test_assignment.cpp
 )
 
 target_link_libraries(detr_unit_tests
@@ -29,8 +30,9 @@ if(DETR_ENABLE_TORCH)
   target_sources(detr_unit_tests PRIVATE
     unit/test_torch_bridge.cpp
     unit/test_detr.cpp
+    unit/test_train.cpp
   )
-  target_link_libraries(detr_unit_tests PRIVATE detr::torch detr::models)
+  target_link_libraries(detr_unit_tests PRIVATE detr::torch detr::models detr::train)
 endif()
 
 gtest_discover_tests(detr_unit_tests
