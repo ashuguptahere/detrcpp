@@ -39,6 +39,11 @@ if(DETR_ENABLE_TORCH)
   target_link_libraries(detr_unit_tests PRIVATE detr::torch detr::models detr::train)
 endif()
 
+if(DETR_ENABLE_ONNX)
+  target_sources(detr_unit_tests PRIVATE unit/test_onnx_builder.cpp)
+  target_link_libraries(detr_unit_tests PRIVATE detr::onnx)
+endif()
+
 gtest_discover_tests(detr_unit_tests
   PROPERTIES LABELS "unit"
 )

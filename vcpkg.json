@@ -28,6 +28,10 @@
       "dependencies": [
         { "name": "arrow", "default-features": false, "features": ["parquet"] }
       ]
+    },
+    "onnx": {
+      "description": "Hand-written ONNX graph export (official onnx lib + protobuf)",
+      "dependencies": ["onnx"]
     }
   }
 }

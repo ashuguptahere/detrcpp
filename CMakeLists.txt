@@ -39,6 +39,7 @@ option(DETR_BUILD_TESTS     "Build unit tests"                ON)
 option(DETR_BUILD_BENCHMARKS "Build microbenchmarks"          OFF)
 option(DETR_BUILD_GUI       "Build Clay+SDL3 GUI (Phase 6)"   OFF)
 option(DETR_ENABLE_CUDA     "Enable CUDA / TensorRT path"     OFF)
+option(DETR_ENABLE_ONNX     "Build the hand-written ONNX exporter (onnx+protobuf)" OFF)
 option(DETR_ENABLE_AXELERA  "Enable Axelera backend"          OFF)
 option(DETR_ENABLE_MEMRYX   "Enable MemryX backend"           OFF)
 option(DETR_ENABLE_DEEPX    "Enable DeepX backend"            OFF)
@@ -121,6 +122,22 @@ find_package(yaml-cpp     CONFIG REQUIRED)
 if(DETR_ENABLE_TORCH)
   find_package(Torch REQUIRED)
   message(STATUS "detrcpp: LibTorch found (${TORCH_INSTALL_PREFIX})")
+endif()
+
+if(DETR_ENABLE_ONNX)
+  # The ONNX exporter is kept torch-free (config + safetensors -> graph) and
+  # built without LibTorch, so vcpkg's protobuf and LibTorch's bundled protobuf
+  # never meet in one link. In this torch-off configuration we find protobuf
+  # ourselves (ONNX::onnx_proto's link interface needs protobuf::libprotobuf).
+  if(DETR_ENABLE_TORCH)
+    message(FATAL_ERROR
+      "DETR_ENABLE_ONNX and DETR_ENABLE_TORCH cannot be enabled together: their "
+      "protobuf providers conflict. Build the ONNX exporter as a separate "
+      "torch-off configuration.")
+  endif()
+  find_package(Protobuf CONFIG REQUIRED)
+  find_package(ONNX CONFIG REQUIRED)
+  message(STATUS "detrcpp: ONNX exporter enabled")
 endif()
 
 # Subdirectories.

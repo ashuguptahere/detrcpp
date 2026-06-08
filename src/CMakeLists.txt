@@ -111,6 +111,38 @@ set_target_properties(detr_eval PROPERTIES
 )
 add_library(detr::eval ALIAS detr_eval)
 
+# detr_onnx — hand-written ONNX graph builder/exporter (no Python). Gated on
+# DETR_ENABLE_ONNX because it pulls in onnx + protobuf. Non-torch; the
+# torch-gated model ExportOnnx methods feed it.
+if(DETR_ENABLE_ONNX)
+  add_library(detr_onnx STATIC
+    onnxexport/graph_builder.cpp
+  )
+  target_include_directories(detr_onnx
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+      $<INSTALL_INTERFACE:include>
+  )
+  target_link_libraries(detr_onnx
+    PUBLIC
+      detr_core
+    PRIVATE
+      ONNX::onnx
+      ONNX::onnx_proto
+      fmt::fmt
+  )
+  target_compile_definitions(detr_onnx
+    PUBLIC DETR_ENABLE_ONNX
+    # vcpkg builds onnx with the ML schema (onnx-ml.pb.h) under namespace onnx.
+    PRIVATE ONNX_ML=1 ONNX_NAMESPACE=onnx)
+  set_target_properties(detr_onnx PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
+  add_library(detr::onnx ALIAS detr_onnx)
+endif()
+
 # detr_torch — LibTorch bridge for the weight layer (RawTensor <-> torch::Tensor,
 # load StateDict into a live module by name). Gated on DETR_ENABLE_TORCH. Torch
 # headers are included as SYSTEM so their warnings don't trip our strict flags;

@@ -71,12 +71,18 @@ ordered for shippability; items inside a phase can parallelize.
 - [ ] `--export-on-finish onnx` hook
 
 ### Inference + Export
-- [ ] `io::Source::From()` — unified source (file/glob/url/rtsp/webcam/stdin)
-- [ ] `infer::IBackend` interface
-- [ ] `infer::TorchBackend` (`.pt`)
-- [ ] `infer::OnnxBackend` (ONNX Runtime)
-- [ ] `export::OnnxExporter` (+ precision fp32/fp16)
-- [ ] Postprocess (top-k via partial_sort; DETR is NMS-free)
+- [x] `io::source` — file / directory / glob (url/rtsp/webcam = Phase 3)
+- [x] `io::image` (stb load/save/draw) + `infer::preprocess`/`postprocess`
+- [x] `detrcpp --predict` — infer, threshold, draw boxes, save annotated PNGs
+- [x] `detrcpp --export safetensors` — consolidated weights (Python-free)
+- [~] **Hand-written ONNX exporter** (no Python; user decision 2026-06-08):
+  - [x] `onnxexport::GraphBuilder` over official onnx lib + `onnx::checker`; gated
+        `DETR_ENABLE_ONNX`; torch-free so vcpkg-protobuf never meets torch-protobuf
+  - [ ] `ExportDetr(arch, StateDict)` — emit full DETR graph (MHA decomposed,
+        pos-enc as constant initializer) mirroring `DetrImpl::Forward`
+  - [ ] Separate `detrcpp-export` binary (non-torch) + main `--export onnx` hook
+  - [ ] onnxruntime backend + **parity gate** (export → run → match LibTorch)
+- [ ] `infer::IBackend` / `TorchBackend` / `OnnxBackend` for `--predict` on .onnx
 
 ### Eval
 - [x] COCO mAP + **mAP_S / mAP_M / mAP_L** breakdown (small-object metric) —
