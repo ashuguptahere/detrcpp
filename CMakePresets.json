@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "displayName": "Debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "inherits": "base",
+      "displayName": "Release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": "ON"
+      }
+    },
+    {
+      "name": "asan",
+      "inherits": "debug",
+      "displayName": "Debug + AddressSanitizer",
+      "cacheVariables": { "DETR_ASAN": "ON" }
+    },
+    {
+      "name": "tsan",
+      "inherits": "debug",
+      "displayName": "Debug + ThreadSanitizer",
+      "cacheVariables": { "DETR_TSAN": "ON" }
+    },
+    {
+      "name": "release-cuda",
+      "inherits": "release",
+      "displayName": "Release with CUDA / TensorRT",
+      "cacheVariables": {
+        "DETR_ENABLE_CUDA": "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "native"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug",        "configurePreset": "debug"        },
+    { "name": "release",      "configurePreset": "release"      },
+    { "name": "asan",         "configurePreset": "asan"         },
+    { "name": "tsan",         "configurePreset": "tsan"         },
+    { "name": "release-cuda", "configurePreset": "release-cuda" }
+  ],
+  "testPresets": [
+    { "name": "debug",   "configurePreset": "debug",   "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "asan",    "configurePreset": "asan",    "output": { "outputOnFailure": true } },
+    { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } }
+  ]
+}

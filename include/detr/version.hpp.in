@@ -1,0 +1,35 @@
+// Copyright 2026 detrcpp authors. Apache-2.0.
+//
+// GENERATED FILE — do not edit. Source of truth is the top-level `VERSION`
+// file; CMake configures this template into
+// ${CMAKE_BINARY_DIR}/generated/include/detr/version.hpp at configure time.
+// To change the version, edit `VERSION` (or run scripts/bump_version.py) and
+// re-run CMake. Every component that needs the version includes
+// "detr/version.hpp" — there is no hard-coded version string anywhere else.
+
+#pragma once
+
+#include <cstdint>
+
+// Semantic version components (MAJOR.MINOR.PATCH).
+#define DETR_VERSION_MAJOR @DETR_VERSION_MAJOR@
+#define DETR_VERSION_MINOR @DETR_VERSION_MINOR@
+#define DETR_VERSION_PATCH @DETR_VERSION_PATCH@
+#define DETR_VERSION_STRING "@DETR_VERSION@"
+
+// Integer encoding: MAJOR * 10000 + MINOR * 100 + PATCH. Usable in #if checks,
+// e.g.  #if DETR_VERSION_NUMBER >= 10200  // >= 1.2.0
+#define DETR_VERSION_NUMBER \
+  (DETR_VERSION_MAJOR * 10000 + DETR_VERSION_MINOR * 100 + DETR_VERSION_PATCH)
+
+namespace detr {
+
+inline constexpr int kVersionMajor = DETR_VERSION_MAJOR;
+inline constexpr int kVersionMinor = DETR_VERSION_MINOR;
+inline constexpr int kVersionPatch = DETR_VERSION_PATCH;
+inline constexpr std::int64_t kVersionNumber = DETR_VERSION_NUMBER;
+
+// Returns the "MAJOR.MINOR.PATCH" string. constexpr so it costs nothing.
+constexpr const char* Version() noexcept { return DETR_VERSION_STRING; }
+
+}  // namespace detr

@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: jobs only read the repo. Elevate per-job if ever needed.
+permissions:
+  contents: read
+
+env:
+  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.preset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+        preset: [debug, release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export GitHub Actions cache vars (for vcpkg binary cache)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install Ninja + ccache (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache pkg-config
+
+      - name: Install Ninja + ccache (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja ccache pkg-config
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '2024.12.16'
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -DDETR_BUILD_TESTS=ON
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Smoke + unit tests
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
+
+      - name: Format check
+        if: matrix.preset == 'debug' && runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y clang-format-18
+          find include src apps tests \( -name '*.hpp' -o -name '*.cpp' \) -print0 \
+            | xargs -0 clang-format-18 --dry-run --Werror
+
+  gitleaks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

@@ -1,0 +1,64 @@
+build/
+build-*/
+out/
+cmake-build-*/
+.vscode/
+.idea/
+*.swp
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.exe
+*.pdb
+*.ilk
+
+# vcpkg
+vcpkg_installed/
+
+# Python (scripts/)
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Runtime artifacts
+runs/
+weights/*.pt
+weights/*.onnx
+weights/*.engine
+*.tracy
+*.nsys-rep
+*.qdrep
+
+# Datasets are external
+data/
+datasets/
+
+# Local secrets — never commit (gitleaks is the authoritative gate)
+.env*
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.jks
+*.keystore
+*.crt
+id_rsa
+id_ed25519
+id_*
+.netrc
+.npmrc
+.pypirc
+*.tfstate
+*credentials*.json
+*service-account*.json
+secrets/
+
+# Misc
+.DS_Store
+Thumbs.db

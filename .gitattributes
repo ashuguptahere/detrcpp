@@ -1,0 +1,25 @@
+# Normalize line endings; treat sources as text.
+* text=auto eol=lf
+
+*.cpp   text
+*.hpp   text
+*.h     text
+*.cmake text
+*.txt   text
+*.md    text
+*.json  text
+*.yml   text
+*.yaml  text
+
+# Binary assets — never diff/merge as text.
+*.pt        binary
+*.pth       binary
+*.onnx      binary
+*.engine    binary
+*.safetensors binary
+*.png       binary
+*.jpg       binary
+*.parquet   binary
+
+# Keep generated/vendored out of language stats.
+third_party/**  linguist-vendored

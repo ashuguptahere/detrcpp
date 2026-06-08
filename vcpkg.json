@@ -1,0 +1,28 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "detrcpp",
+  "version-string": "0.1.0",
+  "description": "C++20 DETR-family detection framework",
+  "homepage": "https://github.com/detrcpp/detrcpp",
+  "license": "Apache-2.0",
+  "dependencies": [
+    { "name": "spdlog",      "version>=": "1.13.0" },
+    { "name": "fmt",         "version>=": "10.0.0" },
+    { "name": "cli11",       "version>=": "2.4.0"  },
+    { "name": "tl-expected", "version>=": "1.1.0"  }
+  ],
+  "features": {
+    "tests": {
+      "description": "Unit + smoke tests",
+      "dependencies": [
+        { "name": "gtest", "version>=": "1.14.0" }
+      ]
+    },
+    "benchmarks": {
+      "description": "Microbenchmarks",
+      "dependencies": [
+        { "name": "benchmark", "version>=": "1.8.0" }
+      ]
+    }
+  }
+}
