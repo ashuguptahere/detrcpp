@@ -4,11 +4,14 @@ include(GoogleTest)
 add_executable(detr_unit_tests
   unit/test_device.cpp
   unit/test_log.cpp
+  unit/test_safetensors.cpp
+  unit/test_remapper.cpp
 )
 
 target_link_libraries(detr_unit_tests
   PRIVATE
     detr::core
+    detr::weights
     GTest::gtest
     GTest::gtest_main
     detr_warnings

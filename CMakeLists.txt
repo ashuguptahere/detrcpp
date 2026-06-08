@@ -113,6 +113,7 @@ find_package(spdlog       CONFIG REQUIRED)
 find_package(fmt          CONFIG REQUIRED)
 find_package(CLI11        CONFIG REQUIRED)
 find_package(tl-expected  CONFIG REQUIRED)
+find_package(simdjson     CONFIG REQUIRED)
 
 # Subdirectories.
 add_subdirectory(src)

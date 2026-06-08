@@ -5,23 +5,27 @@
   "description": "C++20 DETR-family detection framework",
   "homepage": "https://github.com/detrcpp/detrcpp",
   "license": "Apache-2.0",
+  "builtin-baseline": "75672db6bd812b060482b0f00b5a16b18a0c0f07",
   "dependencies": [
-    { "name": "spdlog",      "version>=": "1.13.0" },
-    { "name": "fmt",         "version>=": "10.0.0" },
-    { "name": "cli11",       "version>=": "2.4.0"  },
-    { "name": "tl-expected", "version>=": "1.1.0"  }
+    "spdlog",
+    "fmt",
+    "cli11",
+    "tl-expected",
+    "simdjson"
   ],
   "features": {
     "tests": {
       "description": "Unit + smoke tests",
-      "dependencies": [
-        { "name": "gtest", "version>=": "1.14.0" }
-      ]
+      "dependencies": ["gtest"]
     },
     "benchmarks": {
       "description": "Microbenchmarks",
+      "dependencies": ["benchmark"]
+    },
+    "arrow": {
+      "description": "Apache Arrow / Parquet for the native 'detr' dataset format",
       "dependencies": [
-        { "name": "benchmark", "version>=": "1.8.0" }
+        { "name": "arrow", "default-features": false, "features": ["parquet"] }
       ]
     }
   }
