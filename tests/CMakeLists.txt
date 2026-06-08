@@ -8,6 +8,7 @@ add_executable(detr_unit_tests
   unit/test_remapper.cpp
   unit/test_dataset.cpp
   unit/test_assignment.cpp
+  unit/test_coco_eval.cpp
 )
 
 target_link_libraries(detr_unit_tests
@@ -15,6 +16,7 @@ target_link_libraries(detr_unit_tests
     detr::core
     detr::weights
     detr::data
+    detr::eval
     GTest::gtest
     GTest::gtest_main
     detr_warnings

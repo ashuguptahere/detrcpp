@@ -42,9 +42,13 @@
 #include "detr/data/dataset.hpp"
 #include "detr/data/loader.hpp"
 #include "detr/data/sample.hpp"
+#include "detr/eval/coco_eval.hpp"
+#include "detr/eval/evaluator.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/train/checkpoint.hpp"
 #include "detr/train/trainer.hpp"
+#include "detr/weights/safetensors.hpp"
+#include "detr/weights/torch_bridge.hpp"
 #endif
 
 namespace {
@@ -304,6 +308,78 @@ ExitCode RunTrain(const Options& o) {
 #endif
 }
 
+#ifdef DETR_ENABLE_TORCH
+ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::string_view verb,
+                      detr::data::Split split) {
+  auto& lg = detr::log::Get("cli.eval");
+  detr::models::RegisterBuiltins();
+
+  YAML::Node cfg;
+  if (!o.config.empty()) {
+    try {
+      cfg = YAML::LoadFile(o.config);
+    } catch (const std::exception& e) {
+      lg.error("config '{}': {}", o.config, e.what());
+      return ExitCode::UsageError;
+    }
+  }
+  if (o.imgsz > 0) {
+    cfg["imgsz"] = o.imgsz;
+  }
+
+  auto model_r = detr::models::Registry::Instance().Build(o.model, cfg);
+  if (!model_r) {
+    lg.error("{}", model_r.error().message);
+    return ExitCode::UsageError;
+  }
+  auto model = *model_r;
+
+  auto sd = detr::weights::LoadSafetensors(o.weights);
+  if (!sd) {
+    lg.error("weights '{}': {}", o.weights, sd.error().message);
+    return ExitCode::UsageError;
+  }
+  auto rep = detr::weights::LoadStateDictInto(*model, *sd, model->UpstreamRemapper(), false);
+  if (!rep) {
+    lg.error("load weights: {}", rep.error().message);
+    return ExitCode::UsageError;
+  }
+  lg.info("loaded {} tensors ({} missing, {} unexpected)", rep->loaded, rep->missing.size(),
+          rep->unexpected.size());
+
+  if (o.data.empty()) {
+    lg.error("--data is required for --{}", verb);
+    return ExitCode::UsageError;
+  }
+  auto ds_r = detr::data::LoadDataset(o.data);
+  if (!ds_r) {
+    lg.error("dataset: {}", ds_r.error().message);
+    return ExitCode::UsageError;
+  }
+  auto ds = *ds_r;
+
+  const auto torch_dev = ToTorchDevice(dev);
+  model->to(torch_dev);
+  const int imgsz = model->Meta().imgsz;
+  lg.info("evaluating {} split: {} samples", detr::data::ToString(split), ds.CountOf(split));
+
+  const auto m = detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev);
+
+  auto fmtv = [](double v) { return v < 0 ? std::string(" n/a ") : fmt::format("{:.3f}", v); };
+  std::cout << "\nCOCO metrics (" << verb << "):\n";
+  std::cout << fmt::format("  mAP @[.50:.95]  : {}\n", fmtv(m.ap));
+  std::cout << fmt::format("  mAP @ .50       : {}\n", fmtv(m.ap50));
+  std::cout << fmt::format("  mAP @ .75       : {}\n", fmtv(m.ap75));
+  std::cout << fmt::format("  mAP  (small)    : {}\n", fmtv(m.ap_small));
+  std::cout << fmt::format("  mAP  (medium)   : {}\n", fmtv(m.ap_medium));
+  std::cout << fmt::format("  mAP  (large)    : {}\n", fmtv(m.ap_large));
+  std::cout << fmt::format("  AR @100         : {}\n", fmtv(m.ar100));
+  std::cout << fmt::format("  AR   s / m / l  : {} / {} / {}\n", fmtv(m.ar_small),
+                          fmtv(m.ar_medium), fmtv(m.ar_large));
+  return ExitCode::Ok;
+}
+#endif  // DETR_ENABLE_TORCH
+
 ExitCode RunEval(const Options& o, std::string_view verb) {
   auto& lg = detr::log::Get("cli.eval");
   if (!Require(!o.model.empty(), "model", verb) ||
@@ -311,7 +387,23 @@ ExitCode RunEval(const Options& o, std::string_view verb) {
     return ExitCode::UsageError;
   }
   lg.info("{}: model={} weights={}", verb, o.model, o.weights);
+#ifdef DETR_ENABLE_TORCH
+  const auto dev = detr::core::ParseDevice(o.device);
+  if (!dev) {
+    lg.error("device parse error: {}", dev.error().message);
+    return ExitCode::UsageError;
+  }
+  const auto split =
+      verb == "test" ? detr::data::Split::Test : detr::data::Split::Val;
+  try {
+    return RunEvalTorch(o, *dev, verb, split);
+  } catch (const std::exception& e) {
+    lg.error("eval failed: {}", e.what());
+    return ExitCode::InternalError;
+  }
+#else
   return NotImplemented(verb);
+#endif
 }
 
 ExitCode RunPredict(const Options& o) {

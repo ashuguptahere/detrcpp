@@ -21,8 +21,10 @@
 namespace detr::data {
 
 struct Batch {
-  torch::Tensor images;        // [B, 3, imgsz, imgsz]
-  train::TargetBatch targets;  // B entries
+  torch::Tensor images;                          // [B, 3, imgsz, imgsz]
+  train::TargetBatch targets;                    // B entries
+  std::vector<std::pair<int, int>> sizes;        // original (width, height) per image
+  std::vector<std::size_t> sample_indices;       // index into Dataset::samples
 };
 
 class DataLoader {

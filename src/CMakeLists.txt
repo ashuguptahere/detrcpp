@@ -93,6 +93,24 @@ set_target_properties(detr_data PROPERTIES
 
 add_library(detr::data ALIAS detr_data)
 
+# detr_eval — COCO mAP metric. Pure C++ (no LibTorch), so it builds and tests
+# everywhere; the torch-gated eval runner feeds it model detections.
+add_library(detr_eval STATIC
+  eval/coco_eval.cpp
+)
+target_include_directories(detr_eval
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(detr_eval PRIVATE detr_warnings)
+set_target_properties(detr_eval PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+add_library(detr::eval ALIAS detr_eval)
+
 # detr_torch — LibTorch bridge for the weight layer (RawTensor <-> torch::Tensor,
 # load StateDict into a live module by name). Gated on DETR_ENABLE_TORCH. Torch
 # headers are included as SYSTEM so their warnings don't trip our strict flags;
@@ -152,12 +170,15 @@ if(DETR_ENABLE_TORCH)
     train/trainer.cpp
     data/loader.cpp
     data/stb_impl.cpp
+    infer/postprocess.cpp
+    eval/evaluator.cpp
   )
   target_link_libraries(detr_train
     PUBLIC
       detr_models
       detr_torch
       detr_data
+      detr_eval
       detr_core
       "${TORCH_LIBRARIES}"
     PRIVATE

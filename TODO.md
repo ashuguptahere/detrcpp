@@ -79,8 +79,11 @@ ordered for shippability; items inside a phase can parallelize.
 - [ ] Postprocess (top-k via partial_sort; DETR is NMS-free)
 
 ### Eval
-- [ ] COCO mAP + **mAP_S / mAP_M / mAP_L** breakdown (small-object metric)
-- [ ] `--val` / `--test` wired end-to-end
+- [x] COCO mAP + **mAP_S / mAP_M / mAP_L** breakdown (small-object metric) —
+      faithful pycocotools reimplementation (`detr::eval::CocoEvaluate`), unit-tested
+- [x] DETR postprocess (logits/boxes -> absolute-pixel detections, NMS-free)
+- [x] `--val` / `--test` wired end-to-end (loads weights, prints the metric table)
+- [ ] Per-class AP table; export metrics to JSON for the model-selection graph
 
 ### Verification
 - [ ] CI integration test: train DETR 1 epoch on 100-img subset, assert loss ↓

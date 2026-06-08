@@ -115,6 +115,8 @@ core::Result<Batch> DataLoader::At(std::size_t i) const {
       out.targets.push_back(TargetFromSample(s));
     }
     imgs.push_back(std::move(img));
+    out.sizes.emplace_back(s.width, s.height);
+    out.sample_indices.push_back(indices_[k]);
   }
   out.images = torch::stack(imgs, 0);
   return out;
