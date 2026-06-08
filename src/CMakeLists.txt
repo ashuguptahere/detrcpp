@@ -171,6 +171,9 @@ if(DETR_ENABLE_TORCH)
     data/loader.cpp
     data/stb_impl.cpp
     infer/postprocess.cpp
+    infer/preprocess.cpp
+    io/image.cpp
+    io/source.cpp
     eval/evaluator.cpp
   )
   target_link_libraries(detr_train

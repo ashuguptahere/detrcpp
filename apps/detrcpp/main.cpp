@@ -34,6 +34,7 @@
 
 #ifdef DETR_ENABLE_TORCH
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <limits>
 
@@ -44,6 +45,10 @@
 #include "detr/data/sample.hpp"
 #include "detr/eval/coco_eval.hpp"
 #include "detr/eval/evaluator.hpp"
+#include "detr/infer/postprocess.hpp"
+#include "detr/infer/preprocess.hpp"
+#include "detr/io/image.hpp"
+#include "detr/io/source.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/train/checkpoint.hpp"
 #include "detr/train/trainer.hpp"
@@ -88,6 +93,7 @@ struct Options {
   // Predict.
   std::string track;
   std::string save;
+  float conf{0.25F};
   bool sahi{false};
   bool show{false};
 
@@ -406,6 +412,111 @@ ExitCode RunEval(const Options& o, std::string_view verb) {
 #endif
 }
 
+#ifdef DETR_ENABLE_TORCH
+// Deterministic per-class color for drawing boxes.
+std::array<std::uint8_t, 3> ClassColor(int cls) {
+  const auto h = static_cast<unsigned>(cls) * 2654435761U;
+  return {static_cast<std::uint8_t>(64 + (h & 0x7F)),
+          static_cast<std::uint8_t>(64 + ((h >> 8) & 0x7F)),
+          static_cast<std::uint8_t>(64 + ((h >> 16) & 0x7F))};
+}
+
+ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
+  auto& lg = detr::log::Get("cli.predict");
+  detr::models::RegisterBuiltins();
+
+  YAML::Node cfg;
+  if (!o.config.empty()) {
+    try {
+      cfg = YAML::LoadFile(o.config);
+    } catch (const std::exception& e) {
+      lg.error("config '{}': {}", o.config, e.what());
+      return ExitCode::UsageError;
+    }
+  }
+  if (o.imgsz > 0) {
+    cfg["imgsz"] = o.imgsz;
+  }
+
+  auto model_r = detr::models::Registry::Instance().Build(o.model, cfg);
+  if (!model_r) {
+    lg.error("{}", model_r.error().message);
+    return ExitCode::UsageError;
+  }
+  auto model = *model_r;
+  auto sd = detr::weights::LoadSafetensors(o.weights);
+  if (!sd) {
+    lg.error("weights '{}': {}", o.weights, sd.error().message);
+    return ExitCode::UsageError;
+  }
+  if (auto rep = detr::weights::LoadStateDictInto(*model, *sd, model->UpstreamRemapper(), false);
+      !rep) {
+    lg.error("load weights: {}", rep.error().message);
+    return ExitCode::UsageError;
+  }
+
+  auto sources = detr::io::ResolveImageSources(o.source);
+  if (!sources) {
+    lg.error("source: {}", sources.error().message);
+    return ExitCode::UsageError;
+  }
+
+  const auto torch_dev = ToTorchDevice(dev);
+  model->to(torch_dev);
+  model->eval();
+  torch::NoGradGuard no_grad;
+  const int imgsz = model->Meta().imgsz;
+  const int num_classes = model->Meta().num_classes;
+
+  const std::filesystem::path out_dir = o.save.empty() ? std::filesystem::path("runs/predict")
+                                                       : std::filesystem::path(o.save);
+  std::error_code ec;
+  std::filesystem::create_directories(out_dir, ec);
+
+  if (o.show) {
+    lg.warn("--show needs the GUI (Phase 6); writing annotated images to {} instead",
+            out_dir.string());
+  }
+
+  std::size_t total = 0;
+  for (const auto& path : *sources) {
+    auto rgb = detr::io::LoadRgb(path);
+    if (!rgb) {
+      lg.warn("{}", rgb.error().message);
+      continue;
+    }
+    auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
+    auto outputs = model->Forward(input);
+    auto dets = detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes);
+    std::sort(dets.begin(), dets.end(),
+              [](const auto& a, const auto& b) { return a.score > b.score; });
+
+    int kept = 0;
+    for (const auto& d : dets) {
+      if (d.score < o.conf) {
+        continue;
+      }
+      const auto c = ClassColor(d.category_id);
+      detr::io::DrawRect(*rgb, static_cast<int>(d.x), static_cast<int>(d.y),
+                         static_cast<int>(d.x + d.w), static_cast<int>(d.y + d.h), c[0], c[1],
+                         c[2], 2);
+      ++kept;
+      lg.info("  class={} score={:.3f} box=[{:.0f},{:.0f},{:.0f},{:.0f}]", d.category_id,
+              d.score, d.x, d.y, d.w, d.h);
+    }
+    const auto stem = std::filesystem::path(path).stem().string();
+    const auto save_path = out_dir / (stem + "_pred.png");
+    if (auto w = detr::io::SavePng(save_path, *rgb); !w) {
+      lg.warn("{}", w.error().message);
+    }
+    lg.info("{}: {} detection(s) >= {:.2f} -> {}", path, kept, o.conf, save_path.string());
+    ++total;
+  }
+  lg.info("predicted {} image(s); results in {}", total, out_dir.string());
+  return ExitCode::Ok;
+}
+#endif  // DETR_ENABLE_TORCH
+
 ExitCode RunPredict(const Options& o) {
   auto& lg = detr::log::Get("cli.predict");
   if (!Require(!o.model.empty(), "model", "predict") ||
@@ -415,7 +526,21 @@ ExitCode RunPredict(const Options& o) {
   }
   lg.info("predict: model={} weights={} source={} track={} sahi={}", o.model, o.weights,
           o.source, o.track.empty() ? "<none>" : o.track, o.sahi);
+#ifdef DETR_ENABLE_TORCH
+  const auto dev = detr::core::ParseDevice(o.device);
+  if (!dev) {
+    lg.error("device parse error: {}", dev.error().message);
+    return ExitCode::UsageError;
+  }
+  try {
+    return RunPredictTorch(o, *dev);
+  } catch (const std::exception& e) {
+    lg.error("predict failed: {}", e.what());
+    return ExitCode::InternalError;
+  }
+#else
   return NotImplemented("predict");
+#endif
 }
 
 ExitCode RunExport(const Options& o) {
@@ -489,7 +614,8 @@ int main(int argc, char** argv) {
   app.add_option("--track", o.track, "tracker")
       ->check(CLI::IsMember({"sort", "deepsort", "ocsort", "bytetrack", "botsort", "nvsort"}));
   app.add_flag("--sahi", o.sahi, "sliced inference for small objects");
-  app.add_option("--save", o.save, "output path");
+  app.add_option("--save", o.save, "output directory for annotated results");
+  app.add_option("--conf", o.conf, "detection confidence threshold")->capture_default_str();
   app.add_flag("--show", o.show, "display results");
 
   // Export-only.

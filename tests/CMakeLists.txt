@@ -34,6 +34,7 @@ if(DETR_ENABLE_TORCH)
     unit/test_detr.cpp
     unit/test_train.cpp
     unit/test_loader.cpp
+    unit/test_io.cpp
   )
   target_link_libraries(detr_unit_tests PRIVATE detr::torch detr::models detr::train)
 endif()
