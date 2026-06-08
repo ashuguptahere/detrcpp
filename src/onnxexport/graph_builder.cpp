@@ -135,7 +135,9 @@ std::string GraphBuilder::Unique(const std::string& prefix) {
 
 core::Result<void> GraphBuilder::Save(const std::string& path, int opset_version) {
   onnx::ModelProto model;
-  model.set_ir_version(onnx::IR_VERSION);
+  // Pin to IR v10 (the onnx lib's own IR_VERSION outruns what current runtimes
+  // accept, e.g. onnxruntime 1.20 maxes at 10). Opset 17 is valid under IR 10.
+  model.set_ir_version(10);
   model.set_producer_name("detrcpp");
   auto* opset = model.add_opset_import();
   opset->set_domain("");

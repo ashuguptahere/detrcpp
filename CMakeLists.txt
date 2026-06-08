@@ -138,11 +138,23 @@ if(DETR_ENABLE_ONNX)
   find_package(Protobuf CONFIG REQUIRED)
   find_package(ONNX CONFIG REQUIRED)
   message(STATUS "detrcpp: ONNX exporter enabled")
+  # onnxruntime (prebuilt) for the parity gate — optional; set -DONNXRUNTIME_ROOT.
+  find_path(DETR_ORT_INCLUDE onnxruntime_cxx_api.h HINTS ${ONNXRUNTIME_ROOT}/include)
+  find_library(DETR_ORT_LIB onnxruntime HINTS ${ONNXRUNTIME_ROOT}/lib)
+  if(DETR_ORT_INCLUDE AND DETR_ORT_LIB)
+    set(DETR_ORT_FOUND TRUE)
+    message(STATUS "detrcpp: onnxruntime found (${DETR_ORT_LIB})")
+  else()
+    message(STATUS "detrcpp: onnxruntime not found; set -DONNXRUNTIME_ROOT to enable the parity tool")
+  endif()
 endif()
 
 # Subdirectories.
 add_subdirectory(src)
 add_subdirectory(apps/detrcpp)
+add_subdirectory(apps/detrcpp-export)
+add_subdirectory(apps/detr-golden)
+add_subdirectory(apps/detr-parity)
 
 if(DETR_BUILD_TESTS)
   enable_testing()

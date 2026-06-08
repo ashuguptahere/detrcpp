@@ -117,6 +117,7 @@ add_library(detr::eval ALIAS detr_eval)
 if(DETR_ENABLE_ONNX)
   add_library(detr_onnx STATIC
     onnxexport/graph_builder.cpp
+    onnxexport/detr_export.cpp
   )
   target_include_directories(detr_onnx
     PUBLIC
@@ -126,6 +127,7 @@ if(DETR_ENABLE_ONNX)
   target_link_libraries(detr_onnx
     PUBLIC
       detr_core
+      detr_weights
     PRIVATE
       ONNX::onnx
       ONNX::onnx_proto

@@ -598,14 +598,18 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
     return ExitCode::Ok;
   }
 
-  // onnx / trt / torchscript / coreml / vendor formats: not yet available from
-  // pure C++. Be explicit rather than emitting a broken artifact.
-  lg.error("export to '{}' is not yet available from pure C++/LibTorch.", o.export_format);
-  lg.error(
-      "Robust ONNX export needs the graph-lowering passes that today only "
-      "Python's torch.onnx orchestrates; a Python-free path requires a "
-      "hand-written ONNX graph exporter (planned). Weights are already portable "
-      "via `--export safetensors` (loadable by the upstream repos).");
+  // ONNX export runs in the separate torch-free `detrcpp-export` binary: vcpkg's
+  // protobuf (for onnx) and LibTorch's bundled protobuf cannot share one link,
+  // so the exporter is built without LibTorch and reads weights from safetensors.
+  if (o.export_format == "onnx") {
+    lg.error("ONNX export runs in the separate torch-free tool `detrcpp-export`.");
+    lg.error("Run:  detrcpp-export -m {} {}-w {} -o model.onnx", o.model,
+             o.config.empty() ? "" : fmt::format("--config {} ", o.config), o.weights);
+    return NotImplemented("export");
+  }
+  lg.error("export to '{}' is not yet available (onnx is supported via detrcpp-export; "
+           "trt/coreml/vendor formats are later phases).",
+           o.export_format);
   return NotImplemented("export");
 }
 #endif  // DETR_ENABLE_TORCH

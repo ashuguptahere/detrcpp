@@ -50,8 +50,21 @@ pass with zero warnings in project code.
   against hand-computed cases. `infer::PostprocessImage` turns DETR outputs into
   absolute-pixel detections. **`detrcpp --val`/`--test`** loads a checkpoint and
   prints the COCO metric table.
+- **Hand-written ONNX export (`detr::onnxexport`)** — Python-free, no torch.onnx:
+  `GraphBuilder` over the official ONNX C++ lib (+ `onnx::checker`) and
+  `ExportDetr`, which emits the full DETR forward as a fixed-shape ONNX graph
+  mirroring `DetrImpl::Forward` (conv backbone, sine positional encoding baked as
+  a constant, transformer encoder/decoder with **multi-head attention decomposed**
+  into MatMul/Softmax/Transpose/Reshape, class/box heads). Weights are read from
+  `.safetensors`, so the exporter needs no LibTorch — it builds as the separate
+  `detrcpp-export` binary (gated `DETR_ENABLE_ONNX`, mutually exclusive with
+  `DETR_ENABLE_TORCH` because their protobuf providers conflict). **Verified by a
+  numeric parity gate**: export → run in onnxruntime → compare to LibTorch =
+  max|Δ| 6.6e-7 on logits, 6e-8 on boxes. Tools: `detr-golden` (torch reference),
+  `detr-parity` (onnxruntime compare), `scripts/onnx_parity.sh`.
 - **Dependencies**: simdjson, yaml-cpp; LibTorch via `find_package(Torch)`
-  (gated `DETR_ENABLE_TORCH`); vendored stb image headers (public domain).
+  (gated `DETR_ENABLE_TORCH`); vendored stb image headers (public domain); onnx +
+  protobuf and prebuilt onnxruntime (gated `DETR_ENABLE_ONNX`).
 
 ### Changed
 

@@ -40,7 +40,10 @@ if(DETR_ENABLE_TORCH)
 endif()
 
 if(DETR_ENABLE_ONNX)
-  target_sources(detr_unit_tests PRIVATE unit/test_onnx_builder.cpp)
+  target_sources(detr_unit_tests PRIVATE
+    unit/test_onnx_builder.cpp
+    unit/test_detr_export.cpp
+  )
   target_link_libraries(detr_unit_tests PRIVATE detr::onnx)
 endif()
 

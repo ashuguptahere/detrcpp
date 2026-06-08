@@ -75,13 +75,13 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] `io::image` (stb load/save/draw) + `infer::preprocess`/`postprocess`
 - [x] `detrcpp --predict` — infer, threshold, draw boxes, save annotated PNGs
 - [x] `detrcpp --export safetensors` — consolidated weights (Python-free)
-- [~] **Hand-written ONNX exporter** (no Python; user decision 2026-06-08):
-  - [x] `onnxexport::GraphBuilder` over official onnx lib + `onnx::checker`; gated
-        `DETR_ENABLE_ONNX`; torch-free so vcpkg-protobuf never meets torch-protobuf
-  - [ ] `ExportDetr(arch, StateDict)` — emit full DETR graph (MHA decomposed,
-        pos-enc as constant initializer) mirroring `DetrImpl::Forward`
-  - [ ] Separate `detrcpp-export` binary (non-torch) + main `--export onnx` hook
-  - [ ] onnxruntime backend + **parity gate** (export → run → match LibTorch)
+- [x] **Hand-written ONNX exporter** (no Python; user decision 2026-06-08):
+  - [x] `onnxexport::GraphBuilder` over official onnx lib + `onnx::checker`
+  - [x] `ExportDetr(arch, StateDict)` — full DETR graph (MHA decomposed, pos-enc
+        constant) mirroring `DetrImpl::Forward`
+  - [x] Separate `detrcpp-export` binary (non-torch); main `--export onnx` points to it
+  - [x] onnxruntime **parity gate** PASSED (max|Δ| ~6e-7 vs LibTorch)
+  - [ ] Generalize ExportDetr per future variant; precision (fp16) + dynamic batch
 - [ ] `infer::IBackend` / `TorchBackend` / `OnnxBackend` for `--predict` on .onnx
 
 ### Eval
