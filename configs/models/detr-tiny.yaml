@@ -1,0 +1,12 @@
+# A tiny DETR config for fast smoke training / CI. Real variants use the DETR
+# defaults (hidden_dim 256, 6+6 layers, 100 queries). num_classes must match the
+# dataset's category count.
+hidden_dim: 64
+nheads: 4
+enc_layers: 2
+dec_layers: 2
+dim_feedforward: 128
+num_queries: 20
+num_classes: 3
+imgsz: 64
+backbone_width: 16

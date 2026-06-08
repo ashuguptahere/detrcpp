@@ -90,11 +90,37 @@ ordered for shippability; items inside a phase can parallelize.
 
 ## Phase 2 — More variants + TensorRT + SAHI + trackers
 
-### Variants
-- [ ] Deformable DETR (deformable attention)
-- [ ] DAB-DETR, DN-DETR, DINO
-- [ ] RF-DETR (Roboflow, Apache-2.0)
-- [ ] Co-DETR, Conditional DETR, Grounding DINO
+### Variants to integrate (license-gated: permissive only; ✓ confirmed, ? verify at integration)
+Each variant = a `models::IModel` module + a `WeightRemapper` validated against the
+official checkpoint. Drop any that fail the license check.
+
+Classic line:
+- [ ] DETR ResNet-50/101 (Apache-2.0 ✓) — swap our compact backbone for ResNet
+- [ ] Deformable-DETR (Apache-2.0 ✓)
+- [ ] Conditional-DETR (Apache-2.0 ✓)
+- [ ] Anchor-DETR (Apache-2.0 ✓)
+- [ ] DAB-DETR, DN-DETR (Apache-2.0 ✓)
+
+DINO / accuracy line (IDEA-Research, Apache-2.0 ✓):
+- [ ] DINO
+- [ ] Grounding-DINO (open-vocabulary, Apache-2.0 ✓)
+- [ ] Mask-DINO (detection + segmentation)
+
+Real-time line:
+- [ ] RT-DETR / RT-DETRv2 (Apache-2.0 ✓)
+- [ ] RT-DETRv3/v4 (? verify)
+- [ ] RF-DETR (Roboflow, Apache-2.0 ✓)
+- [ ] LW-DETR (Apache-2.0 ?)
+- [ ] D-FINE (Apache-2.0 ?)
+- [ ] DEIM / DEIMv2 (Apache-2.0 ?)
+
+Stronger-matching / research line:
+- [ ] Co-DETR (MIT ✓)
+- [ ] Salience-DETR, Relation-DETR (Apache-2.0 ?)
+- [ ] YOLOS (Apache-2.0 ✓)
+
+Priority: DETR → RT-DETR(v2) → RF-DETR → Deformable/DAB/DN/DINO →
+D-FINE/DEIM/LW-DETR → Co-DETR/Grounding-DINO/Mask-DINO.
 
 ### TensorRT
 - [ ] `infer::TrtBackend` (`.engine`)

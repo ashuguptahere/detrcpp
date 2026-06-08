@@ -33,7 +33,18 @@
 #include "detr/version.hpp"
 
 #ifdef DETR_ENABLE_TORCH
+#include <algorithm>
+#include <filesystem>
+#include <limits>
+
+#include <torch/torch.h>
+
+#include "detr/data/dataset.hpp"
+#include "detr/data/loader.hpp"
+#include "detr/data/sample.hpp"
 #include "detr/models/registry.hpp"
+#include "detr/train/checkpoint.hpp"
+#include "detr/train/trainer.hpp"
 #endif
 
 namespace {
@@ -138,6 +149,134 @@ ExitCode NotImplemented(std::string_view verb) {
   return ExitCode::NotImplemented;
 }
 
+#ifdef DETR_ENABLE_TORCH
+torch::Device ToTorchDevice(const detr::core::Device& d) {
+  using detr::core::DeviceKind;
+  if ((d.kind == DeviceKind::Cuda || d.kind == DeviceKind::Auto) && torch::cuda::is_available()) {
+    const int index = d.kind == DeviceKind::Cuda ? d.index : 0;
+    return torch::Device(torch::kCUDA, static_cast<torch::DeviceIndex>(index));
+  }
+  return torch::Device(torch::kCPU);
+}
+
+ExitCode RunTrainTorch(const Options& o, const detr::core::Device& dev) {
+  auto& lg = detr::log::Get("cli.train");
+  detr::models::RegisterBuiltins();
+
+  YAML::Node cfg;
+  if (!o.config.empty()) {
+    try {
+      cfg = YAML::LoadFile(o.config);
+    } catch (const std::exception& e) {
+      lg.error("config '{}': {}", o.config, e.what());
+      return ExitCode::UsageError;
+    }
+  }
+  if (o.imgsz > 0) {
+    cfg["imgsz"] = o.imgsz;
+  }
+
+  auto model_r = detr::models::Registry::Instance().Build(o.model, cfg);
+  if (!model_r) {
+    lg.error("{}", model_r.error().message);
+    return ExitCode::UsageError;
+  }
+  auto model = *model_r;
+  const int imgsz = model->Meta().imgsz;
+
+  if (o.data.empty()) {
+    lg.error("--data is required for --train");
+    return ExitCode::UsageError;
+  }
+  auto ds_r = detr::data::LoadDataset(o.data);
+  if (!ds_r) {
+    lg.error("dataset: {}", ds_r.error().message);
+    return ExitCode::UsageError;
+  }
+  auto ds = *ds_r;
+
+  const auto torch_dev = ToTorchDevice(dev);
+  model->to(torch_dev);
+  lg.info("dataset: {} samples ({} train), {} classes; device {}", ds.Size(),
+          ds.CountOf(detr::data::Split::Train), ds.class_names.size(), torch_dev.str());
+
+  const std::uint64_t seed = o.seed ? *o.seed : 0ULL;
+  detr::data::DataLoader loader(ds, detr::data::Split::Train, imgsz, o.batch, seed);
+  if (loader.NumBatches() == 0) {
+    lg.error("no training samples in dataset");
+    return ExitCode::UsageError;
+  }
+
+  detr::train::TrainConfig tc;
+  tc.epochs = o.epochs;
+  tc.seed = seed;
+  detr::train::Trainer trainer(model, tc);
+
+  const std::filesystem::path run_dir =
+      o.resume.empty() ? std::filesystem::path("runs/train") : std::filesystem::path(o.resume);
+  detr::train::CheckpointMgr ckpt(run_dir);
+  int start_epoch = 0;
+  double best = std::numeric_limits<double>::max();
+  if (!o.resume.empty()) {
+    auto st = ckpt.Load("last", trainer.Model(), trainer.Ema(), trainer.Optimizer());
+    if (!st) {
+      lg.error("resume from '{}': {}", run_dir.string(), st.error().message);
+      return ExitCode::UsageError;
+    }
+    start_epoch = st->epoch;
+    if (st->best_metric > 0) {
+      best = st->best_metric;
+    }
+    lg.info("resumed from epoch {}", start_epoch);
+  }
+
+  for (int epoch = start_epoch; epoch < o.epochs; ++epoch) {
+    loader.Reshuffle(seed + static_cast<std::uint64_t>(epoch));
+    const std::size_t batches = loader.NumBatches();
+    double sum = 0.0;
+    std::size_t counted = 0;
+    for (std::size_t b = 0; b < batches; ++b) {
+      auto batch = loader.At(b);
+      if (!batch) {
+        lg.warn("{}", batch.error().message);
+        continue;
+      }
+      auto images = batch->images.to(torch_dev);
+      const float loss = trainer.TrainStep(images, batch->targets);
+      sum += static_cast<double>(loss);
+      ++counted;
+      if (b % 10 == 0) {
+        lg.info("epoch {}/{} batch {}/{} loss {:.4f}", epoch + 1, o.epochs, b + 1, batches, loss);
+      }
+    }
+    const double avg = counted ? sum / static_cast<double>(counted) : 0.0;
+    lg.info("epoch {}/{} done; avg loss {:.4f}", epoch + 1, o.epochs, avg);
+
+    detr::train::TrainState st;
+    st.epoch = epoch + 1;
+    st.seed = seed;
+    st.best_metric = best;
+    if (auto r = ckpt.Save("last", trainer.Model(), trainer.Ema(), trainer.Optimizer(), st); !r) {
+      lg.warn("checkpoint save failed: {}", r.error().message);
+    }
+    if (avg < best) {
+      best = avg;
+      st.best_metric = best;
+      if (auto rb = ckpt.Save("best", trainer.Model(), trainer.Ema(), trainer.Optimizer(), st);
+          !rb) {
+        lg.warn("best checkpoint save failed: {}", rb.error().message);
+      }
+      lg.info("new best avg loss {:.4f}", best);
+    }
+  }
+  lg.info("training complete; checkpoints in {}", run_dir.string());
+  for (const auto& fmt : o.export_on_finish) {
+    lg.warn("--export-on-finish {}: export pipeline lands in a later phase", fmt);
+  }
+  return ExitCode::Ok;
+}
+#endif  // DETR_ENABLE_TORCH
+
 ExitCode RunTrain(const Options& o) {
   auto& lg = detr::log::Get("cli.train");
   if (!Require(!o.model.empty(), "model", "train")) {
@@ -152,7 +291,17 @@ ExitCode RunTrain(const Options& o) {
           o.model, detr::core::ToString(*dev), o.epochs, o.batch, o.imgsz,
           o.seed ? std::to_string(*o.seed) : "<random>",
           o.resume.empty() ? "<none>" : o.resume);
+#ifdef DETR_ENABLE_TORCH
+  try {
+    return RunTrainTorch(o, *dev);
+  } catch (const std::exception& e) {
+    lg.error("training failed: {}", e.what());
+    return ExitCode::InternalError;
+  }
+#else
+  lg.error("training requires building with -DDETR_ENABLE_TORCH=ON");
   return NotImplemented("train");
+#endif
 }
 
 ExitCode RunEval(const Options& o, std::string_view verb) {

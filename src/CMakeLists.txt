@@ -150,17 +150,25 @@ if(DETR_ENABLE_TORCH)
     train/ema.cpp
     train/checkpoint.cpp
     train/trainer.cpp
+    data/loader.cpp
+    data/stb_impl.cpp
   )
   target_link_libraries(detr_train
     PUBLIC
       detr_models
       detr_torch
+      detr_data
       detr_core
       "${TORCH_LIBRARIES}"
     PRIVATE
       fmt::fmt
   )
-  target_include_directories(detr_train SYSTEM PUBLIC ${TORCH_INCLUDE_DIRS})
+  target_include_directories(detr_train SYSTEM PUBLIC
+    ${TORCH_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/third_party/stb
+  )
+  # stb is third-party C; compile its single impl unit without our warnings.
+  set_source_files_properties(data/stb_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
   target_compile_definitions(detr_train PUBLIC DETR_ENABLE_TORCH)
   target_compile_options(detr_train PUBLIC ${_detr_torch_flags})
   set_target_properties(detr_train PROPERTIES

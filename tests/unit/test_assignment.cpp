@@ -15,9 +15,14 @@ double TotalCost(const std::vector<double>& cost, int cols,
                  const std::vector<std::pair<int, int>>& m) {
   double t = 0;
   for (const auto& [r, c] : m) {
-    t += cost[static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) + c];
+    t += cost[static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) +
+              static_cast<std::size_t>(c)];
   }
   return t;
+}
+
+double At(const std::vector<double>& cost, int i) {
+  return cost[static_cast<std::size_t>(i)];
 }
 
 TEST(Assignment, SquareValidPermutationAndOptimal) {
@@ -40,7 +45,7 @@ TEST(Assignment, SquareValidPermutationAndOptimal) {
   std::vector<int> perm = {0, 1, 2};
   double best = 1e18;
   do {
-    best = std::min(best, cost[0 * 3 + perm[0]] + cost[1 * 3 + perm[1]] + cost[2 * 3 + perm[2]]);
+    best = std::min(best, At(cost, perm[0]) + At(cost, 3 + perm[1]) + At(cost, 6 + perm[2]));
   } while (std::next_permutation(perm.begin(), perm.end()));
   EXPECT_DOUBLE_EQ(TotalCost(cost, 3, m), best);
 }
@@ -54,7 +59,7 @@ TEST(Assignment, MatchesBruteForceSmall) {
   std::vector<int> perm = {0, 1, 2};
   double best = 1e18;
   do {
-    double t = cost[0 * 3 + perm[0]] + cost[1 * 3 + perm[1]] + cost[2 * 3 + perm[2]];
+    const double t = At(cost, perm[0]) + At(cost, 3 + perm[1]) + At(cost, 6 + perm[2]);
     best = std::min(best, t);
   } while (std::next_permutation(perm.begin(), perm.end()));
   EXPECT_DOUBLE_EQ(TotalCost(cost, 3, m), best);
