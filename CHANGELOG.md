@@ -33,8 +33,18 @@ pass with zero warnings in project code.
   sine positional encoding + multi-head-attention encoder/decoder + object
   queries + class/box heads) that runs a forward pass, trains from scratch, and
   serializes to safetensors. `detrcpp --list-models` lists it in torch builds.
+- **Training (`detr::train`)** — the full DETR set-prediction loop:
+  `core::LinearSumAssignment` (exact Hungarian, shared with trackers), box ops
+  (cxcywh/xyxy/IoU/GIoU), `HungarianMatcher`, `SetCriterion` (CE + L1 + GIoU),
+  `ModelEma` (0.9999), `CheckpointMgr` (last/best safetensors + optimizer state),
+  and `Trainer` (AdamW + grad clip). A `DataLoader` decodes images (vendored stb)
+  and collates batches.
+- **`detrcpp --train`** — really trains: builds the model from the registry +
+  YAML config, loads a COCO/YOLO dataset, runs epochs with per-epoch checkpoints,
+  and `--resume` restores model + EMA + optimizer + epoch. Verified end to end
+  (loss decreases across epochs; resume continues the descent).
 - **Dependencies**: simdjson, yaml-cpp; LibTorch via `find_package(Torch)`
-  (gated `DETR_ENABLE_TORCH`).
+  (gated `DETR_ENABLE_TORCH`); vendored stb image headers (public domain).
 
 ### Changed
 
