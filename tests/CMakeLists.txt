@@ -6,12 +6,14 @@ add_executable(detr_unit_tests
   unit/test_log.cpp
   unit/test_safetensors.cpp
   unit/test_remapper.cpp
+  unit/test_dataset.cpp
 )
 
 target_link_libraries(detr_unit_tests
   PRIVATE
     detr::core
     detr::weights
+    detr::data
     GTest::gtest
     GTest::gtest_main
     detr_warnings
@@ -22,6 +24,11 @@ set_target_properties(detr_unit_tests PROPERTIES
   CXX_STANDARD_REQUIRED ON
   CXX_EXTENSIONS OFF
 )
+
+if(DETR_ENABLE_TORCH)
+  target_sources(detr_unit_tests PRIVATE unit/test_torch_bridge.cpp)
+  target_link_libraries(detr_unit_tests PRIVATE detr::torch)
+endif()
 
 gtest_discover_tests(detr_unit_tests
   PROPERTIES LABELS "unit"

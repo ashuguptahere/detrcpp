@@ -58,3 +58,63 @@ set_target_properties(detr_weights PROPERTIES
 )
 
 add_library(detr::weights ALIAS detr_weights)
+
+# detr_data — dataset adapters (COCO via simdjson, YOLO via yaml-cpp) producing
+# the format-independent Dataset. LibTorch-independent; the loader/decoder that
+# turns Samples into batched tensors lands with the torch-gated training code.
+add_library(detr_data STATIC
+  data/dataset.cpp
+  data/coco.cpp
+  data/yolo.cpp
+)
+
+target_include_directories(detr_data
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(detr_data
+  PUBLIC
+    detr_core
+  PRIVATE
+    simdjson::simdjson
+    yaml-cpp::yaml-cpp
+    fmt::fmt
+    detr_warnings
+)
+
+set_target_properties(detr_data PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+
+add_library(detr::data ALIAS detr_data)
+
+# detr_torch — LibTorch bridge for the weight layer (RawTensor <-> torch::Tensor,
+# load StateDict into a live module by name). Gated on DETR_ENABLE_TORCH. Torch
+# headers are included as SYSTEM so their warnings don't trip our strict flags;
+# we deliberately do not attach detr_warnings here.
+if(DETR_ENABLE_TORCH)
+  add_library(detr_torch STATIC
+    weights/torch_bridge.cpp
+  )
+  target_link_libraries(detr_torch
+    PUBLIC
+      detr_weights
+      "${TORCH_LIBRARIES}"
+    PRIVATE
+      fmt::fmt
+  )
+  target_include_directories(detr_torch SYSTEM PUBLIC ${TORCH_INCLUDE_DIRS})
+  target_compile_definitions(detr_torch PUBLIC DETR_ENABLE_TORCH)
+  separate_arguments(_detr_torch_flags UNIX_COMMAND "${TORCH_CXX_FLAGS}")
+  target_compile_options(detr_torch PUBLIC ${_detr_torch_flags})
+  set_target_properties(detr_torch PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+  )
+  add_library(detr::torch ALIAS detr_torch)
+endif()

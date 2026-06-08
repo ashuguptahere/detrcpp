@@ -11,7 +11,8 @@
     "fmt",
     "cli11",
     "tl-expected",
-    "simdjson"
+    "simdjson",
+    "yaml-cpp"
   ],
   "features": {
     "tests": {

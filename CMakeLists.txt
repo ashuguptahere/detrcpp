@@ -114,6 +114,14 @@ find_package(fmt          CONFIG REQUIRED)
 find_package(CLI11        CONFIG REQUIRED)
 find_package(tl-expected  CONFIG REQUIRED)
 find_package(simdjson     CONFIG REQUIRED)
+find_package(yaml-cpp     CONFIG REQUIRED)
+
+# LibTorch — only when the training/inference path is requested. Point CMake at
+# it with -DCMAKE_PREFIX_PATH=/path/to/libtorch (or -DTorch_DIR=...).
+if(DETR_ENABLE_TORCH)
+  find_package(Torch REQUIRED)
+  message(STATUS "detrcpp: LibTorch found (${TORCH_INSTALL_PREFIX})")
+endif()
 
 # Subdirectories.
 add_subdirectory(src)

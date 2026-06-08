@@ -34,9 +34,10 @@ weights/*.engine
 *.nsys-rep
 *.qdrep
 
-# Datasets are external
-data/
-datasets/
+# Datasets are external (anchored to repo root so src/data, include/detr/data
+# — which are source, not datasets — are NOT ignored).
+/data/
+/datasets/
 
 # Local secrets — never commit (gitleaks is the authoritative gate)
 .env*
