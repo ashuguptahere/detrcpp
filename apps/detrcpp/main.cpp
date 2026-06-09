@@ -160,6 +160,16 @@ ExitCode NotImplemented(std::string_view verb) {
 }
 
 #ifdef DETR_ENABLE_TORCH
+// Loads weights, dispatching on extension: .pth/.pt go through the pure-C++
+// PyTorch reader (official checkpoints), everything else through safetensors.
+detr::core::Result<detr::weights::StateDict> LoadWeightsAuto(const std::string& path) {
+  const auto ext = std::filesystem::path(path).extension().string();
+  if (ext == ".pth" || ext == ".pt") {
+    return detr::weights::LoadPth(path);
+  }
+  return detr::weights::LoadSafetensors(path);
+}
+
 torch::Device ToTorchDevice(const detr::core::Device& d) {
   using detr::core::DeviceKind;
   if ((d.kind == DeviceKind::Cuda || d.kind == DeviceKind::Auto) && torch::cuda::is_available()) {
@@ -340,7 +350,7 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
   }
   auto model = *model_r;
 
-  auto sd = detr::weights::LoadSafetensors(o.weights);
+  auto sd = LoadWeightsAuto(o.weights);
   if (!sd) {
     lg.error("weights '{}': {}", o.weights, sd.error().message);
     return ExitCode::UsageError;
@@ -444,7 +454,7 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     return ExitCode::UsageError;
   }
   auto model = *model_r;
-  auto sd = detr::weights::LoadSafetensors(o.weights);
+  auto sd = LoadWeightsAuto(o.weights);
   if (!sd) {
     lg.error("weights '{}': {}", o.weights, sd.error().message);
     return ExitCode::UsageError;
@@ -567,7 +577,7 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
     return ExitCode::UsageError;
   }
   auto model = *model_r;
-  auto sd_in = detr::weights::LoadSafetensors(o.weights);
+  auto sd_in = LoadWeightsAuto(o.weights);
   if (!sd_in) {
     lg.error("weights '{}': {}", o.weights, sd_in.error().message);
     return ExitCode::UsageError;

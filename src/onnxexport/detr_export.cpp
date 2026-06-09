@@ -279,10 +279,10 @@ struct Emitter {
     std::string x = Unary(
         "Relu", Bn(Conv(input, "backbone.conv1.weight", "", 7, 2, 3), "backbone.bn1"));
     x = Pool(x, 3, 2, 1);
-    const int blocks[4] = {3, 4, 6, 3};
+    const auto& blocks = a.resnet_blocks;
     const int strides[4] = {1, 2, 2, 2};
     for (int lyr = 0; lyr < 4; ++lyr) {
-      for (int b = 0; b < blocks[lyr]; ++b) {
+      for (int b = 0; b < blocks[static_cast<std::size_t>(lyr)]; ++b) {
         const std::string p = fmt::format("backbone.layer{}.{}", lyr + 1, b);
         const int stride = (b == 0) ? strides[lyr] : 1;
         x = Bottleneck(x, p, stride, /*has_down=*/b == 0);
@@ -388,6 +388,7 @@ core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& we
     std::string ff = e.Gemm(e.Unary("Relu", h1), p + ".linear2.weight", p + ".linear2.bias");
     tgt = e.LayerNorm(e.Binary("Add", tgt, ff), p + ".norm3");
   }
+  tgt = e.LayerNorm(tgt, "decoder_norm");  // DETR's final decoder LayerNorm
 
   // --- heads ---
   std::string logits2d = e.Gemm(tgt, "class_embed.weight", "class_embed.bias");  // [Q, C+1]

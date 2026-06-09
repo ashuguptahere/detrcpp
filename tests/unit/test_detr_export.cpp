@@ -105,6 +105,7 @@ StateDict BuildStateDict(const DetrArch& a) {
     AddNorm(sd, p + ".norm3", d);
   }
 
+  AddNorm(sd, "decoder_norm", d);
   sd.Set("class_embed.weight", F32({a.num_classes + 1, d}));
   sd.Set("class_embed.bias", F32({a.num_classes + 1}));
   sd.Set("bbox_embed.0.weight", F32({d, d}));

@@ -116,6 +116,8 @@ DetrHead BuildDetrHead(torch::nn::Module& model, const DetrConfig& cfg) {
   for (int i = 0; i < cfg.dec_layers; ++i) {
     h.decoder->push_back(DecoderLayer(cfg.hidden_dim, cfg.nheads, cfg.dim_feedforward));
   }
+  h.decoder_norm =
+      model.register_module("decoder_norm", nn::LayerNorm(nn::LayerNormOptions({cfg.hidden_dim})));
   h.class_embed =
       model.register_module("class_embed", nn::Linear(cfg.hidden_dim, cfg.num_classes + 1));
   h.bbox_embed = model.register_module(
@@ -146,6 +148,8 @@ Detections RunDetrHead(const DetrHead& head, torch::Tensor src, const DetrConfig
   for (const auto& m : *head.decoder) {
     tgt = m->as<DecoderLayerImpl>()->forward(tgt, memory, pos_seq, query);
   }
+  auto decoder_norm = head.decoder_norm;
+  tgt = decoder_norm->forward(tgt);  // DETR's final decoder LayerNorm
 
   auto hs = tgt.transpose(0, 1);  // [B, Q, d]
   // Copy the holders (cheap shared handles) so forward() isn't called through a

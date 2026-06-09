@@ -16,15 +16,25 @@ cmake/ninja/vcpkg + LibTorch 2.5.1 CPU. Both the lightweight build
 pass with zero warnings in project code.
 
 ### Added
-- **Second model: `detr-r50`** (DETR with a torchvision ResNet-50 backbone) —
-  proves the framework is modular end to end. A DRY refactor extracts the shared
-  transformer head (`detr_head`) used by both `detr` and `detr-r50`; only the
-  backbone differs. The new model registers, lists, trains (a real step),
-  predicts, evaluates, and **exports to ONNX with numeric parity** (the ONNX
-  emitter gained a ResNet-50 bottleneck/residual path; parity max|Δ| ~1e-6 vs
-  LibTorch). It ships an `UpstreamRemapper` mapping facebookresearch/detr keys
-  (backbone.0.body→backbone, transformer.*.layers→enc/dec, multihead_attn→
-  cross_attn, bbox_embed.layers.N→…). `configs/models/detr-r50-tiny.yaml`.
+- **ResNet-backbone DETR models: `detr-r50` and `detr-r101`** — prove the
+  framework is modular end to end. A DRY refactor extracts the shared transformer
+  head (`detr_head`) used by every variant; the ResNet builder is parameterized by
+  block counts ({3,4,6,3}=R50, {3,4,23,3}=R101). Both register, list, train (a real
+  step), predict, evaluate, and **export to ONNX with numeric parity** (the ONNX
+  emitter gained a ResNet bottleneck/residual path; max|Δ| ~1e-6 vs LibTorch for
+  detr/detr-r50/detr-r101). Configs `detr-r50-tiny.yaml`, `detr-r101-tiny.yaml`.
+- **Official-DETR architecture alignment** — added the final decoder LayerNorm
+  (`transformer.decoder.norm`) DETR applies before the heads, so our head matches
+  facebookresearch/detr structurally (encoder/decoder layers already matched;
+  FrozenBatchNorm == eval-mode BN numerically). `UpstreamRemapper` maps the
+  official keys (backbone.0.body→backbone, transformer.*.layers→enc/dec,
+  transformer.decoder.norm→decoder_norm, multihead_attn→cross_attn,
+  bbox_embed.layers.N→…). Parity re-verified after the change.
+- **`.pth` loading (`weights::LoadPth`)** — reads modern (zip-format) PyTorch
+  checkpoints in pure C++ via LibTorch's own zip reader + unpickler; weight loading
+  auto-dispatches `.pth`/`.pt` vs `.safetensors`. Legacy (pre-1.6) checkpoints —
+  like the 2020 official DETR weights — are detected and reported clearly (LibTorch
+  has no C++ legacy loader; a legacy unpickler is a follow-up).
 - **Weight interop (`detr::weights`)** — bidirectional compatibility with the
   original repos, Python-free: `RawTensor`/`DType`, `StateDict`, a
   simdjson-backed safetensors reader/writer, and a `WeightRemapper` that adapts

@@ -56,9 +56,12 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] DETR (conv backbone + transformer enc/dec + queries + class/box heads),
       forward-pass + weight-roundtrip tested, registered, shown in `--list-models`
 - [x] Shared transformer head (`detr_head`) — DRY across backbone variants
-- [x] **detr-r50** (torchvision ResNet-50 backbone) — registered, trains, ONNX
-      parity-verified; UpstreamRemapper for fb/detr keys
-- [ ] Byte-exact official-checkpoint parity for detr-r50 (final decoder norm etc.)
+- [x] **detr-r50** + **detr-r101** (torchvision ResNet backbones) — registered,
+      train, ONNX parity-verified; UpstreamRemapper for fb/detr keys
+- [x] Official-DETR head alignment (final decoder LayerNorm); parity re-verified
+- [x] `.pth` loader (modern zip format) + auto-dispatch; legacy format detected
+- [ ] **Legacy (pre-1.6) .pth unpickler** — needed for the 2020 official DETR
+      checkpoint → then real mAP from pretrained weights
 - [ ] Same-`imgsz` enforcement across registered models (default 640)
 - [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance

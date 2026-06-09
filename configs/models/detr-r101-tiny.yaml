@@ -1,0 +1,10 @@
+# Tiny detr-r101 for fast smoke/parity (ResNet-101 backbone, tiny transformer).
+model: detr-r101
+hidden_dim: 32
+nheads: 4
+enc_layers: 1
+dec_layers: 1
+dim_feedforward: 64
+num_queries: 6
+num_classes: 4
+imgsz: 64

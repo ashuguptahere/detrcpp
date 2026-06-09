@@ -138,6 +138,7 @@ ModelMeta DetrMeta(const YAML::Node& cfg) {
 void RegisterBuiltins() {
   Registry::Instance().Register("detr", DetrMeta({}), &MakeDetr);
   Registry::Instance().Register("detr-r50", DetrR50Meta({}), &MakeDetrR50);
+  Registry::Instance().Register("detr-r101", DetrR101Meta({}), &MakeDetrR101);
 }
 
 }  // namespace detr::models

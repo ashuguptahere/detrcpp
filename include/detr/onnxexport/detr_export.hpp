@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 
 #include "detr/core/result.hpp"
@@ -29,7 +30,8 @@ struct DetrArch {
   int num_queries{100};
   int num_classes{91};
   int imgsz{640};
-  int backbone_width{64};  // Compact backbone only
+  int backbone_width{64};                          // Compact backbone only
+  std::array<int, 4> resnet_blocks{3, 4, 6, 3};    // ResNet50; {3,4,23,3} = R101
 };
 
 // Builds the ONNX model from |arch| + |weights| and writes it to |path| (after

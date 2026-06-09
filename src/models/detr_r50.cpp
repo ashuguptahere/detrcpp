@@ -4,6 +4,8 @@
 
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <torch/torch.h>
 
@@ -101,7 +103,9 @@ nn::Sequential MakeLayer(int in, int planes, int blocks, int stride) {
   return s;
 }
 
-struct ResNet50Impl : nn::Module {
+// Generic ResNet (torchvision naming). Block counts pick the depth:
+// {3,4,6,3} = ResNet-50, {3,4,23,3} = ResNet-101.
+struct ResNetImpl : nn::Module {
   nn::Conv2d conv1{nullptr};
   nn::BatchNorm2d bn1{nullptr};
   nn::Sequential layer1{nullptr};
@@ -109,14 +113,14 @@ struct ResNet50Impl : nn::Module {
   nn::Sequential layer3{nullptr};
   nn::Sequential layer4{nullptr};
 
-  ResNet50Impl() {
+  explicit ResNetImpl(const std::vector<int>& blocks) {
     conv1 = register_module("conv1",
                             nn::Conv2d(nn::Conv2dOptions(3, 64, 7).stride(2).padding(3).bias(false)));
     bn1 = register_module("bn1", nn::BatchNorm2d(64));
-    layer1 = register_module("layer1", MakeLayer(64, 64, 3, 1));
-    layer2 = register_module("layer2", MakeLayer(256, 128, 4, 2));
-    layer3 = register_module("layer3", MakeLayer(512, 256, 6, 2));
-    layer4 = register_module("layer4", MakeLayer(1024, 512, 3, 2));
+    layer1 = register_module("layer1", MakeLayer(64, 64, blocks[0], 1));
+    layer2 = register_module("layer2", MakeLayer(256, 128, blocks[1], 2));
+    layer3 = register_module("layer3", MakeLayer(512, 256, blocks[2], 2));
+    layer4 = register_module("layer4", MakeLayer(1024, 512, blocks[3], 2));
   }
 
   torch::Tensor forward(torch::Tensor x) {
@@ -129,12 +133,13 @@ struct ResNet50Impl : nn::Module {
     return x;  // [B, 2048, H/32, W/32]
   }
 };
-TORCH_MODULE(ResNet50);
+TORCH_MODULE(ResNet);
 
-class DetrR50Impl : public IModel {
+class DetrResNetImpl : public IModel {
  public:
-  explicit DetrR50Impl(R50Config cfg) : cfg_(cfg) {
-    backbone_ = register_module("backbone", ResNet50());
+  DetrResNetImpl(R50Config cfg, std::vector<int> blocks, std::string name)
+      : cfg_(cfg), name_(std::move(name)) {
+    backbone_ = register_module("backbone", ResNet(blocks));
     input_proj_ =
         register_module("input_proj", nn::Conv2d(nn::Conv2dOptions(2048, cfg.hidden_dim, 1)));
     head_ = BuildDetrHead(*this, ToHeadConfig(cfg));
@@ -148,7 +153,7 @@ class DetrR50Impl : public IModel {
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = "detr-r50";
+    m.name = name_;
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
@@ -167,6 +172,7 @@ class DetrR50Impl : public IModel {
     r.Drop("num_batches_tracked")
         .ReplaceRegex("^backbone\\.0\\.body\\.", "backbone.")
         .ReplaceRegex("^transformer\\.encoder\\.layers\\.", "encoder.")
+        .ReplaceRegex("^transformer\\.decoder\\.norm\\.", "decoder_norm.")
         .ReplaceRegex("^transformer\\.decoder\\.layers\\.", "decoder.")
         .ReplaceRegex("multihead_attn", "cross_attn")
         .ReplaceRegex("bbox_embed\\.layers\\.0", "bbox_embed.0")
@@ -177,21 +183,16 @@ class DetrR50Impl : public IModel {
 
  private:
   R50Config cfg_;
-  ResNet50 backbone_{nullptr};
+  std::string name_;
+  ResNet backbone_{nullptr};
   nn::Conv2d input_proj_{nullptr};
   DetrHead head_;
 };
 
-}  // namespace
-
-std::shared_ptr<IModel> MakeDetrR50(const YAML::Node& cfg) {
-  return std::make_shared<DetrR50Impl>(ReadConfig(cfg));
-}
-
-ModelMeta DetrR50Meta(const YAML::Node& cfg) {
+ModelMeta MakeMeta(const YAML::Node& cfg, const std::string& name) {
   R50Config c = ReadConfig(cfg);
   ModelMeta m;
-  m.name = "detr-r50";
+  m.name = name;
   m.imgsz = c.imgsz;
   m.num_classes = c.num_classes;
   m.num_queries = c.num_queries;
@@ -199,5 +200,20 @@ ModelMeta DetrR50Meta(const YAML::Node& cfg) {
   m.upstream = "https://github.com/facebookresearch/detr";
   return m;
 }
+
+}  // namespace
+
+std::shared_ptr<IModel> MakeDetrR50(const YAML::Node& cfg) {
+  return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 6, 3},
+                                          "detr-r50");
+}
+
+std::shared_ptr<IModel> MakeDetrR101(const YAML::Node& cfg) {
+  return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 23, 3},
+                                          "detr-r101");
+}
+
+ModelMeta DetrR50Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r50"); }
+ModelMeta DetrR101Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r101"); }
 
 }  // namespace detr::models

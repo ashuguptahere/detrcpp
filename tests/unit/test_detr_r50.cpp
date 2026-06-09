@@ -38,9 +38,22 @@ class DetrR50Test : public ::testing::Test {
   void SetUp() override { RegisterBuiltins(); }
 };
 
-TEST_F(DetrR50Test, RegistersAndListsBothModels) {
+TEST_F(DetrR50Test, RegistersAllModels) {
   EXPECT_TRUE(Registry::Instance().Contains("detr"));
   EXPECT_TRUE(Registry::Instance().Contains("detr-r50"));
+  EXPECT_TRUE(Registry::Instance().Contains("detr-r101"));
+}
+
+TEST_F(DetrR50Test, R101ForwardShapes) {
+  YAML::Node c = R50Tiny();
+  auto built = Registry::Instance().Build("detr-r101", c);
+  ASSERT_TRUE(built.has_value()) << built.error().message;
+  auto model = *built;
+  model->eval();
+  torch::NoGradGuard ng;
+  auto out = model->Forward(torch::randn({1, 3, 64, 64}));
+  EXPECT_EQ(out.logits.sizes(), (std::vector<std::int64_t>{1, 6, 5}));
+  EXPECT_EQ(out.boxes.sizes(), (std::vector<std::int64_t>{1, 6, 4}));
 }
 
 TEST_F(DetrR50Test, ForwardShapes) {

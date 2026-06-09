@@ -30,6 +30,7 @@ struct DetrHead {
   torch::nn::Embedding query_embed{nullptr};
   torch::nn::ModuleList encoder{nullptr};
   torch::nn::ModuleList decoder{nullptr};
+  torch::nn::LayerNorm decoder_norm{nullptr};  // final norm on the decoder output (DETR)
   torch::nn::Linear class_embed{nullptr};
   torch::nn::Sequential bbox_embed{nullptr};
 };

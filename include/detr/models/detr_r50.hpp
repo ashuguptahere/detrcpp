@@ -18,4 +18,8 @@ namespace detr::models {
 std::shared_ptr<IModel> MakeDetrR50(const YAML::Node& cfg);
 ModelMeta DetrR50Meta(const YAML::Node& cfg);
 
+// detr-r101: same as detr-r50 with a ResNet-101 backbone ({3,4,23,3} blocks).
+std::shared_ptr<IModel> MakeDetrR101(const YAML::Node& cfg);
+ModelMeta DetrR101Meta(const YAML::Node& cfg);
+
 }  // namespace detr::models
