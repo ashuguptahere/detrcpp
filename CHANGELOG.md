@@ -16,6 +16,12 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 on both CPU and the Blackwell GPU.
 
 ### Added
+- **DINO + RF-DETR + a ViT backbone.** DINO: a multi-scale deformable encoder +
+  IoU-aware query selection + iterative-refinement deformable decoder. RF-DETR:
+  the same deformable-decoder head on a new **ViT (DINOv2-style) backbone**
+  (`models/vit` — patch embed, 2D sine position, pre-norm blocks). Both
+  sigmoid/focal, both GPU-validated (DINO loss 10645→783, RF-DETR 3764→197).
+  Contrastive-denoising (DINO) and exact DINOv2 windowing (RF-DETR) are tracked.
 - **Conditional-DETR + DAB-DETR.** Conditional-DETR adds the decoupled
   content/spatial decoder cross-attention (Q/K 2× width, V width — a hand-written
   attention). DAB-DETR builds on the same shared decoder layer with 4D anchor-box

@@ -43,10 +43,16 @@ hood.
 | **Deformable-DETR** | `deformable-detr` | sigmoid/focal | trains (GPU-validated); official-weight validation tracked |
 | **Conditional-DETR** | `conditional-detr` | sigmoid/focal | trains (GPU-validated); decoupled content/spatial cross-attention |
 | **DAB-DETR** | `dab-detr` | sigmoid/focal | trains (GPU-validated); 4D anchor queries + HW-modulated attn + iterative refinement |
+| **DINO** | `dino` | sigmoid/focal | trains (GPU-validated); deformable encoder + query selection + iterative decoder (CDN training tracked) |
+| **RF-DETR** | `rf-detr` | sigmoid/focal | trains (GPU-validated); **ViT backbone** + multi-scale projection + deformable decoder |
 | **RT-DETR** | `rt-detr[v2,v3]-{n,s,m,l,x}` (+ plain `rt-detr[v2,v3]` = `-l`) | sigmoid/focal | trains (GPU-validated). v2/v3 share v1's inference arch today (their gains are training recipes — tracked) |
 
-Roadmap (in [`TODO.md`](TODO.md)): DN-DETR, DINO; RT-DETR v2/v3 training recipes;
-per-variant official-weight validation.
+**DN-DETR** is DAB-DETR + a *denoising training* recipe (noised GT queries + an
+attention mask) — its inference net == DAB-DETR, so it's a training mode, not a
+separate model (tracked).
+
+Roadmap (in [`TODO.md`](TODO.md)): DN-DETR denoising + DINO CDN training; RT-DETR
+v2/v3 recipes; ViT/DINOv2 fidelity for RF-DETR; per-variant official-weight validation.
 
 ```sh
 detrcpp --list-models          # the full table with imgsz / queries / classes / license
