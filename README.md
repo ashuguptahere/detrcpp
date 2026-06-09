@@ -27,7 +27,8 @@ hood.
 
 ## Models
 
-24 registered variants today. The size suffix is the convention going forward:
+28 registered variants today (10 base architectures + the RT-DETR size matrix).
+The size suffix is the convention going forward:
 
 | size | backbone        |
 |------|-----------------|
