@@ -41,10 +41,12 @@ hood.
 |--------|----------|-----------|--------|
 | **DETR** | `detr` (compact), `detr-r50`, `detr-r101`, `detr-r50-dc5`, `detr-r101-dc5` | softmax + no-object | trains, predicts, evals; **official weights load + real mAP**; ONNX parity |
 | **Deformable-DETR** | `deformable-detr` | sigmoid/focal | trains (GPU-validated); official-weight validation tracked |
+| **Conditional-DETR** | `conditional-detr` | sigmoid/focal | trains (GPU-validated); decoupled content/spatial cross-attention |
+| **DAB-DETR** | `dab-detr` | sigmoid/focal | trains (GPU-validated); 4D anchor queries + HW-modulated attn + iterative refinement |
 | **RT-DETR** | `rt-detr[v2,v3]-{n,s,m,l,x}` (+ plain `rt-detr[v2,v3]` = `-l`) | sigmoid/focal | trains (GPU-validated). v2/v3 share v1's inference arch today (their gains are training recipes — tracked) |
 
-Roadmap (in [`TODO.md`](TODO.md)): Conditional-DETR, DAB-DETR, DN-DETR, DINO;
-RT-DETR v2/v3 training recipes; per-variant official-weight validation.
+Roadmap (in [`TODO.md`](TODO.md)): DN-DETR, DINO; RT-DETR v2/v3 training recipes;
+per-variant official-weight validation.
 
 ```sh
 detrcpp --list-models          # the full table with imgsz / queries / classes / license

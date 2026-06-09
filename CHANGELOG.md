@@ -16,6 +16,12 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 on both CPU and the Blackwell GPU.
 
 ### Added
+- **Conditional-DETR + DAB-DETR.** Conditional-DETR adds the decoupled
+  content/spatial decoder cross-attention (Q/K 2× width, V width — a hand-written
+  attention). DAB-DETR builds on the same shared decoder layer with 4D anchor-box
+  queries, width/height-modulated positional attention, and per-layer iterative
+  anchor refinement. Both sigmoid/focal; both train on GPU (loss ↓ ~20×). The
+  shared decoder layer lives in `models/cond_decoder`.
 - **Size taxonomy (n/s/m/l/x) + RT-DETR size matrix.** ResNet gained BasicBlock
   (R18/R34) alongside Bottleneck, with `feature_channels()`. RT-DETR is registered
   across `rt-detr[v2,v3]-{n,s,m,l,x}` (n=R18@128, s=R18, m=R34, l=R50, x=R101) —

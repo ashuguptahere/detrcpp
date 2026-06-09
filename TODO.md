@@ -83,7 +83,8 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] **RT-DETR** (hybrid AIFI+CCFM encoder + query selection + deformable decoder
       with iterative refinement) — registered, forward + focal-train, GPU-validated
 - [ ] RT-DETR depth variants (R18/R34/R101) + validate vs official weights
-- [ ] Conditional-DETR, DAB-DETR (custom decoder attention; standard ops)
+- [x] **Conditional-DETR** + **DAB-DETR** (shared decoupled decoder layer;
+      DAB adds 4D anchors + HW-modulated attn + iterative refinement) — GPU-validated
 - [ ] DN-DETR (denoising training on DAB)
 - [ ] DINO (deformable + contrastive denoising + mixed query selection)
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
