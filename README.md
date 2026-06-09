@@ -42,7 +42,7 @@ The size suffix is the convention going forward:
 |--------|----------|-----------|--------|
 | **DETR** | `detr` (compact), `detr-r50`, `detr-r101`, `detr-r50-dc5`, `detr-r101-dc5` | softmax + no-object | trains, predicts, evals; **official weights load + real mAP**; ONNX parity |
 | **Deformable-DETR** | `deformable-detr` | sigmoid/focal | **official weights load (0 unexpected) → real COCO mAP 43.8** (official 44.5); GPU-validated |
-| **Conditional-DETR** | `conditional-detr` | sigmoid/focal | trains (GPU-validated); decoupled content/spatial cross-attention |
+| **Conditional-DETR** | `conditional-detr` | sigmoid/focal | **official weights load (0 unexpected) → real COCO mAP 40.3** (official 40.9); GPU-validated |
 | **DAB-DETR** | `dab-detr` | sigmoid/focal | trains (GPU-validated); 4D anchor queries + HW-modulated attn + iterative refinement |
 | **DINO** | `dino` | sigmoid/focal | trains (GPU-validated); deformable encoder + query selection + iterative decoder (CDN training tracked) |
 | **RF-DETR** | `rf-detr` | sigmoid/focal | trains (GPU-validated); **ViT backbone** + multi-scale projection + deformable decoder |
@@ -105,6 +105,7 @@ detrcpp --list-models | --version | --help
 |------|--------|
 | `detr-r50` official weights, full COCO val (5000) | mAP50-95 **0.415**, mAP50 **0.617** (official 0.420 / 0.624) |
 | `deformable-detr` official weights, full COCO val (5000) | mAP50-95 **0.438**, mAP50 **0.627** (official 0.445) |
+| `conditional-detr` official weights, full COCO val (5000) | mAP50-95 **0.403**, mAP50 **0.610** (official 0.409) |
 | ONNX export vs LibTorch (`detr`, `detr-r50`, `detr-r101`) | `max\|Δ\|` 5e-7 – 1e-6 |
 | deformable attention core vs PyTorch reference | `max\|Δ\|` < 1e-5 |
 | Deformable-DETR / RT-DETR training (GPU, focal) | loss ↓ ~60× over a short overfit |

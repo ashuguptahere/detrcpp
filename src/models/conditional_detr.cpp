@@ -161,6 +161,7 @@ class ConditionalDetrImpl : public IModel {
     for (int i = 0; i < cfg.dec_layers; ++i) {
       decoder_->push_back(CondDecoderLayer(d, cfg.nheads, cfg.dim_feedforward));
     }
+    decoder_norm_ = register_module("decoder_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
     class_embed_ = register_module("class_embed", nn::Linear(d, cfg.num_classes));
     bbox_embed_ = register_module("bbox_embed", Mlp(d, d, 4, 3));
   }
@@ -194,6 +195,7 @@ class ConditionalDetrImpl : public IModel {
       ++layer_id;
     }
 
+    tgt = decoder_norm_->forward(tgt);                            // final decoder LayerNorm
     auto hs = tgt.transpose(0, 1);                                // [B, nq, d]
     auto ref_before = InverseSigmoid(reference).transpose(0, 1);  // [B, nq, 2]
     auto box = bbox_embed_->forward(hs);                          // [B, nq, 4]
@@ -224,6 +226,7 @@ class ConditionalDetrImpl : public IModel {
   nn::Embedding query_embed_{nullptr};
   Mlp ref_point_head_{nullptr};
   Mlp query_scale_{nullptr};
+  nn::LayerNorm decoder_norm_{nullptr};
   nn::ModuleList encoder_{nullptr};
   nn::ModuleList decoder_{nullptr};
   nn::Linear class_embed_{nullptr};

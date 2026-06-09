@@ -91,7 +91,9 @@ ordered for shippability; items inside a phase can parallelize.
 - [ ] DINO contrastive denoising (CDN) training
 - [ ] RF-DETR DINOv2 backbone fidelity (windowed attn, register tokens) + sizes
 - [x] DRY: shared deformable detection head (deform_head) for RT-DETR/RF-DETR/DINO
-- [ ] Official-weight validation for the focal family (real mAP) — per-model arch alignment
+- [x] **Validated conditional-detr vs official → 40.3** (official 40.9; added decoder_norm)
+- [ ] dab-detr official-weight validation needs PReLU activation + encoder query_scale
+- [ ] rt-detr official-weight validation needs a ResNet-50-vd backbone (deep stem)
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
 
 ### Training
