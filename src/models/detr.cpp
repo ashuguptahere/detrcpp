@@ -7,6 +7,7 @@
 
 #include <torch/torch.h>
 
+#include "detr/models/deformable_detr.hpp"
 #include "detr/models/detr_head.hpp"
 #include "detr/models/detr_r50.hpp"
 #include "detr/models/model.hpp"
@@ -141,6 +142,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("detr-r101", DetrR101Meta({}), &MakeDetrR101);
   Registry::Instance().Register("detr-r50-dc5", DetrR50Dc5Meta({}), &MakeDetrR50Dc5);
   Registry::Instance().Register("detr-r101-dc5", DetrR101Dc5Meta({}), &MakeDetrR101Dc5);
+  Registry::Instance().Register("deformable-detr", DeformableDetrMeta({}), &MakeDeformableDetr);
 }
 
 }  // namespace detr::models

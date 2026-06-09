@@ -176,8 +176,10 @@ if(DETR_ENABLE_TORCH)
     models/registry.cpp
     models/detr_head.cpp
     models/deform_attn.cpp
+    models/resnet.cpp
     models/detr.cpp
     models/detr_r50.cpp
+    models/deformable_detr.cpp
   )
   target_link_libraries(detr_models
     PUBLIC
