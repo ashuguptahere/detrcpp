@@ -180,6 +180,7 @@ if(DETR_ENABLE_TORCH)
     models/detr.cpp
     models/detr_r50.cpp
     models/deformable_detr.cpp
+    models/rt_detr.cpp
   )
   target_link_libraries(detr_models
     PUBLIC

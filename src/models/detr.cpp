@@ -12,6 +12,7 @@
 #include "detr/models/detr_r50.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
+#include "detr/models/rt_detr.hpp"
 
 namespace detr::models {
 
@@ -143,6 +144,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("detr-r50-dc5", DetrR50Dc5Meta({}), &MakeDetrR50Dc5);
   Registry::Instance().Register("detr-r101-dc5", DetrR101Dc5Meta({}), &MakeDetrR101Dc5);
   Registry::Instance().Register("deformable-detr", DeformableDetrMeta({}), &MakeDeformableDetr);
+  Registry::Instance().Register("rt-detr", RtDetrMeta({}), &MakeRtDetr);
 }
 
 }  // namespace detr::models
