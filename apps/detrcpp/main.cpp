@@ -109,6 +109,7 @@ struct Options {
   // Eval.
   bool coco91{false};  // use raw COCO-91 category ids (for official DETR weights)
   int max_eval{0};     // cap eval to N images (0 = all)
+  bool aspect{false};  // aspect-preserving resize (DETR eval preprocessing), batch 1
 };
 
 void ApplyGlobalLogging(const Options& o) {
@@ -384,8 +385,8 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
   lg.info("evaluating {} split: {} samples{}", detr::data::ToString(split), ds.CountOf(split),
           o.max_eval > 0 ? fmt::format(" (capped to {})", o.max_eval) : "");
 
-  const auto m =
-      detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev, o.max_eval);
+  const auto m = detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev,
+                                           o.max_eval, o.aspect);
 
   auto fmtv = [](double v) { return v < 0 ? std::string(" n/a ") : fmt::format("{:.3f}", v); };
   std::cout << "\nCOCO metrics (" << verb << "):\n";
@@ -731,6 +732,7 @@ int main(int argc, char** argv) {
   // Eval-only.
   app.add_flag("--coco91", o.coco91, "use raw COCO-91 category ids (official DETR weights)");
   app.add_option("--max-eval", o.max_eval, "cap evaluation to N images (0 = all)");
+  app.add_flag("--aspect", o.aspect, "aspect-preserving resize at batch 1 (DETR eval preprocessing)");
 
   CLI11_PARSE(app, argc, argv);
 

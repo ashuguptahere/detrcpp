@@ -15,9 +15,13 @@
 
 namespace detr::eval {
 
-// Evaluates up to |max_images| of the split (0 = all).
+// Evaluates up to |max_images| of the split (0 = all). When |aspect_preserve| is
+// true, images are resized keeping aspect (shortest side = imgsz, longest <=
+// |max_size|) and run one at a time — DETR's eval preprocessing — instead of the
+// square-resize batched path.
 CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
                           data::Split split, int imgsz, int batch, torch::Device device,
-                          int max_images = 0);
+                          int max_images = 0, bool aspect_preserve = false,
+                          int max_size = 1333);
 
 }  // namespace detr::eval
