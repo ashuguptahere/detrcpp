@@ -7,11 +7,11 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <cstdint>
 #include <utility>
 #include <vector>
-
-#include <torch/torch.h>
 
 namespace detr::models {
 

@@ -42,9 +42,8 @@ torch::Tensor MSDeformAttnCore(const torch::Tensor& value, const SpatialShapes& 
     // [N, H*W, M, D] -> [N, M*D, H*W] -> [N*M, D, H, W]
     auto value_l = value_list[lid].flatten(2).transpose(1, 2).reshape({n * heads, dim, h, w});
     // [N, Lq, M, P, 2] for this level -> [N, M, Lq, P, 2] -> [N*M, Lq, P, 2]
-    auto grid_l = sampling_grids.select(3, static_cast<std::int64_t>(lid))
-                      .transpose(1, 2)
-                      .flatten(0, 1);
+    auto grid_l =
+        sampling_grids.select(3, static_cast<std::int64_t>(lid)).transpose(1, 2).flatten(0, 1);
     // -> [N*M, D, Lq, P]
     sampling_value_list.push_back(F::grid_sample(value_l, grid_l, sample_opts));
   }
@@ -59,8 +58,8 @@ torch::Tensor MSDeformAttnCore(const torch::Tensor& value, const SpatialShapes& 
 
 MSDeformAttnImpl::MSDeformAttnImpl(int d_model, int n_levels, int n_heads, int n_points)
     : d_model_(d_model), n_levels_(n_levels), n_heads_(n_heads), n_points_(n_points) {
-  sampling_offsets = register_module(
-      "sampling_offsets", nn::Linear(d_model, n_heads * n_levels * n_points * 2));
+  sampling_offsets =
+      register_module("sampling_offsets", nn::Linear(d_model, n_heads * n_levels * n_points * 2));
   attention_weights =
       register_module("attention_weights", nn::Linear(d_model, n_heads * n_levels * n_points));
   value_proj = register_module("value_proj", nn::Linear(d_model, d_model));
@@ -78,25 +77,31 @@ torch::Tensor MSDeformAttnImpl::forward(const torch::Tensor& query,
 
   auto value = value_proj->forward(input_flatten).view({n, lv, n_heads_, head_dim});
 
-  auto offsets = sampling_offsets->forward(query).view(
-      {n, lq, n_heads_, n_levels_, n_points_, 2});
-  auto attn = attention_weights->forward(query).view(
-      {n, lq, n_heads_, n_levels_ * n_points_});
+  auto offsets = sampling_offsets->forward(query).view({n, lq, n_heads_, n_levels_, n_points_, 2});
+  auto attn = attention_weights->forward(query).view({n, lq, n_heads_, n_levels_ * n_points_});
   attn = attn.softmax(-1).view({n, lq, n_heads_, n_levels_, n_points_});
 
-  // normalize offsets by each level's (W, H) and add to the reference center.
-  std::vector<std::int64_t> wh;
-  wh.reserve(shapes.size() * 2);
-  for (const auto& [h, w] : shapes) {
-    wh.push_back(w);
-    wh.push_back(h);
+  // Sampling locations from the reference points. 2D refs (cx,cy): offset is
+  // normalized by each level's (W,H). 4D refs (cx,cy,w,h): offset is scaled by
+  // the box (w,h) — RT-DETR / iterative-refinement decoders.
+  torch::Tensor sampling_locations;
+  if (reference_points.size(-1) == 2) {
+    std::vector<std::int64_t> wh;
+    wh.reserve(shapes.size() * 2);
+    for (const auto& [h, w] : shapes) {
+      wh.push_back(w);
+      wh.push_back(h);
+    }
+    auto offset_normalizer = torch::tensor(wh, query.options().dtype(torch::kLong))
+                                 .view({n_levels_, 2})
+                                 .to(query.dtype());
+    sampling_locations = reference_points.view({n, lq, 1, n_levels_, 1, 2}) +
+                         offsets / offset_normalizer.view({1, 1, 1, n_levels_, 1, 2});
+  } else {  // 4D
+    auto ref = reference_points.view({n, lq, 1, n_levels_, 1, 4});
+    sampling_locations =
+        ref.slice(-1, 0, 2) + offsets / static_cast<double>(n_points_) * ref.slice(-1, 2, 4) * 0.5;
   }
-  auto offset_normalizer =
-      torch::tensor(wh, query.options().dtype(torch::kLong)).view({n_levels_, 2}).to(query.dtype());
-  // ref [N,Lq,L,2] -> [N,Lq,1,L,1,2]; offsets / normalizer [1,1,1,L,1,2]
-  auto sampling_locations =
-      reference_points.view({n, lq, 1, n_levels_, 1, 2}) +
-      offsets / offset_normalizer.view({1, 1, 1, n_levels_, 1, 2});
 
   auto out = MSDeformAttnCore(value, shapes, sampling_locations, attn);
   return output_proj->forward(out);
