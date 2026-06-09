@@ -16,6 +16,11 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 on both CPU and the Blackwell GPU.
 
 ### Added
+- **Size taxonomy (n/s/m/l/x) + RT-DETR size matrix.** ResNet gained BasicBlock
+  (R18/R34) alongside Bottleneck, with `feature_channels()`. RT-DETR is registered
+  across `rt-detr[v2,v3]-{n,s,m,l,x}` (n=R18@128, s=R18, m=R34, l=R50, x=R101) —
+  24 models total. v2/v3 share v1's inference architecture for now (their gains
+  are training recipes — tracked). Added `README.md`.
 - **RT-DETR (real-time DETR).** The flagship real-time model: a hybrid encoder
   (AIFI transformer on the top level + CCFM CNN cross-scale fusion with RepVGG/
   CSPRepLayer FPN+PAN), IoU-aware query selection from grid anchors, and a
