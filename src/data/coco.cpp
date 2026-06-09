@@ -9,7 +9,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace detr::data {
@@ -23,6 +25,24 @@ namespace {
 
 bool GetInt(simdjson::dom::element e, const char* key, std::int64_t& out) {
   return e[key].get_int64().get(out) == simdjson::SUCCESS;
+}
+
+// Joins an untrusted COCO `file_name` under |images_dir|, rejecting absolute
+// paths and any "../" traversal that would escape the dataset directory.
+Result<std::string> SafeImagePath(const fs::path& images_dir, std::string_view file_name) {
+  const fs::path rel{file_name};
+  if (rel.is_absolute()) {
+    return Err(ErrorCode::InvalidArgument,
+               fmt::format("COCO file_name '{}' must be relative", file_name));
+  }
+  const fs::path base = images_dir.lexically_normal();
+  const fs::path joined = (base / rel).lexically_normal();
+  const fs::path within = joined.lexically_relative(base);
+  if (within.empty() || *within.begin() == "..") {
+    return Err(ErrorCode::InvalidArgument,
+               fmt::format("COCO file_name '{}' escapes images_dir", file_name));
+  }
+  return joined.string();
 }
 
 }  // namespace
@@ -79,8 +99,12 @@ Result<Dataset> LoadCocoJson(const fs::path& annotations_json, const fs::path& i
     }
     GetInt(im, "width", w);
     GetInt(im, "height", h);
+    auto safe_path = SafeImagePath(images_dir, file);
+    if (!safe_path) {
+      return tl::make_unexpected(safe_path.error());
+    }
     Sample s;
-    s.image_path = (images_dir / std::string(file)).string();
+    s.image_path = std::move(*safe_path);
     s.width = static_cast<int>(w);
     s.height = static_cast<int>(h);
     s.split = split;

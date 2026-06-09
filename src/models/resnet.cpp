@@ -16,28 +16,28 @@ struct BottleneckImpl : nn::Module {
   nn::Conv2d conv1{nullptr};
   nn::Conv2d conv2{nullptr};
   nn::Conv2d conv3{nullptr};
-  nn::BatchNorm2d bn1{nullptr};
-  nn::BatchNorm2d bn2{nullptr};
-  nn::BatchNorm2d bn3{nullptr};
+  FrozenBatchNorm2d bn1{nullptr};
+  FrozenBatchNorm2d bn2{nullptr};
+  FrozenBatchNorm2d bn3{nullptr};
   nn::Sequential downsample{nullptr};
 
   BottleneckImpl(int in, int planes, int stride, bool down, int dilation) {
     const int out = planes * 4;
     conv1 = register_module("conv1", nn::Conv2d(nn::Conv2dOptions(in, planes, 1).bias(false)));
-    bn1 = register_module("bn1", nn::BatchNorm2d(planes));
+    bn1 = register_module("bn1", FrozenBatchNorm2d(planes));
     conv2 = register_module("conv2", nn::Conv2d(nn::Conv2dOptions(planes, planes, 3)
                                                     .stride(stride)
                                                     .padding(dilation)
                                                     .dilation(dilation)
                                                     .bias(false)));
-    bn2 = register_module("bn2", nn::BatchNorm2d(planes));
+    bn2 = register_module("bn2", FrozenBatchNorm2d(planes));
     conv3 = register_module("conv3", nn::Conv2d(nn::Conv2dOptions(planes, out, 1).bias(false)));
-    bn3 = register_module("bn3", nn::BatchNorm2d(out));
+    bn3 = register_module("bn3", FrozenBatchNorm2d(out));
     if (down) {
       downsample = register_module(
           "downsample",
           nn::Sequential(nn::Conv2d(nn::Conv2dOptions(in, out, 1).stride(stride).bias(false)),
-                         nn::BatchNorm2d(out)));
+                         FrozenBatchNorm2d(out)));
     }
   }
 
@@ -58,8 +58,8 @@ TORCH_MODULE(Bottleneck);
 struct BasicBlockImpl : nn::Module {
   nn::Conv2d conv1{nullptr};
   nn::Conv2d conv2{nullptr};
-  nn::BatchNorm2d bn1{nullptr};
-  nn::BatchNorm2d bn2{nullptr};
+  FrozenBatchNorm2d bn1{nullptr};
+  FrozenBatchNorm2d bn2{nullptr};
   nn::Sequential downsample{nullptr};
 
   BasicBlockImpl(int in, int planes, int stride, bool down, int dilation) {
@@ -68,17 +68,17 @@ struct BasicBlockImpl : nn::Module {
                                                     .padding(dilation)
                                                     .dilation(dilation)
                                                     .bias(false)));
-    bn1 = register_module("bn1", nn::BatchNorm2d(planes));
+    bn1 = register_module("bn1", FrozenBatchNorm2d(planes));
     conv2 = register_module(
         "conv2",
         nn::Conv2d(
             nn::Conv2dOptions(planes, planes, 3).padding(dilation).dilation(dilation).bias(false)));
-    bn2 = register_module("bn2", nn::BatchNorm2d(planes));
+    bn2 = register_module("bn2", FrozenBatchNorm2d(planes));
     if (down) {
       downsample = register_module(
           "downsample",
           nn::Sequential(nn::Conv2d(nn::Conv2dOptions(in, planes, 1).stride(stride).bias(false)),
-                         nn::BatchNorm2d(planes)));
+                         FrozenBatchNorm2d(planes)));
     }
   }
 
@@ -119,7 +119,7 @@ ResNetImpl::ResNetImpl(const std::vector<int>& blocks, bool bottleneck, bool dc5
     : bottleneck_(bottleneck) {
   conv1 = register_module("conv1",
                           nn::Conv2d(nn::Conv2dOptions(3, 64, 7).stride(2).padding(3).bias(false)));
-  bn1 = register_module("bn1", nn::BatchNorm2d(64));
+  bn1 = register_module("bn1", FrozenBatchNorm2d(64));
   const int s4 = dc5 ? 1 : 2;
   const int d4 = dc5 ? 2 : 1;
   if (bottleneck) {

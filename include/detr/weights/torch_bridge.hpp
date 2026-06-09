@@ -23,14 +23,14 @@
 namespace detr::weights {
 
 // RawTensor -> torch::Tensor (CPU, owns a copy of the bytes).
-torch::Tensor ToTensor(const RawTensor& t);
+[[nodiscard]] torch::Tensor ToTensor(const RawTensor& t);
 
 // torch::Tensor -> RawTensor (forces CPU + contiguous; copies bytes).
-core::Result<RawTensor> FromTensor(const torch::Tensor& t);
+[[nodiscard]] core::Result<RawTensor> FromTensor(const torch::Tensor& t);
 
 // A module's parameters and buffers as a StateDict, keyed exactly as
 // named_parameters()/named_buffers() (which is what upstream state_dicts use).
-StateDict StateDictFromModule(const torch::nn::Module& module);
+[[nodiscard]] StateDict StateDictFromModule(const torch::nn::Module& module);
 
 struct LoadReport {
   std::size_t loaded{0};
@@ -42,12 +42,14 @@ struct LoadReport {
 // Copies tensors from |source| (after applying |remap|) into |module| by name.
 // With strict=true, a shape mismatch or any missing/unexpected key is an error;
 // otherwise they are recorded in the report and loading continues.
-core::Result<LoadReport> LoadStateDictInto(torch::nn::Module& module, const StateDict& source,
-                                           const WeightRemapper& remap = {}, bool strict = false);
+[[nodiscard]] core::Result<LoadReport> LoadStateDictInto(torch::nn::Module& module,
+                                                         const StateDict& source,
+                                                         const WeightRemapper& remap = {},
+                                                         bool strict = false);
 
 // Reads a PyTorch .pth/.pt produced by torch.save into a StateDict, in pure C++
 // (no Python). Supported for the modern zip serialization; returns a helpful
 // error otherwise suggesting the .safetensors interchange.
-core::Result<StateDict> LoadPth(const std::filesystem::path& path);
+[[nodiscard]] core::Result<StateDict> LoadPth(const std::filesystem::path& path);
 
 }  // namespace detr::weights

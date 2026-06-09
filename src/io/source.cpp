@@ -29,7 +29,7 @@ bool IsImageExt(const fs::path& p) {
 }
 
 bool StartsWith(const std::string& s, const std::string& prefix) {
-  return s.rfind(prefix, 0) == 0;
+  return s.starts_with(prefix);
 }
 
 // Translates a shell glob (* and ?) into an anchored ECMAScript regex.

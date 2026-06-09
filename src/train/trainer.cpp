@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace detr::train {
 
@@ -16,8 +17,40 @@ Trainer::Trainer(std::shared_ptr<models::IModel> model, TrainConfig cfg)
   if (cfg_.seed != 0) {
     torch::manual_seed(cfg_.seed);
   }
+  // Two parameter groups: the pretrained backbone trains at a lower LR (DETR
+  // uses 10x lower), everything else at the base LR. Every model registers its
+  // backbone as "backbone", so the name prefix selects it.
+  using torch::optim::AdamWOptions;
+  using torch::optim::OptimizerParamGroup;
+  std::vector<torch::Tensor> backbone_params;
+  std::vector<torch::Tensor> head_params;
+  for (const auto& p : model_->named_parameters(/*recurse=*/true)) {
+    (p.key().starts_with("backbone") ? backbone_params : head_params).push_back(p.value());
+  }
+  std::vector<OptimizerParamGroup> groups;
+  {
+    OptimizerParamGroup g(head_params);
+    g.set_options(std::make_unique<AdamWOptions>(AdamWOptions(cfg_.lr).weight_decay(cfg_.weight_decay)));
+    groups.push_back(std::move(g));
+  }
+  if (!backbone_params.empty()) {
+    OptimizerParamGroup g(backbone_params);
+    g.set_options(std::make_unique<AdamWOptions>(
+        AdamWOptions(cfg_.lr * cfg_.backbone_lr_mult).weight_decay(cfg_.weight_decay)));
+    groups.push_back(std::move(g));
+  }
   opt_ = std::make_unique<torch::optim::AdamW>(
-      model_->parameters(), torch::optim::AdamWOptions(cfg_.lr).weight_decay(cfg_.weight_decay));
+      std::move(groups), AdamWOptions(cfg_.lr).weight_decay(cfg_.weight_decay));
+}
+
+void Trainer::OnEpochStart(int epoch) {
+  if (cfg_.lr_drop <= 0 || epoch != cfg_.lr_drop) {
+    return;
+  }
+  for (auto& group : opt_->param_groups()) {
+    auto& opts = static_cast<torch::optim::AdamWOptions&>(group.options());
+    opts.lr(opts.lr() * 0.1);
+  }
 }
 
 float Trainer::TrainStep(const torch::Tensor& images, const TargetBatch& targets) {

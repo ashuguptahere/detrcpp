@@ -60,7 +60,7 @@ std::optional<std::string> WeightRemapper::Map(std::string_view key) const {
   for (const auto& r : rules_) {
     switch (r.kind) {
       case Rule::Kind::StripPrefix:
-        if (k.rfind(r.a, 0) == 0) {  // starts_with
+        if (k.starts_with(r.a)) {
           k.erase(0, r.a.size());
         }
         break;

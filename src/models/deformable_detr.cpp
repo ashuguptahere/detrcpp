@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -57,9 +58,8 @@ Config ReadConfig(const YAML::Node& c) {
 // PositionEmbeddingSine (Deformable-DETR), no mask: returns [B, d, H, W].
 torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
                       const torch::TensorOptions& opts) {
-  constexpr double kPi = 3.14159265358979323846;
   const std::int64_t half = d / 2;
-  const double scale = 2.0 * kPi;
+  const double scale = 2.0 * std::numbers::pi;
   auto y_embed = torch::arange(1, h + 1, opts).view({h, 1});
   auto x_embed = torch::arange(1, w + 1, opts).view({1, w});
   y_embed = y_embed / (y_embed[h - 1] + 1e-6) * scale;

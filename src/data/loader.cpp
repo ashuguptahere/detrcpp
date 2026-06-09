@@ -5,9 +5,11 @@
 #include <fmt/format.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -98,25 +100,52 @@ core::Result<Batch> DataLoader::At(std::size_t i) const {
   const auto b = static_cast<std::size_t>(batch_);
   const std::size_t begin = i * b;
   const std::size_t end = std::min(begin + b, indices_.size());
+  const std::size_t n = end - begin;
 
-  std::vector<torch::Tensor> imgs;
   Batch out;
-  for (std::size_t k = begin; k < end; ++k) {
-    const Sample& s = dataset_.samples[indices_[k]];
-    auto img = DecodeImage(s.image_path, imgsz_);
-    if (!img.defined()) {
-      detr::log::Get("data.loader").warn("could not decode '{}'; using blank", s.image_path);
-      img = torch::zeros({3, imgsz_, imgsz_});
-      train::Target empty;
-      empty.labels = torch::empty({0}, torch::kInt64);
-      empty.boxes = torch::empty({0, 4}, torch::kFloat32);
-      out.targets.push_back(std::move(empty));
-    } else {
-      out.targets.push_back(TargetFromSample(s));
+  std::vector<torch::Tensor> imgs(n);
+  out.targets.resize(n);
+  out.sizes.resize(n);
+  out.sample_indices.resize(n);
+
+  // Decode + resize + normalize each image concurrently — stb decode is the
+  // batch bottleneck and the images are independent. Each task writes only its
+  // own slot, so the atomic cursor is the only shared state and order (hence the
+  // batch contents) stays identical to a serial decode.
+  std::atomic<std::size_t> cursor{0};
+  auto worker = [&] {
+    for (std::size_t k = cursor.fetch_add(1); k < n; k = cursor.fetch_add(1)) {
+      const Sample& s = dataset_.samples[indices_[begin + k]];
+      auto img = DecodeImage(s.image_path, imgsz_);
+      if (!img.defined()) {
+        detr::log::Get("data.loader").warn("could not decode '{}'; using blank", s.image_path);
+        img = torch::zeros({3, imgsz_, imgsz_});
+        train::Target empty;
+        empty.labels = torch::empty({0}, torch::kInt64);
+        empty.boxes = torch::empty({0, 4}, torch::kFloat32);
+        out.targets[k] = std::move(empty);
+      } else {
+        out.targets[k] = TargetFromSample(s);
+      }
+      imgs[k] = std::move(img);
+      out.sizes[k] = {s.width, s.height};
+      out.sample_indices[k] = indices_[begin + k];
     }
-    imgs.push_back(std::move(img));
-    out.sizes.emplace_back(s.width, s.height);
-    out.sample_indices.push_back(indices_[k]);
+  };
+
+  const unsigned hw = std::max(1U, std::thread::hardware_concurrency());
+  const std::size_t nthreads = std::min<std::size_t>(n, hw);
+  if (nthreads <= 1) {
+    worker();
+  } else {
+    std::vector<std::thread> pool;
+    pool.reserve(nthreads);
+    for (std::size_t t = 0; t < nthreads; ++t) {
+      pool.emplace_back(worker);
+    }
+    for (auto& th : pool) {
+      th.join();
+    }
   }
   out.images = torch::stack(imgs, 0);
   return out;

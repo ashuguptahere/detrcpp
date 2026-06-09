@@ -15,6 +15,8 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -31,6 +33,29 @@ namespace {
 // string_view. This helper makes literal appends readable.
 void Raw(spdlog::memory_buf_t& out, std::string_view s) {
   out.append(s.data(), s.data() + s.size());
+}
+
+// Appends a base-10 integer to |out| without allocating.
+void RawInt(spdlog::memory_buf_t& out, std::int64_t v) {
+  char tmp[24];
+  auto [p, ec] = std::to_chars(tmp, tmp + sizeof(tmp), v);
+  (void)ec;
+  out.append(static_cast<const char*>(tmp), p);
+}
+
+// A process-lifetime run id (hex of the start time) so every NDJSON record can
+// be correlated to a single run when many runs interleave in one log file.
+const std::string& RunId() {
+  static const std::string id = [] {
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
+    char tmp[20];
+    auto [p, ec] = std::to_chars(tmp, tmp + sizeof(tmp), static_cast<std::uint64_t>(ns), 16);
+    (void)ec;
+    return std::string(tmp, p);
+  }();
+  return id;
 }
 
 // Appends |data|..|data+size| to |out| with RFC 8259 JSON string escaping.
@@ -78,7 +103,15 @@ void AppendJsonEscaped(const char* data, std::size_t size, spdlog::memory_buf_t&
 class JsonLineFormatter final : public spdlog::formatter {
  public:
   void format(const spdlog::details::log_msg& msg, spdlog::memory_buf_t& dest) override {
-    Raw(dest, R"({"level":")");
+    const auto ts_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
+    Raw(dest, R"({"ts":)");
+    RawInt(dest, static_cast<std::int64_t>(ts_ms));
+    Raw(dest, R"(,"run":")");
+    AppendJsonEscaped(RunId().data(), RunId().size(), dest);
+    Raw(dest, R"(","thread":)");
+    RawInt(dest, static_cast<std::int64_t>(msg.thread_id));
+    Raw(dest, R"(,"level":")");
     const auto level = spdlog::level::to_string_view(msg.level);
     AppendJsonEscaped(level.data(), level.size(), dest);
     Raw(dest, R"(","logger":")");
