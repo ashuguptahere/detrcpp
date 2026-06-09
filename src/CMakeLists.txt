@@ -175,6 +175,7 @@ if(DETR_ENABLE_TORCH)
   add_library(detr_models STATIC
     models/registry.cpp
     models/detr_head.cpp
+    models/deform_attn.cpp
     models/detr.cpp
     models/detr_r50.cpp
   )
