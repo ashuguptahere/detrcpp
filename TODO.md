@@ -71,9 +71,17 @@ ordered for shippability; items inside a phase can parallelize.
 - [ ] Padding mask in the head — enables batched aspect-preserving eval (speed)
 - [ ] Legacy (pre-1.6) .pth unpickler in C++ (so no /tmp conversion is needed)
 - [ ] Same-`imgsz` enforcement across registered models (default 640)
-- [ ] Deformable multi-scale attention op (torch grid_sample; ONNX GridSample) —
-      the shared gateway for Deformable-DETR / DINO / RT-DETR
+- [x] **Multi-scale deformable attention op** (grid_sample) — validated vs torch
+      (max|Δ|<1e-5); the shared gateway for the deformable family
+- [x] **Deformable-DETR** architecture (multi-scale deformable enc/dec + sigmoid
+      head) registered + forward-tested
+- [ ] **Shared focal/sigmoid path** (focal loss + sigmoid-topk postprocess) —
+      prerequisite to TRAIN/EVAL every modern variant (Deformable/Conditional/
+      DAB/DN/DINO/RT-DETR all use it); then validate Deformable-DETR vs official
+- [ ] Conditional-DETR, DAB-DETR (custom decoder attention; standard ops)
+- [ ] DN-DETR (denoising training on DAB)
 - [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L (hybrid encoder + deformable decoder)
+- [ ] DINO (deformable + contrastive denoising + mixed query selection)
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
 
 ### Training

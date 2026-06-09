@@ -16,6 +16,14 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 on both CPU and the Blackwell GPU.
 
 ### Added
+- **Multi-scale deformable attention + Deformable-DETR.** `MSDeformAttn` (the
+  Deformable-DETR op, via grid_sample) is validated numerically against the torch
+  reference (max|Δ| < 1e-5) and is the shared gateway for the deformable family.
+  `deformable-detr` is built on it: multi-scale ResNet features (C3–C5 + extra
+  level), deformable encoder/decoder, learned queries with reference points, and
+  the faithful sigmoid/focal head. Registered (6 models); forward-shape tested.
+  Faithful focal-loss training + sigmoid-topk eval + official-weight validation
+  are the tracked next steps. The ResNet backbone is now a shared module.
 - **GPU support (CUDA).** Builds against CUDA LibTorch (2.7.1+cu128) and runs on
   NVIDIA Blackwell (sm_120) via `--device cuda:0` — ~17x faster than CPU (500-image
   COCO eval: 9s vs ~150s), same numbers. `scripts/setup_cuda_toolkit.sh` assembles
