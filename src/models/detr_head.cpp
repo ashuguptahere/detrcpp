@@ -4,6 +4,7 @@
 
 #include <torch/torch.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <tuple>
 #include <vector>
@@ -121,20 +122,36 @@ Detections RunDetrHead(const DetrHead& head, torch::Tensor src, const DetrConfig
 
   auto query = head.query_embed->weight.unsqueeze(1).repeat({1, b, 1});  // [Q, B, d]
   auto tgt = torch::zeros_like(query);
-  for (const auto& m : *head.decoder) {
-    tgt = m->as<DecoderLayerImpl>()->forward(tgt, memory, pos_seq, query);
-  }
-  auto decoder_norm = head.decoder_norm;
-  tgt = decoder_norm->forward(tgt);  // DETR's final decoder LayerNorm
-
-  auto hs = tgt.transpose(0, 1);  // [B, Q, d]
   // Copy the holders (cheap shared handles) so forward() isn't called through a
   // const reference.
+  auto decoder_norm = head.decoder_norm;
   auto class_embed = head.class_embed;
   auto bbox_embed = head.bbox_embed;
+
+  // In training, collect every layer's (decoder-normed) output for deep
+  // supervision. Each intermediate goes through DETR's shared decoder LayerNorm,
+  // exactly like return_intermediate=True in the reference.
+  const bool collect_aux = decoder_norm->is_training();
+  std::vector<torch::Tensor> hs_layers;  // normed [B, Q, d] per decoder layer
+  for (const auto& m : *head.decoder) {
+    tgt = m->as<DecoderLayerImpl>()->forward(tgt, memory, pos_seq, query);
+    if (collect_aux) {
+      hs_layers.push_back(decoder_norm->forward(tgt).transpose(0, 1));
+    }
+  }
+
   Detections out;
-  out.logits = class_embed->forward(hs);
-  out.boxes = bbox_embed->forward(hs).sigmoid();
+  // Final output = last decoder layer after the decoder LayerNorm. When not
+  // collecting aux this is the only norm/head application, so the inference path
+  // is numerically identical to before.
+  auto hs_final = collect_aux ? hs_layers.back() : decoder_norm->forward(tgt).transpose(0, 1);
+  out.logits = class_embed->forward(hs_final);
+  out.boxes = bbox_embed->forward(hs_final).sigmoid();
+  // Auxiliary outputs: every layer except the last, through the shared heads.
+  for (std::size_t i = 0; i + 1 < hs_layers.size(); ++i) {
+    out.aux_logits.push_back(class_embed->forward(hs_layers[i]));
+    out.aux_boxes.push_back(bbox_embed->forward(hs_layers[i]).sigmoid());
+  }
   return out;
 }
 

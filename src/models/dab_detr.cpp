@@ -5,6 +5,7 @@
 #include <torch/torch.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <numbers>
@@ -165,6 +166,9 @@ class DabDetrImpl : public IModel {
 
     torch::Tensor boxes;
     int layer_id = 0;
+    const bool collect_aux = class_embed_->is_training();
+    std::vector<torch::Tensor> tgt_layers;
+    std::vector<torch::Tensor> box_layers;
     for (const auto& m : *decoder_) {
       auto obj = reference;                              // [nq, B, 4]
       auto sine4 = SineEmbed4D(obj, d);                  // [nq, B, 2d]
@@ -185,6 +189,10 @@ class DabDetrImpl : public IModel {
       // iterative anchor refinement.
       auto new_ref = (bbox_embed_->forward(tgt) + InverseSigmoid(reference)).sigmoid();
       boxes = new_ref;
+      if (collect_aux) {
+        tgt_layers.push_back(tgt);
+        box_layers.push_back(new_ref);
+      }
       reference = new_ref.detach();
       ++layer_id;
     }
@@ -192,6 +200,11 @@ class DabDetrImpl : public IModel {
     Detections det;
     det.logits = class_embed_->forward(tgt.transpose(0, 1));  // [B, nq, num_classes]
     det.boxes = boxes.transpose(0, 1);                        // [B, nq, 4] cxcywh
+    // Deep supervision: per-layer class head + the layer's refined anchor box.
+    for (std::size_t i = 0; collect_aux && i + 1 < tgt_layers.size(); ++i) {
+      det.aux_logits.push_back(class_embed_->forward(tgt_layers[i].transpose(0, 1)));
+      det.aux_boxes.push_back(box_layers[i].transpose(0, 1));
+    }
     return det;
   }
 

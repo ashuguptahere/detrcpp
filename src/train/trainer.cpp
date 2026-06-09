@@ -2,6 +2,7 @@
 
 #include "detr/train/trainer.hpp"
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -59,6 +60,17 @@ float Trainer::TrainStep(const torch::Tensor& images, const TargetBatch& targets
   auto outputs = model_->Forward(images);
   auto matches = HungarianMatch(outputs, targets, cfg_.match);
   auto losses = criterion_.Compute(outputs, targets, matches);
+  // Deep supervision: the same set loss on every intermediate decoder layer,
+  // each independently matched (DETR's auxiliary losses). Models populate the
+  // aux outputs only in training mode; non-deep-supervised models leave them
+  // empty and this loop is a no-op.
+  for (std::size_t i = 0; i < outputs.aux_logits.size(); ++i) {
+    models::Detections aux;
+    aux.logits = outputs.aux_logits[i];
+    aux.boxes = outputs.aux_boxes[i];
+    const auto aux_matches = HungarianMatch(aux, targets, cfg_.match);
+    losses.total = losses.total + criterion_.Compute(aux, targets, aux_matches).total;
+  }
   losses.total.backward();
   if (cfg_.grad_clip > 0.0) {
     torch::nn::utils::clip_grad_norm_(model_->parameters(), cfg_.grad_clip);

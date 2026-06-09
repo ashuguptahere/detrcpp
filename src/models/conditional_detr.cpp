@@ -5,6 +5,7 @@
 #include <torch/torch.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <numbers>
@@ -163,6 +164,8 @@ class ConditionalDetrImpl : public IModel {
     auto reference = ref_point_head_->forward(query_pos).sigmoid();  // [nq, B, 2]
 
     int layer_id = 0;
+    const bool collect_aux = decoder_norm_->is_training();
+    std::vector<torch::Tensor> tgt_layers;
     for (const auto& m : *decoder_) {
       auto query_sine = SineEmbedForRef(reference, d);  // [nq, B, d]
       if (layer_id > 0) {
@@ -170,18 +173,27 @@ class ConditionalDetrImpl : public IModel {
       }
       tgt = m->as<CondDecoderLayerImpl>()->forward(tgt, memory, pos, query_pos, query_sine,
                                                    layer_id == 0);
+      if (collect_aux) {
+        tgt_layers.push_back(tgt);
+      }
       ++layer_id;
     }
 
-    tgt = decoder_norm_->forward(tgt);                            // final decoder LayerNorm
-    auto hs = tgt.transpose(0, 1);                                // [B, nq, d]
+    // Conditional-DETR uses a fixed reference + shared heads; apply the final
+    // decoder LayerNorm and heads per layer for deep supervision. The final
+    // application below is numerically identical to before.
     auto ref_before = InverseSigmoid(reference).transpose(0, 1);  // [B, nq, 2]
-    auto box = bbox_embed_->forward(hs);                          // [B, nq, 4]
-    box = box + torch::cat({ref_before, torch::zeros_like(ref_before)}, -1);
+    auto ref_pad = torch::cat({ref_before, torch::zeros_like(ref_before)}, -1);
+    auto hs = decoder_norm_->forward(tgt).transpose(0, 1);  // [B, nq, d]
 
     Detections det;
     det.logits = class_embed_->forward(hs);  // [B, nq, num_classes] (sigmoid/focal)
-    det.boxes = box.sigmoid();
+    det.boxes = (bbox_embed_->forward(hs) + ref_pad).sigmoid();
+    for (std::size_t i = 0; collect_aux && i + 1 < tgt_layers.size(); ++i) {
+      auto hs_i = decoder_norm_->forward(tgt_layers[i]).transpose(0, 1);
+      det.aux_logits.push_back(class_embed_->forward(hs_i));
+      det.aux_boxes.push_back((bbox_embed_->forward(hs_i) + ref_pad).sigmoid());
+    }
     return det;
   }
 
