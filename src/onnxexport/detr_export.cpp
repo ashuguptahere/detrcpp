@@ -6,13 +6,13 @@
 
 #include "detr/onnxexport/detr_export.hpp"
 
+#include <fmt/format.h>
+
 #include <cmath>
 #include <cstring>
 #include <optional>
 #include <string>
 #include <vector>
-
-#include <fmt/format.h>
 
 #include "detr/onnxexport/graph_builder.hpp"
 #include "detr/weights/state_dict.hpp"
@@ -234,10 +234,10 @@ struct Emitter {
     std::string khT = Transpose(kh, {0, 2, 1});      // [nh,hd,lk]
     std::string scores = Binary("MatMul", qh, khT);  // [nh,lq,lk]
     std::string attn = Softmax(scores, -1);
-    std::string ctx = Binary("MatMul", attn, vh);    // [nh,lq,hd]
+    std::string ctx = Binary("MatMul", attn, vh);  // [nh,lq,hd]
 
-    std::string back = Transpose(ctx, {1, 0, 2});    // [lq,nh,hd]
-    std::string flat = Reshape(back, {lq, d});       // [lq,d]
+    std::string back = Transpose(ctx, {1, 0, 2});  // [lq,nh,hd]
+    std::string flat = Reshape(back, {lq, d});     // [lq,d]
     return Gemm(flat, prefix + ".out_proj.weight", prefix + ".out_proj.bias");
   }
 
@@ -276,8 +276,8 @@ struct Emitter {
   }
 
   std::string ResNet50Backbone(const std::string& input) {
-    std::string x = Unary(
-        "Relu", Bn(Conv(input, "backbone.conv1.weight", "", 7, 2, 3), "backbone.bn1"));
+    std::string x =
+        Unary("Relu", Bn(Conv(input, "backbone.conv1.weight", "", 7, 2, 3), "backbone.bn1"));
     x = Pool(x, 3, 2, 1);
     const auto& blocks = a.resnet_blocks;
     const int strides[4] = {1, 2, 2, 2};
@@ -308,9 +308,9 @@ struct Emitter {
       const double ys = (i + 1) / (static_cast<double>(h) + 1e-6) * scale;
       for (int j = 0; j < w; ++j) {
         const double xs = (j + 1) / (static_cast<double>(w) + 1e-6) * scale;
-        const std::size_t base =
-            (static_cast<std::size_t>(i) * static_cast<std::size_t>(w) +
-             static_cast<std::size_t>(j)) * static_cast<std::size_t>(d);
+        const std::size_t base = (static_cast<std::size_t>(i) * static_cast<std::size_t>(w) +
+                                  static_cast<std::size_t>(j)) *
+                                 static_cast<std::size_t>(d);
         for (int c = 0; c < half; ++c) {
           const double v = ys / dim_t[static_cast<std::size_t>(c)];
           pos[base + static_cast<std::size_t>(c)] =
@@ -342,9 +342,8 @@ core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& we
   g.AddInput("images", {1, 3, arch.imgsz, arch.imgsz});
 
   // --- backbone (compact conv stack or torchvision ResNet-50) ---
-  std::string backbone_out = (arch.backbone == Backbone::ResNet50)
-                                 ? e.ResNet50Backbone("images")
-                                 : e.CompactBackbone("images");
+  std::string backbone_out = (arch.backbone == Backbone::ResNet50) ? e.ResNet50Backbone("images")
+                                                                   : e.CompactBackbone("images");
 
   // input_proj 1x1 conv (has bias) -> [1,d,feat,feat]. The weight initializer
   // carries the input channel count, so this is the same for both backbones.
@@ -370,10 +369,11 @@ core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& we
   }
 
   // --- decoder ---
-  e.AddWeight("query_embed.weight");                 // [Q, d]
+  e.AddWeight("query_embed.weight");  // [Q, d]
   const std::string query_pos = "query_embed.weight";
-  e.AddFloatConst("dec_tgt0", {Q, d},
-                  std::vector<float>(static_cast<std::size_t>(Q) * static_cast<std::size_t>(d), 0.0F));
+  e.AddFloatConst(
+      "dec_tgt0", {Q, d},
+      std::vector<float>(static_cast<std::size_t>(Q) * static_cast<std::size_t>(d), 0.0F));
   std::string tgt = "dec_tgt0";
   for (int i = 0; i < arch.dec_layers; ++i) {
     const std::string p = fmt::format("decoder.{}", i);

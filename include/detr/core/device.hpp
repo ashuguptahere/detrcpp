@@ -32,8 +32,8 @@ enum class DeviceKind : std::uint8_t {
 
 struct Device {
   DeviceKind kind{DeviceKind::Auto};
-  int index{0};         // e.g. cuda:0 → 0
-  std::string serial;   // optional vendor-specific identifier
+  int index{0};        // e.g. cuda:0 → 0
+  std::string serial;  // optional vendor-specific identifier
 };
 
 std::string_view ToString(DeviceKind k);

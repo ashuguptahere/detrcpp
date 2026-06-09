@@ -23,15 +23,14 @@ torch::Tensor BoxXyxyToCxcywh(const torch::Tensor& x) {
 }
 
 torch::Tensor BoxArea(const torch::Tensor& boxes) {
-  return (boxes.select(-1, 2) - boxes.select(-1, 0)) *
-         (boxes.select(-1, 3) - boxes.select(-1, 1));
+  return (boxes.select(-1, 2) - boxes.select(-1, 0)) * (boxes.select(-1, 3) - boxes.select(-1, 1));
 }
 
 std::pair<torch::Tensor, torch::Tensor> BoxIou(const torch::Tensor& a, const torch::Tensor& b) {
-  auto area1 = BoxArea(a);  // [N]
-  auto area2 = BoxArea(b);  // [M]
-  auto a2 = a.unsqueeze(1);  // [N,1,4]
-  auto b2 = b.unsqueeze(0);  // [1,M,4]
+  auto area1 = BoxArea(a);                                         // [N]
+  auto area2 = BoxArea(b);                                         // [M]
+  auto a2 = a.unsqueeze(1);                                        // [N,1,4]
+  auto b2 = b.unsqueeze(0);                                        // [1,M,4]
   auto lt = torch::max(a2.narrow(-1, 0, 2), b2.narrow(-1, 0, 2));  // [N,M,2]
   auto rb = torch::min(a2.narrow(-1, 2, 2), b2.narrow(-1, 2, 2));  // [N,M,2]
   auto wh = (rb - lt).clamp_min(0);                                // [N,M,2]

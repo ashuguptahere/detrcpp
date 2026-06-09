@@ -1,11 +1,11 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
-#include "detr/onnxexport/graph_builder.hpp"
+#include <gtest/gtest.h>
 
 #include <filesystem>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "detr/onnxexport/graph_builder.hpp"
 
 namespace detr::onnxexport {
 namespace {

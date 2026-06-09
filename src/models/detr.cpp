@@ -2,10 +2,10 @@
 
 #include "detr/models/detr.hpp"
 
+#include <torch/torch.h>
+
 #include <memory>
 #include <string>
-
-#include <torch/torch.h>
 
 #include "detr/models/deformable_detr.hpp"
 #include "detr/models/detr_head.hpp"
@@ -54,8 +54,8 @@ Config ReadConfig(const YAML::Node& cfg) {
 }
 
 DetrConfig ToHeadConfig(const Config& c) {
-  return DetrConfig{c.hidden_dim, c.nheads,       c.enc_layers,
-                    c.dec_layers, c.dim_feedforward, c.num_queries, c.num_classes};
+  return DetrConfig{c.hidden_dim,      c.nheads,      c.enc_layers, c.dec_layers,
+                    c.dim_feedforward, c.num_queries, c.num_classes};
 }
 
 nn::Sequential MakeBackbone(int w0) {

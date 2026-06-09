@@ -6,9 +6,9 @@
 
 #pragma once
 
-#include <vector>
-
 #include <torch/torch.h>
+
+#include <vector>
 
 namespace detr::train {
 

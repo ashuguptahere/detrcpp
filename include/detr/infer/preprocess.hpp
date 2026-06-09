@@ -18,7 +18,6 @@ torch::Tensor PreprocessImage(const io::RgbImage& img, int imgsz);
 // DETR's eval preprocessing: resize so the shortest side is |short_side|,
 // preserving aspect ratio, but never letting the longest side exceed |max_size|.
 // Returns [1, 3, H, W] (variable H, W). Use at batch 1 (no padding/mask needed).
-torch::Tensor PreprocessImageAspect(const io::RgbImage& img, int short_side,
-                                    int max_size = 1333);
+torch::Tensor PreprocessImageAspect(const io::RgbImage& img, int short_side, int max_size = 1333);
 
 }  // namespace detr::infer

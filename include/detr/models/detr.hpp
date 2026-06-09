@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <memory>
-
 #include <yaml-cpp/yaml.h>
+
+#include <memory>
 
 #include "detr/models/model.hpp"
 

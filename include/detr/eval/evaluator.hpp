@@ -19,9 +19,8 @@ namespace detr::eval {
 // true, images are resized keeping aspect (shortest side = imgsz, longest <=
 // |max_size|) and run one at a time — DETR's eval preprocessing — instead of the
 // square-resize batched path.
-CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
-                          data::Split split, int imgsz, int batch, torch::Device device,
-                          int max_images = 0, bool aspect_preserve = false,
-                          int max_size = 1333);
+CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, data::Split split,
+                          int imgsz, int batch, torch::Device device, int max_images = 0,
+                          bool aspect_preserve = false, int max_size = 1333);
 
 }  // namespace detr::eval

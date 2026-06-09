@@ -2,6 +2,9 @@
 
 #include "detr/weights/safetensors.hpp"
 
+#include <fmt/format.h>
+#include <simdjson.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -10,9 +13,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#include <fmt/format.h>
-#include <simdjson.h>
 
 #include "detr/weights/tensor.hpp"
 
@@ -40,13 +40,27 @@ void AppendJsonEscaped(std::string_view s, std::string& out) {
   for (const char ch : s) {
     const unsigned char c = static_cast<unsigned char>(ch);
     switch (c) {
-      case '"':  out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\b': out += "\\b";  break;
-      case '\f': out += "\\f";  break;
-      case '\n': out += "\\n";  break;
-      case '\r': out += "\\r";  break;
-      case '\t': out += "\\t";  break;
+      case '"':
+        out += "\\\"";
+        break;
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
+        break;
+      case '\n':
+        out += "\\n";
+        break;
+      case '\r':
+        out += "\\r";
+        break;
+      case '\t':
+        out += "\\t";
+        break;
       default:
         if (c < 0x20) {
           static constexpr char kHex[] = "0123456789abcdef";
@@ -83,8 +97,7 @@ Result<StateDict> LoadSafetensors(const std::filesystem::path& path) {
   const std::uint64_t header_len = ReadLittleEndianU64(buf.data());
   if (header_len > kMaxHeaderBytes || 8 + header_len > file_size) {
     return Err(ErrorCode::ParseError,
-               fmt::format("bad safetensors header length {} in '{}'", header_len,
-                           path.string()));
+               fmt::format("bad safetensors header length {} in '{}'", header_len, path.string()));
   }
 
   const char* data_begin = buf.data() + 8 + header_len;
@@ -94,9 +107,8 @@ Result<StateDict> LoadSafetensors(const std::filesystem::path& path) {
   simdjson::dom::element doc;
   auto perr = parser.parse(buf.data() + 8, static_cast<std::size_t>(header_len)).get(doc);
   if (perr) {
-    return Err(ErrorCode::ParseError,
-               fmt::format("header JSON parse error in '{}': {}", path.string(),
-                           simdjson::error_message(perr)));
+    return Err(ErrorCode::ParseError, fmt::format("header JSON parse error in '{}': {}",
+                                                  path.string(), simdjson::error_message(perr)));
   }
   simdjson::dom::object root;
   if (doc.get(root)) {
@@ -165,19 +177,15 @@ Result<StateDict> LoadSafetensors(const std::filesystem::path& path) {
       }
       offs.push_back(v);
     }
-    if (offs.size() != 2 || offs[0] > offs[1] ||
-        static_cast<std::uint64_t>(offs[1]) > data_len) {
-      return Err(ErrorCode::ParseError,
-                 fmt::format("tensor '{}' data_offsets out of range", key));
+    if (offs.size() != 2 || offs[0] > offs[1] || static_cast<std::uint64_t>(offs[1]) > data_len) {
+      return Err(ErrorCode::ParseError, fmt::format("tensor '{}' data_offsets out of range", key));
     }
 
     const std::uint64_t span = static_cast<std::uint64_t>(offs[1] - offs[0]);
-    const std::uint64_t expected =
-        static_cast<std::uint64_t>(numel) * DTypeSize(*dtype);
+    const std::uint64_t expected = static_cast<std::uint64_t>(numel) * DTypeSize(*dtype);
     if (span != expected) {
       return Err(ErrorCode::ParseError,
-                 fmt::format("tensor '{}' byte span {} != shape*dtype {}", key, span,
-                             expected));
+                 fmt::format("tensor '{}' byte span {} != shape*dtype {}", key, span, expected));
     }
 
     rt.data.resize(static_cast<std::size_t>(span));

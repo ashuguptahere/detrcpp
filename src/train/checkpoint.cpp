@@ -2,11 +2,11 @@
 
 #include "detr/train/checkpoint.hpp"
 
+#include <fmt/format.h>
+
 #include <exception>
 #include <string>
 #include <utility>
-
-#include <fmt/format.h>
 
 #include "detr/weights/safetensors.hpp"
 #include "detr/weights/state_dict.hpp"

@@ -1,6 +1,6 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
-#include "detr/weights/safetensors.hpp"
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <cstring>
@@ -10,8 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
-
+#include "detr/weights/safetensors.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/tensor.hpp"
 
@@ -133,8 +132,8 @@ TEST(Safetensors, SaveRejectsByteLengthMismatch) {
   StateDict sd;
   RawTensor bad;
   bad.dtype = DType::F32;
-  bad.shape = {10};            // claims 40 bytes
-  bad.data.resize(8);          // but only 8
+  bad.shape = {10};    // claims 40 bytes
+  bad.data.resize(8);  // but only 8
   sd.Set("bad", std::move(bad));
   auto save = SaveSafetensors(TempFile(), sd);
   EXPECT_FALSE(save.has_value());

@@ -7,10 +7,10 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <cstdint>
 #include <memory>
-
-#include <torch/torch.h>
 
 #include "detr/models/model.hpp"
 #include "detr/train/criterion.hpp"

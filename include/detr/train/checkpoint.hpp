@@ -11,10 +11,10 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <filesystem>
 #include <string>
-
-#include <torch/torch.h>
 
 #include "detr/core/result.hpp"
 #include "detr/models/model.hpp"

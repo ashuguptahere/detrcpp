@@ -5,10 +5,10 @@
 // trainer/eval/predict/ONNX paths are shared with `detr` and covered elsewhere;
 // this confirms the new model slots into all of them.
 
-#include <filesystem>
-
 #include <gtest/gtest.h>
 #include <torch/torch.h>
+
+#include <filesystem>
 
 #include "detr/models/registry.hpp"
 #include "detr/train/target.hpp"

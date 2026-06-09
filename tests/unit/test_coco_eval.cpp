@@ -1,10 +1,10 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
-#include "detr/eval/coco_eval.hpp"
+#include <gtest/gtest.h>
 
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "detr/eval/coco_eval.hpp"
 
 namespace detr::eval {
 namespace {

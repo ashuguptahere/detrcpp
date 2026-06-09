@@ -47,8 +47,8 @@ const std::array<double, kR>& RecThrs() {
 
 const std::array<std::array<double, 2>, kA>& AreaRng() {
   static const std::array<std::array<double, 2>, kA> v = {{
-      {0.0, 1e10},        // all
-      {0.0, 32.0 * 32},   // small
+      {0.0, 1e10},       // all
+      {0.0, 32.0 * 32},  // small
       {32.0 * 32, 96.0 * 96},
       {96.0 * 96, 1e10},  // large
   }};
@@ -259,8 +259,8 @@ CocoMetrics CocoEvaluate(const std::vector<EvalImage>& images,
       for (int i = 0; i < num_imgs; ++i) {
         evals[static_cast<std::size_t>(i)] =
             EvaluateImg(img_gts[static_cast<std::size_t>(i)], img_dts[static_cast<std::size_t>(i)],
-                        img_iou[static_cast<std::size_t>(i)], AreaRng()[static_cast<std::size_t>(a)],
-                        MaxDets()[kM - 1]);
+                        img_iou[static_cast<std::size_t>(i)],
+                        AreaRng()[static_cast<std::size_t>(a)], MaxDets()[kM - 1]);
       }
 
       for (int m = 0; m < kM; ++m) {

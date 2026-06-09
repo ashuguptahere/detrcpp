@@ -7,10 +7,10 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <utility>
 #include <vector>
-
-#include <torch/torch.h>
 
 #include "detr/models/model.hpp"
 #include "detr/train/target.hpp"
@@ -21,7 +21,7 @@ struct MatchWeights {
   double cls{1.0};
   double bbox{5.0};
   double giou{2.0};
-  bool focal{false};         // sigmoid-focal classification cost (vs softmax prob).
+  bool focal{false};  // sigmoid-focal classification cost (vs softmax prob).
   double focal_alpha{0.25};
   double focal_gamma{2.0};
 };
@@ -33,7 +33,7 @@ using MatchIndices = std::pair<torch::Tensor, torch::Tensor>;
 // Computes the optimal assignment for every image in the batch. No gradients
 // flow through matching (it only selects indices).
 std::vector<MatchIndices> HungarianMatch(const models::Detections& outputs,
-                                          const TargetBatch& targets,
-                                          const MatchWeights& weights = {});
+                                         const TargetBatch& targets,
+                                         const MatchWeights& weights = {});
 
 }  // namespace detr::train

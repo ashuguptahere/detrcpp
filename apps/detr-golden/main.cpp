@@ -5,12 +5,12 @@
 // input, and the reference outputs as .safetensors so the torch-free ONNX parity
 // tool can export the same weights and compare. Built with DETR_ENABLE_TORCH.
 
+#include <torch/torch.h>
+#include <yaml-cpp/yaml.h>
+
 #include <cstdio>
 #include <filesystem>
 #include <string>
-
-#include <torch/torch.h>
-#include <yaml-cpp/yaml.h>
 
 #include "detr/models/detr.hpp"
 #include "detr/models/registry.hpp"
@@ -68,7 +68,6 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  std::printf("golden written to %s (imgsz=%d, %zu weights)\n", out.c_str(), imgsz,
-              weights.Size());
+  std::printf("golden written to %s (imgsz=%d, %zu weights)\n", out.c_str(), imgsz, weights.Size());
   return 0;
 }

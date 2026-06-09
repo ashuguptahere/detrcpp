@@ -1,15 +1,14 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
-#include "detr/data/dataset.hpp"
+#include <gtest/gtest.h>
 
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
-#include <gtest/gtest.h>
-
 #include "detr/data/coco.hpp"
+#include "detr/data/dataset.hpp"
 #include "detr/data/sample.hpp"
 
 namespace detr::data {
@@ -52,7 +51,7 @@ TEST(Coco, ParsesAndNormalizes) {
   // Crowd annotation dropped -> only one box.
   ASSERT_EQ(s.boxes.size(), 1U);
   const BBox& b = s.boxes[0];
-  EXPECT_EQ(b.class_id, 0);                 // category_id 1 -> dog -> class 0
+  EXPECT_EQ(b.class_id, 0);                         // category_id 1 -> dog -> class 0
   EXPECT_FLOAT_EQ(b.cx, (10.0F + 15.0F) / 100.0F);  // (x + w/2)/W
   EXPECT_FLOAT_EQ(b.cy, (20.0F + 20.0F) / 200.0F);  // (y + h/2)/H
   EXPECT_FLOAT_EQ(b.w, 30.0F / 100.0F);

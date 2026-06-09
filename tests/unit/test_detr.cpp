@@ -4,13 +4,12 @@
 // pass with the correct output shapes and box range, and round-trips its weights
 // through the safetensors interchange into a freshly-built model.
 
-#include "detr/models/detr.hpp"
-
-#include <filesystem>
-
 #include <gtest/gtest.h>
 #include <torch/torch.h>
 
+#include <filesystem>
+
+#include "detr/models/detr.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/weights/safetensors.hpp"
 #include "detr/weights/state_dict.hpp"
@@ -74,8 +73,7 @@ TEST_F(DetrTest, WeightsRoundTripThroughSafetensors) {
   weights::StateDict sd = weights::StateDictFromModule(*a);
   EXPECT_GT(sd.Size(), 10U);  // backbone + transformer + heads have many tensors
 
-  const auto path =
-      std::filesystem::temp_directory_path() / "detr_model_roundtrip.safetensors";
+  const auto path = std::filesystem::temp_directory_path() / "detr_model_roundtrip.safetensors";
   ASSERT_TRUE(weights::SaveSafetensors(path, sd).has_value());
   auto loaded = weights::LoadSafetensors(path);
   ASSERT_TRUE(loaded.has_value()) << loaded.error().message;

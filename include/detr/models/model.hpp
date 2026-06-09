@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include <string>
-
 #include <torch/torch.h>
+
+#include <string>
 
 #include "detr/weights/remapper.hpp"
 
@@ -18,7 +18,7 @@ namespace detr::models {
 struct ModelMeta {
   std::string name;
   int imgsz{640};
-  int num_classes{91};   // COCO categories (the +1 no-object slot is internal)
+  int num_classes{91};  // COCO categories (the +1 no-object slot is internal)
   int num_queries{100};
   // Classification mode. false: softmax over num_classes+1 (DETR, with a no-object
   // slot). true: sigmoid/focal over num_classes (Deformable-DETR and the modern

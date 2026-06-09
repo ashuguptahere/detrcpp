@@ -2,13 +2,13 @@
 
 #include "detr/models/deformable_detr.hpp"
 
+#include <torch/torch.h>
+
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <torch/torch.h>
 
 #include "detr/models/deform_attn.hpp"
 #include "detr/models/model.hpp"
@@ -94,7 +94,7 @@ torch::Tensor EncoderReferencePoints(const SpatialShapes& shapes,
     auto ref = torch::stack({grid[1].reshape(-1), grid[0].reshape(-1)}, -1);  // (x, y)
     refs.push_back(ref);
   }
-  auto reference = torch::cat(refs, 0);                 // [Sum(H*W), 2]
+  auto reference = torch::cat(refs, 0);  // [Sum(H*W), 2]
   const auto levels = static_cast<std::int64_t>(shapes.size());
   return reference.view({1, -1, 1, 2}).expand({1, reference.size(0), levels, 2}).contiguous();
 }
@@ -199,10 +199,10 @@ class DeformableDetrImpl : public IModel {
     // Deformable-DETR uses a sigmoid/focal classifier: num_classes logits (no
     // explicit no-object slot), and a 3-layer MLP box head over reference points.
     class_embed_ = register_module("class_embed", nn::Linear(d, cfg.num_classes));
-    bbox_embed_ = register_module(
-        "bbox_embed",
-        nn::Sequential(nn::Linear(d, d), nn::Functional(torch::relu), nn::Linear(d, d),
-                       nn::Functional(torch::relu), nn::Linear(d, 4)));
+    bbox_embed_ =
+        register_module("bbox_embed", nn::Sequential(nn::Linear(d, d), nn::Functional(torch::relu),
+                                                     nn::Linear(d, d), nn::Functional(torch::relu),
+                                                     nn::Linear(d, 4)));
   }
 
   Detections Forward(torch::Tensor images) override {
@@ -212,13 +212,13 @@ class DeformableDetrImpl : public IModel {
 
     std::vector<torch::Tensor> srcs;
     for (int i = 0; i < 3; ++i) {
-      srcs.push_back(input_proj_[static_cast<std::size_t>(i)]
-                         ->as<nn::SequentialImpl>()
-                         ->forward(feats[static_cast<std::size_t>(i)]));
+      srcs.push_back(input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(
+          feats[static_cast<std::size_t>(i)]));
     }
     for (int i = 3; i < cfg_.num_levels; ++i) {
       auto in = (i == 3) ? feats[2] : srcs.back();
-      srcs.push_back(input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(in));
+      srcs.push_back(
+          input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(in));
     }
 
     SpatialShapes shapes;
@@ -243,7 +243,7 @@ class DeformableDetrImpl : public IModel {
       memory = m->as<EncoderLayerImpl>()->forward(memory, pos_cat, enc_ref, shapes);
     }
 
-    auto qe = query_embed_->weight;                            // [num_queries, 2d]
+    auto qe = query_embed_->weight;                                       // [num_queries, 2d]
     auto query_pos = qe.slice(1, 0, d).unsqueeze(0).expand({b, -1, -1});  // [B, nq, d]
     auto tgt = qe.slice(1, d, 2 * d).unsqueeze(0).expand({b, -1, -1});
     auto reference_points = reference_points_->forward(query_pos).sigmoid();  // [B, nq, 2]
@@ -255,8 +255,8 @@ class DeformableDetrImpl : public IModel {
     }
 
     Detections det;
-    det.logits = class_embed_->forward(out);                 // [B, nq, num_classes] (sigmoid/focal)
-    auto box = bbox_embed_->forward(out);                    // [B, nq, 4]
+    det.logits = class_embed_->forward(out);  // [B, nq, num_classes] (sigmoid/focal)
+    auto box = bbox_embed_->forward(out);     // [B, nq, 4]
     box = box + torch::cat({InverseSigmoid(reference_points),
                             torch::zeros({b, cfg_.num_queries, 2}, box.options())},
                            -1);

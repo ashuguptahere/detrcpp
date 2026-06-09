@@ -2,14 +2,14 @@
 
 #include "detr/io/source.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <regex>
 #include <string>
 #include <vector>
-
-#include <fmt/format.h>
 
 namespace detr::io {
 
@@ -24,8 +24,8 @@ bool IsImageExt(const fs::path& p) {
   std::string e = p.extension().string();
   std::transform(e.begin(), e.end(), e.begin(),
                  [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-  return e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".bmp" || e == ".webp" ||
-         e == ".ppm" || e == ".pgm" || e == ".tga" || e == ".gif";
+  return e == ".jpg" || e == ".jpeg" || e == ".png" || e == ".bmp" || e == ".webp" || e == ".ppm" ||
+         e == ".pgm" || e == ".tga" || e == ".gif";
 }
 
 bool StartsWith(const std::string& s, const std::string& prefix) {
@@ -37,14 +37,29 @@ std::regex GlobToRegex(const std::string& glob) {
   std::string re = "^";
   for (const char c : glob) {
     switch (c) {
-      case '*': re += ".*"; break;
-      case '?': re += '.'; break;
-      case '.': case '(': case ')': case '+': case '|': case '^':
-      case '$': case '\\': case '{': case '}': case '[': case ']':
+      case '*':
+        re += ".*";
+        break;
+      case '?':
+        re += '.';
+        break;
+      case '.':
+      case '(':
+      case ')':
+      case '+':
+      case '|':
+      case '^':
+      case '$':
+      case '\\':
+      case '{':
+      case '}':
+      case '[':
+      case ']':
         re += '\\';
         re += c;
         break;
-      default: re += c;
+      default:
+        re += c;
     }
   }
   re += '$';
@@ -57,8 +72,8 @@ Result<std::vector<std::string>> ResolveImageSources(const std::string& spec) {
   if (spec.empty()) {
     return Err(ErrorCode::InvalidArgument, "empty source");
   }
-  if (StartsWith(spec, "http://") || StartsWith(spec, "https://") ||
-      StartsWith(spec, "rtsp://") || StartsWith(spec, "webcam:") || spec == "-") {
+  if (StartsWith(spec, "http://") || StartsWith(spec, "https://") || StartsWith(spec, "rtsp://") ||
+      StartsWith(spec, "webcam:") || spec == "-") {
     return Err(ErrorCode::Unsupported,
                fmt::format("source '{}': URLs / video / webcam land in Phase 3 "
                            "(libcurl + FFmpeg); use an image file, directory, or glob",
@@ -73,8 +88,8 @@ Result<std::vector<std::string>> ResolveImageSources(const std::string& spec) {
     const fs::path dir = pattern.has_parent_path() ? pattern.parent_path() : fs::path(".");
     const std::regex re = GlobToRegex(pattern.filename().string());
     for (const auto& entry : fs::directory_iterator(dir, ec)) {
-      if (entry.is_regular_file(ec) &&
-          std::regex_match(entry.path().filename().string(), re) && IsImageExt(entry.path())) {
+      if (entry.is_regular_file(ec) && std::regex_match(entry.path().filename().string(), re) &&
+          IsImageExt(entry.path())) {
         out.push_back(entry.path().string());
       }
     }

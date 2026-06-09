@@ -2,6 +2,9 @@
 
 #include "detr/data/yolo.hpp"
 
+#include <fmt/format.h>
+#include <yaml-cpp/yaml.h>
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -10,9 +13,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
-#include <fmt/format.h>
-#include <yaml-cpp/yaml.h>
 
 #include "detr/data/sample.hpp"
 
@@ -133,8 +133,7 @@ Result<Dataset> LoadYolo(const fs::path& root) {
     } else if (fs::exists(root / "data.yml", ec)) {
       yaml_path = root / "data.yml";
     } else {
-      return Err(ErrorCode::NotFound,
-                 fmt::format("no data.yaml under '{}'", root.string()));
+      return Err(ErrorCode::NotFound, fmt::format("no data.yaml under '{}'", root.string()));
     }
   }
 

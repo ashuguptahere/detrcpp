@@ -2,6 +2,8 @@
 
 #include "detr/data/loader.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <random>
@@ -9,11 +11,10 @@
 #include <utility>
 #include <vector>
 
-#include <fmt/format.h>
-
-#include "detr/log/log.hpp"
 #include "stb_image.h"
 #include "stb_image_resize2.h"
+
+#include "detr/log/log.hpp"
 
 namespace detr::data {
 
@@ -64,8 +65,7 @@ train::Target TargetFromSample(const Sample& s) {
 
 }  // namespace
 
-DataLoader::DataLoader(Dataset dataset, Split split, int imgsz, int batch_size,
-                       std::uint64_t seed)
+DataLoader::DataLoader(Dataset dataset, Split split, int imgsz, int batch_size, std::uint64_t seed)
     : dataset_(std::move(dataset)), imgsz_(imgsz), batch_(batch_size) {
   indices_ = dataset_.IndicesOf(split);
   Reshuffle(seed);

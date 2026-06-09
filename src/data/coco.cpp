@@ -2,15 +2,15 @@
 
 #include "detr/data/coco.hpp"
 
+#include <fmt/format.h>
+#include <simdjson.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <fmt/format.h>
-#include <simdjson.h>
 
 namespace detr::data {
 

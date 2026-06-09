@@ -3,7 +3,8 @@
 // Image I/O + source resolution + the full predict primitives (preprocess ->
 // model -> postprocess -> draw -> save).
 
-#include "detr/io/image.hpp"
+#include <gtest/gtest.h>
+#include <torch/torch.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -11,11 +12,9 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
-#include <torch/torch.h>
-
 #include "detr/infer/postprocess.hpp"
 #include "detr/infer/preprocess.hpp"
+#include "detr/io/image.hpp"
 #include "detr/io/source.hpp"
 #include "detr/models/registry.hpp"
 

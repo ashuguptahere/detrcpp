@@ -2,13 +2,13 @@
 
 #include "detr/data/dataset.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <random>
 #include <string_view>
-
-#include <fmt/format.h>
 
 #include "detr/data/coco.hpp"
 #include "detr/data/sample.hpp"
@@ -20,27 +20,33 @@ namespace fs = std::filesystem;
 
 std::string_view ToString(Split s) {
   switch (s) {
-    case Split::Train: return "train";
-    case Split::Val:   return "val";
-    case Split::Test:  return "test";
+    case Split::Train:
+      return "train";
+    case Split::Val:
+      return "val";
+    case Split::Test:
+      return "test";
   }
   return "train";
 }
 
 std::string_view ToString(Format f) {
   switch (f) {
-    case Format::Auto: return "auto";
-    case Format::Coco: return "coco";
-    case Format::Yolo: return "yolo";
-    case Format::Detr: return "detr";
+    case Format::Auto:
+      return "auto";
+    case Format::Coco:
+      return "coco";
+    case Format::Yolo:
+      return "yolo";
+    case Format::Detr:
+      return "detr";
   }
   return "auto";
 }
 
 std::size_t Dataset::CountOf(Split s) const {
   return static_cast<std::size_t>(
-      std::count_if(samples.begin(), samples.end(),
-                    [s](const Sample& x) { return x.split == s; }));
+      std::count_if(samples.begin(), samples.end(), [s](const Sample& x) { return x.split == s; }));
 }
 
 std::vector<std::size_t> Dataset::IndicesOf(Split s) const {
@@ -57,9 +63,7 @@ void Dataset::Shuffle(std::uint64_t seed) {
   // Canonicalize first so the result depends only on the sample set + seed,
   // never on incoming order.
   std::stable_sort(samples.begin(), samples.end(),
-                   [](const Sample& a, const Sample& b) {
-                     return a.image_path < b.image_path;
-                   });
+                   [](const Sample& a, const Sample& b) { return a.image_path < b.image_path; });
   // Manual Fisher-Yates with mt19937_64 (a standardized engine producing the
   // same sequence on every platform) so the shuffle is bit-for-bit reproducible
   // across compilers and OSes — std::shuffle's index distribution is not.
@@ -125,8 +129,7 @@ core::Result<Dataset> LoadDataset(const fs::path& root, Format format, bool raw_
         if (!fs::exists(ann, ec)) {
           continue;
         }
-        const std::string stem =
-            split == Split::Train ? "train2017" : "val2017";
+        const std::string stem = split == Split::Train ? "train2017" : "val2017";
         auto part = LoadCocoJson(ann, root / stem, split, raw_coco_ids);
         if (!part) {
           return part;
@@ -135,8 +138,7 @@ core::Result<Dataset> LoadDataset(const fs::path& root, Format format, bool raw_
           merged.class_names = part->class_names;
           any = true;
         }
-        merged.samples.insert(merged.samples.end(), part->samples.begin(),
-                              part->samples.end());
+        merged.samples.insert(merged.samples.end(), part->samples.begin(), part->samples.end());
       }
       if (!any) {
         return core::Err(core::ErrorCode::NotFound,
@@ -152,8 +154,7 @@ core::Result<Dataset> LoadDataset(const fs::path& root, Format format, bool raw_
                        "-DDETR_ENABLE_ARROW=ON (Apache Arrow)");
     case Format::Auto:
       return core::Err(core::ErrorCode::InvalidArgument,
-                       fmt::format("could not detect dataset format at '{}'",
-                                   root.string()));
+                       fmt::format("could not detect dataset format at '{}'", root.string()));
   }
   return core::Err(core::ErrorCode::Internal, "unreachable");
 }

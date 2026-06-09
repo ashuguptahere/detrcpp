@@ -2,10 +2,10 @@
 
 #include "detr/io/image.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <cstdint>
-
-#include <fmt/format.h>
 
 #include "stb_image.h"
 #include "stb_image_write.h"
@@ -40,8 +40,8 @@ Result<void> SavePng(const std::filesystem::path& path, const RgbImage& img) {
   if (img.width <= 0 || img.height <= 0) {
     return Err(ErrorCode::InvalidArgument, "empty image");
   }
-  const int ok = stbi_write_png(path.string().c_str(), img.width, img.height, 3,
-                                img.data.data(), img.width * 3);
+  const int ok = stbi_write_png(path.string().c_str(), img.width, img.height, 3, img.data.data(),
+                                img.width * 3);
   if (ok == 0) {
     return Err(ErrorCode::Io, fmt::format("cannot write png '{}'", path.string()));
   }
@@ -68,7 +68,8 @@ void DrawRect(RgbImage& img, int x0, int y0, int x1, int y1, std::uint8_t r, std
       return;
     }
     const auto idx = (static_cast<std::size_t>(y) * static_cast<std::size_t>(img.width) +
-                      static_cast<std::size_t>(x)) * 3;
+                      static_cast<std::size_t>(x)) *
+                     3;
     img.data[idx] = r;
     img.data[idx + 1] = g;
     img.data[idx + 2] = b;

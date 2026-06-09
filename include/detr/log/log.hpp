@@ -8,11 +8,11 @@
 
 #pragma once
 
+#include <spdlog/spdlog.h>
+
 #include <memory>
 #include <string>
 #include <string_view>
-
-#include <spdlog/spdlog.h>
 
 namespace detr::log {
 

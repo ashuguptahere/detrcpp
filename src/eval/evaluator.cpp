@@ -37,9 +37,9 @@ EvalImage MakeGt(const data::Sample& s, float w_scale, float h_scale) {
 
 }  // namespace
 
-CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
-                          data::Split split, int imgsz, int batch, torch::Device device,
-                          int max_images, bool aspect_preserve, int max_size) {
+CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, data::Split split,
+                          int imgsz, int batch, torch::Device device, int max_images,
+                          bool aspect_preserve, int max_size) {
   torch::NoGradGuard no_grad;
   model.eval();
   const int num_classes = model.Meta().num_classes;

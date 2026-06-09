@@ -2,15 +2,15 @@
 
 #include "detr/onnxexport/graph_builder.hpp"
 
+#include <fmt/format.h>
+#include <onnx/checker.h>
+#include <onnx/onnx_pb.h>
+
 #include <fstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include <fmt/format.h>
-#include <onnx/checker.h>
-#include <onnx/onnx_pb.h>
 
 namespace detr::onnxexport {
 
@@ -58,8 +58,7 @@ void GraphBuilder::AddOutput(const std::string& name, const std::vector<std::int
   SetTensorShape(vi->mutable_type(), dims);
 }
 
-void GraphBuilder::AddInitializerF32(const std::string& name,
-                                     const std::vector<std::int64_t>& dims,
+void GraphBuilder::AddInitializerF32(const std::string& name, const std::vector<std::int64_t>& dims,
                                      const std::vector<float>& data) {
   auto* t = impl_->graph.add_initializer();
   t->set_name(name);
@@ -70,8 +69,7 @@ void GraphBuilder::AddInitializerF32(const std::string& name,
   t->mutable_float_data()->Add(data.begin(), data.end());
 }
 
-void GraphBuilder::AddInitializerI64(const std::string& name,
-                                     const std::vector<std::int64_t>& dims,
+void GraphBuilder::AddInitializerI64(const std::string& name, const std::vector<std::int64_t>& dims,
                                      const std::vector<std::int64_t>& data) {
   auto* t = impl_->graph.add_initializer();
   t->set_name(name);

@@ -2,16 +2,16 @@
 
 #include "detr/weights/torch_bridge.hpp"
 
+#include <caffe2/serialize/inline_container.h>
+#include <fmt/format.h>
+#include <torch/csrc/jit/serialization/import_read.h>
+
 #include <cstring>
 #include <fstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#include <caffe2/serialize/inline_container.h>
-#include <fmt/format.h>
-#include <torch/csrc/jit/serialization/import_read.h>
 
 namespace detr::weights {
 
@@ -23,32 +23,52 @@ using core::Result;
 
 torch::ScalarType TorchDtype(DType d) {
   switch (d) {
-    case DType::F64:  return torch::kFloat64;
-    case DType::F32:  return torch::kFloat32;
-    case DType::F16:  return torch::kFloat16;
-    case DType::BF16: return torch::kBFloat16;
-    case DType::I64:  return torch::kInt64;
-    case DType::I32:  return torch::kInt32;
-    case DType::I16:  return torch::kInt16;
-    case DType::I8:   return torch::kInt8;
-    case DType::U8:   return torch::kUInt8;
-    case DType::Bool: return torch::kBool;
+    case DType::F64:
+      return torch::kFloat64;
+    case DType::F32:
+      return torch::kFloat32;
+    case DType::F16:
+      return torch::kFloat16;
+    case DType::BF16:
+      return torch::kBFloat16;
+    case DType::I64:
+      return torch::kInt64;
+    case DType::I32:
+      return torch::kInt32;
+    case DType::I16:
+      return torch::kInt16;
+    case DType::I8:
+      return torch::kInt8;
+    case DType::U8:
+      return torch::kUInt8;
+    case DType::Bool:
+      return torch::kBool;
   }
   return torch::kFloat32;
 }
 
 Result<DType> FromTorchDtype(torch::ScalarType s) {
   switch (s) {
-    case torch::kFloat64:  return DType::F64;
-    case torch::kFloat32:  return DType::F32;
-    case torch::kFloat16:  return DType::F16;
-    case torch::kBFloat16: return DType::BF16;
-    case torch::kInt64:    return DType::I64;
-    case torch::kInt32:    return DType::I32;
-    case torch::kInt16:    return DType::I16;
-    case torch::kInt8:     return DType::I8;
-    case torch::kUInt8:    return DType::U8;
-    case torch::kBool:     return DType::Bool;
+    case torch::kFloat64:
+      return DType::F64;
+    case torch::kFloat32:
+      return DType::F32;
+    case torch::kFloat16:
+      return DType::F16;
+    case torch::kBFloat16:
+      return DType::BF16;
+    case torch::kInt64:
+      return DType::I64;
+    case torch::kInt32:
+      return DType::I32;
+    case torch::kInt16:
+      return DType::I16;
+    case torch::kInt8:
+      return DType::I8;
+    case torch::kUInt8:
+      return DType::U8;
+    case torch::kBool:
+      return DType::Bool;
     default:
       return Err(ErrorCode::Unsupported,
                  fmt::format("unsupported torch dtype: {}", torch::toString(s)));
@@ -59,8 +79,7 @@ Result<DType> FromTorchDtype(torch::ScalarType s) {
 
 torch::Tensor ToTensor(const RawTensor& t) {
   std::vector<std::int64_t> shape(t.shape.begin(), t.shape.end());
-  torch::Tensor out =
-      torch::empty(shape, torch::TensorOptions().dtype(TorchDtype(t.dtype)));
+  torch::Tensor out = torch::empty(shape, torch::TensorOptions().dtype(TorchDtype(t.dtype)));
   if (!t.data.empty()) {
     std::memcpy(out.data_ptr(), t.data.data(), t.data.size());
   }
@@ -131,8 +150,7 @@ Result<LoadReport> LoadStateDictInto(torch::nn::Module& module, const StateDict&
     if (it->second.sizes() != want.sizes()) {
       rep.mismatched.push_back(key);
       if (strict) {
-        return Err(ErrorCode::InvalidArgument,
-                   fmt::format("shape mismatch for '{}'", key));
+        return Err(ErrorCode::InvalidArgument, fmt::format("shape mismatch for '{}'", key));
       }
       continue;
     }
@@ -179,9 +197,8 @@ Result<StateDict> LoadPth(const std::filesystem::path& path) {
         /*device=*/torch::kCPU, reader);
 
     if (!value.isGenericDict()) {
-      return Err(ErrorCode::Unsupported,
-                 fmt::format("'{}' is not a state_dict (root is {})", path.string(),
-                             value.tagKind()));
+      return Err(ErrorCode::Unsupported, fmt::format("'{}' is not a state_dict (root is {})",
+                                                     path.string(), value.tagKind()));
     }
     StateDict sd;
     for (const auto& entry : value.toGenericDict()) {

@@ -7,10 +7,10 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <string>
 #include <vector>
-
-#include <torch/torch.h>
 
 #include "detr/weights/state_dict.hpp"
 

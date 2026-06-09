@@ -1,10 +1,10 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
-#include "detr/core/device.hpp"
-
 #include <gtest/gtest.h>
 
 #include <string>
+
+#include "detr/core/device.hpp"
 
 namespace detr::core {
 

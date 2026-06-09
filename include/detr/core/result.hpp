@@ -9,9 +9,8 @@
 
 #include <string>
 #include <string_view>
-#include <utility>
-
 #include <tl/expected.hpp>
+#include <utility>
 
 namespace detr::core {
 
@@ -45,16 +44,26 @@ inline tl::unexpected<Error> Err(ErrorCode code, std::string message) {
 
 inline std::string_view ToString(ErrorCode c) {
   switch (c) {
-    case ErrorCode::Ok:                return "Ok";
-    case ErrorCode::InvalidArgument:   return "InvalidArgument";
-    case ErrorCode::NotFound:          return "NotFound";
-    case ErrorCode::Io:                return "Io";
-    case ErrorCode::ParseError:        return "ParseError";
-    case ErrorCode::Unsupported:       return "Unsupported";
-    case ErrorCode::PermissionDenied:  return "PermissionDenied";
-    case ErrorCode::OutOfMemory:       return "OutOfMemory";
-    case ErrorCode::DeviceUnavailable: return "DeviceUnavailable";
-    case ErrorCode::Internal:          return "Internal";
+    case ErrorCode::Ok:
+      return "Ok";
+    case ErrorCode::InvalidArgument:
+      return "InvalidArgument";
+    case ErrorCode::NotFound:
+      return "NotFound";
+    case ErrorCode::Io:
+      return "Io";
+    case ErrorCode::ParseError:
+      return "ParseError";
+    case ErrorCode::Unsupported:
+      return "Unsupported";
+    case ErrorCode::PermissionDenied:
+      return "PermissionDenied";
+    case ErrorCode::OutOfMemory:
+      return "OutOfMemory";
+    case ErrorCode::DeviceUnavailable:
+      return "DeviceUnavailable";
+    case ErrorCode::Internal:
+      return "Internal";
   }
   return "Unknown";
 }

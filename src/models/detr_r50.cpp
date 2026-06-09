@@ -2,16 +2,16 @@
 
 #include "detr/models/detr_r50.hpp"
 
+#include <torch/torch.h>
+
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <torch/torch.h>
-
 #include "detr/models/detr_head.hpp"
-#include "detr/models/resnet.hpp"
 #include "detr/models/model.hpp"
+#include "detr/models/resnet.hpp"
 #include "detr/weights/remapper.hpp"
 
 namespace detr::models {
@@ -50,8 +50,8 @@ R50Config ReadConfig(const YAML::Node& cfg) {
 }
 
 DetrConfig ToHeadConfig(const R50Config& c) {
-  return DetrConfig{c.hidden_dim, c.nheads,       c.enc_layers,
-                    c.dec_layers, c.dim_feedforward, c.num_queries, c.num_classes};
+  return DetrConfig{c.hidden_dim,      c.nheads,      c.enc_layers, c.dec_layers,
+                    c.dim_feedforward, c.num_queries, c.num_classes};
 }
 
 class DetrResNetImpl : public IModel {
@@ -121,8 +121,8 @@ ModelMeta MakeMeta(const YAML::Node& cfg, const std::string& name) {
 }  // namespace
 
 std::shared_ptr<IModel> MakeDetrR50(const YAML::Node& cfg) {
-  return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 6, 3},
-                                          "detr-r50", /*dc5=*/false);
+  return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 6, 3}, "detr-r50",
+                                          /*dc5=*/false);
 }
 
 std::shared_ptr<IModel> MakeDetrR101(const YAML::Node& cfg) {
@@ -140,9 +140,17 @@ std::shared_ptr<IModel> MakeDetrR101Dc5(const YAML::Node& cfg) {
                                           "detr-r101-dc5", /*dc5=*/true);
 }
 
-ModelMeta DetrR50Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r50"); }
-ModelMeta DetrR101Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r101"); }
-ModelMeta DetrR50Dc5Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r50-dc5"); }
-ModelMeta DetrR101Dc5Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r101-dc5"); }
+ModelMeta DetrR50Meta(const YAML::Node& cfg) {
+  return MakeMeta(cfg, "detr-r50");
+}
+ModelMeta DetrR101Meta(const YAML::Node& cfg) {
+  return MakeMeta(cfg, "detr-r101");
+}
+ModelMeta DetrR50Dc5Meta(const YAML::Node& cfg) {
+  return MakeMeta(cfg, "detr-r50-dc5");
+}
+ModelMeta DetrR101Dc5Meta(const YAML::Node& cfg) {
+  return MakeMeta(cfg, "detr-r101-dc5");
+}
 
 }  // namespace detr::models

@@ -2,13 +2,13 @@
 
 #include "detr/models/registry.hpp"
 
+#include <fmt/format.h>
+
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#include <fmt/format.h>
 
 namespace detr::models {
 

@@ -5,10 +5,10 @@
 // /tmp/gen_deform_ref.py (scripts/... generates it). Skips if the fixture is
 // absent so the suite still runs without it.
 
-#include <filesystem>
-
 #include <gtest/gtest.h>
 #include <torch/torch.h>
+
+#include <filesystem>
 
 #include "detr/models/deform_attn.hpp"
 #include "detr/weights/safetensors.hpp"

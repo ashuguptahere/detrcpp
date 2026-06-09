@@ -4,7 +4,8 @@
 // box with the closest query, and the SetCriterion produces finite, fully
 // differentiable losses. Also checks box ops (cxcywh<->xyxy, GIoU).
 
-#include "detr/train/criterion.hpp"
+#include <gtest/gtest.h>
+#include <torch/torch.h>
 
 #include <cmath>
 #include <cstdint>
@@ -12,14 +13,12 @@
 #include <map>
 #include <vector>
 
-#include <gtest/gtest.h>
-#include <torch/torch.h>
-
 #include "detr/models/detr.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/train/box_ops.hpp"
 #include "detr/train/checkpoint.hpp"
+#include "detr/train/criterion.hpp"
 #include "detr/train/ema.hpp"
 #include "detr/train/matcher.hpp"
 #include "detr/train/target.hpp"
@@ -45,8 +44,8 @@ TEST(BoxOps, GiouIdenticalBoxesIsOne) {
 // targets 0 and 1, and are confident about the right classes.
 models::Detections MakeOutputs(bool requires_grad) {
   auto logits = torch::full({1, 4, 4}, -2.0F);  // num_classes=3 -> 4 logits
-  logits[0][1][0] = 5.0F;                        // query1 -> class 0
-  logits[0][3][2] = 5.0F;                        // query3 -> class 2
+  logits[0][1][0] = 5.0F;                       // query1 -> class 0
+  logits[0][3][2] = 5.0F;                       // query3 -> class 2
   auto boxes = torch::tensor({{{0.10F, 0.10F, 0.05F, 0.05F},
                                {0.25F, 0.25F, 0.20F, 0.20F},
                                {0.50F, 0.50F, 0.05F, 0.05F},

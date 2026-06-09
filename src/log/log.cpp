@@ -9,6 +9,12 @@
 
 #include "detr/log/log.hpp"
 
+#include <spdlog/details/log_msg.h>
+#include <spdlog/formatter.h>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -16,12 +22,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-
-#include <spdlog/details/log_msg.h>
-#include <spdlog/formatter.h>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
 
 namespace detr::log {
 
@@ -38,19 +38,32 @@ void AppendJsonEscaped(const char* data, std::size_t size, spdlog::memory_buf_t&
   for (std::size_t i = 0; i < size; ++i) {
     const unsigned char c = static_cast<unsigned char>(data[i]);
     switch (c) {
-      case '"':  Raw(out, "\\\""); break;
-      case '\\': Raw(out, "\\\\"); break;
-      case '\b': Raw(out, "\\b");  break;
-      case '\f': Raw(out, "\\f");  break;
-      case '\n': Raw(out, "\\n");  break;
-      case '\r': Raw(out, "\\r");  break;
-      case '\t': Raw(out, "\\t");  break;
+      case '"':
+        Raw(out, "\\\"");
+        break;
+      case '\\':
+        Raw(out, "\\\\");
+        break;
+      case '\b':
+        Raw(out, "\\b");
+        break;
+      case '\f':
+        Raw(out, "\\f");
+        break;
+      case '\n':
+        Raw(out, "\\n");
+        break;
+      case '\r':
+        Raw(out, "\\r");
+        break;
+      case '\t':
+        Raw(out, "\\t");
+        break;
       default:
         if (c < 0x20) {
           // Other control characters → \u00XX.
           static constexpr char kHex[] = "0123456789abcdef";
-          const char esc[6] = {'\\', 'u', '0', '0',
-                               kHex[(c >> 4) & 0xF], kHex[c & 0xF]};
+          const char esc[6] = {'\\', 'u', '0', '0', kHex[(c >> 4) & 0xF], kHex[c & 0xF]};
           out.append(esc, esc + sizeof(esc));
         } else {
           out.push_back(static_cast<char>(c));
@@ -100,13 +113,20 @@ LoggerRegistry& Registry() {
 
 spdlog::level::level_enum ToSpd(Level l) {
   switch (l) {
-    case Level::Trace:    return spdlog::level::trace;
-    case Level::Debug:    return spdlog::level::debug;
-    case Level::Info:     return spdlog::level::info;
-    case Level::Warn:     return spdlog::level::warn;
-    case Level::Error:    return spdlog::level::err;
-    case Level::Critical: return spdlog::level::critical;
-    case Level::Off:      return spdlog::level::off;
+    case Level::Trace:
+      return spdlog::level::trace;
+    case Level::Debug:
+      return spdlog::level::debug;
+    case Level::Info:
+      return spdlog::level::info;
+    case Level::Warn:
+      return spdlog::level::warn;
+    case Level::Error:
+      return spdlog::level::err;
+    case Level::Critical:
+      return spdlog::level::critical;
+    case Level::Off:
+      return spdlog::level::off;
   }
   return spdlog::level::info;
 }

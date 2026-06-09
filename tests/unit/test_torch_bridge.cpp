@@ -5,16 +5,15 @@
 // module by name, and confirm the parameters are identical. Also proves the
 // WeightRemapper adapts upstream parameter names (e.g. a "model." prefix).
 
-#include "detr/weights/torch_bridge.hpp"
-
-#include <filesystem>
-
 #include <gtest/gtest.h>
 #include <torch/torch.h>
+
+#include <filesystem>
 
 #include "detr/weights/remapper.hpp"
 #include "detr/weights/safetensors.hpp"
 #include "detr/weights/state_dict.hpp"
+#include "detr/weights/torch_bridge.hpp"
 
 namespace detr::weights {
 namespace {
@@ -36,8 +35,7 @@ TEST(TorchBridge, RoundTripThroughSafetensors) {
   // fc1.weight, fc1.bias, fc2.weight, fc2.bias
   ASSERT_EQ(sd.Size(), 4U);
 
-  const auto path =
-      std::filesystem::temp_directory_path() / "detr_bridge_roundtrip.safetensors";
+  const auto path = std::filesystem::temp_directory_path() / "detr_bridge_roundtrip.safetensors";
   ASSERT_TRUE(SaveSafetensors(path, sd).has_value());
   auto loaded = LoadSafetensors(path);
   ASSERT_TRUE(loaded.has_value()) << loaded.error().message;

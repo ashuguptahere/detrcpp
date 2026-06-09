@@ -11,7 +11,7 @@ namespace detr::infer {
 std::vector<eval::DtBox> PostprocessImage(const models::Detections& outputs, int batch_index,
                                           int orig_w, int orig_h, int num_classes, bool focal) {
   torch::NoGradGuard no_grad;
-  auto logits = outputs.logits[batch_index];               // [Q, C(+1)]
+  auto logits = outputs.logits[batch_index];                // [Q, C(+1)]
   auto box_q = outputs.boxes[batch_index].to(torch::kCPU);  // [Q, 4] cxcywh
 
   torch::Tensor boxes;   // [K, 4] cxcywh (one row per emitted detection)

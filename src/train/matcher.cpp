@@ -11,8 +11,7 @@
 namespace detr::train {
 
 std::vector<MatchIndices> HungarianMatch(const models::Detections& outputs,
-                                         const TargetBatch& targets,
-                                         const MatchWeights& weights) {
+                                         const TargetBatch& targets, const MatchWeights& weights) {
   torch::NoGradGuard no_grad;
   const auto batch = outputs.logits.size(0);
   std::vector<MatchIndices> result;
@@ -28,17 +27,16 @@ std::vector<MatchIndices> HungarianMatch(const models::Detections& outputs,
       continue;
     }
 
-    auto logits = outputs.logits[b];                       // [Q, C+1]
-    auto boxes = outputs.boxes[b];                         // [Q, 4] cxcywh
-    auto labels = t.labels.to(logits.device());            // [T]
-    auto tgt_boxes = t.boxes.to(boxes.device());           // [T, 4]
+    auto logits = outputs.logits[b];              // [Q, C+1]
+    auto boxes = outputs.boxes[b];                // [Q, 4] cxcywh
+    auto labels = t.labels.to(logits.device());   // [T]
+    auto tgt_boxes = t.boxes.to(boxes.device());  // [T, 4]
 
     torch::Tensor cost_class;
     if (weights.focal) {
       // Focal matching cost: pos_cost(label) - neg_cost(label).
       auto p = logits.sigmoid();  // [Q, num_classes]
-      auto neg = (1 - weights.focal_alpha) * p.pow(weights.focal_gamma) *
-                 (-(1 - p + 1e-8).log());
+      auto neg = (1 - weights.focal_alpha) * p.pow(weights.focal_gamma) * (-(1 - p + 1e-8).log());
       auto pos = weights.focal_alpha * (1 - p).pow(weights.focal_gamma) * (-(p + 1e-8).log());
       cost_class = pos.index_select(1, labels) - neg.index_select(1, labels);  // [Q, T]
     } else {
@@ -54,7 +52,8 @@ std::vector<MatchIndices> HungarianMatch(const models::Detections& outputs,
     const auto q = static_cast<int>(cost.size(0));
     const auto tt = static_cast<int>(cost.size(1));
     const double* data = cost.data_ptr<double>();
-    std::vector<double> flat(data, data + static_cast<std::size_t>(q) * static_cast<std::size_t>(tt));
+    std::vector<double> flat(data,
+                             data + static_cast<std::size_t>(q) * static_cast<std::size_t>(tt));
 
     auto pairs = core::LinearSumAssignment(flat, q, tt);  // (query, target), sorted by query
     std::vector<std::int64_t> src;

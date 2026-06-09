@@ -5,7 +5,8 @@
 // batch drives a Trainer step. PPM (P6) is used because stb_image decodes it, so
 // no encoder is needed in the test.
 
-#include "detr/data/loader.hpp"
+#include <gtest/gtest.h>
+#include <torch/torch.h>
 
 #include <cmath>
 #include <cstdint>
@@ -14,10 +15,8 @@
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
-#include <torch/torch.h>
-
 #include "detr/data/dataset.hpp"
+#include "detr/data/loader.hpp"
 #include "detr/data/sample.hpp"
 #include "detr/models/detr.hpp"
 #include "detr/models/registry.hpp"
@@ -26,8 +25,8 @@
 namespace detr::data {
 namespace {
 
-std::string WritePpm(const std::filesystem::path& p, int w, int h, unsigned char r,
-                     unsigned char g, unsigned char b) {
+std::string WritePpm(const std::filesystem::path& p, int w, int h, unsigned char r, unsigned char g,
+                     unsigned char b) {
   std::ofstream f(p, std::ios::binary);
   f << "P6\n" << w << " " << h << "\n255\n";
   std::vector<unsigned char> px(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 3);

@@ -6,15 +6,14 @@
 // graph that the onnx checker accepts. Numerical parity (vs LibTorch) is checked
 // separately by the onnxruntime parity test.
 
-#include "detr/onnxexport/detr_export.hpp"
+#include <gtest/gtest.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
 
-#include <gtest/gtest.h>
-
+#include "detr/onnxexport/detr_export.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/tensor.hpp"
 

@@ -9,11 +9,11 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <filesystem>
 #include <string>
 #include <vector>
-
-#include <torch/torch.h>
 
 #include "detr/core/result.hpp"
 #include "detr/weights/remapper.hpp"
@@ -42,10 +42,8 @@ struct LoadReport {
 // Copies tensors from |source| (after applying |remap|) into |module| by name.
 // With strict=true, a shape mismatch or any missing/unexpected key is an error;
 // otherwise they are recorded in the report and loading continues.
-core::Result<LoadReport> LoadStateDictInto(torch::nn::Module& module,
-                                           const StateDict& source,
-                                           const WeightRemapper& remap = {},
-                                           bool strict = false);
+core::Result<LoadReport> LoadStateDictInto(torch::nn::Module& module, const StateDict& source,
+                                           const WeightRemapper& remap = {}, bool strict = false);
 
 // Reads a PyTorch .pth/.pt produced by torch.save into a StateDict, in pure C++
 // (no Python). Supported for the modern zip serialization; returns a helpful

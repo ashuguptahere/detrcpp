@@ -17,17 +17,15 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
   const auto queries = outputs.logits.size(1);
 
   // (1) Classification: target class per (image, query); default = no-object.
-  auto target_classes =
-      torch::full({batch, queries}, static_cast<std::int64_t>(num_classes_),
-                  torch::TensorOptions().dtype(torch::kInt64).device(device));
+  auto target_classes = torch::full({batch, queries}, static_cast<std::int64_t>(num_classes_),
+                                    torch::TensorOptions().dtype(torch::kInt64).device(device));
   for (std::int64_t b = 0; b < batch; ++b) {
     auto src_idx = matches[static_cast<std::size_t>(b)].first.to(device);
     auto tgt_idx = matches[static_cast<std::size_t>(b)].second.to(device);
     if (src_idx.numel() == 0) {
       continue;
     }
-    auto labels_b =
-        targets[static_cast<std::size_t>(b)].labels.to(device).index_select(0, tgt_idx);
+    auto labels_b = targets[static_cast<std::size_t>(b)].labels.to(device).index_select(0, tgt_idx);
     target_classes[b].index_copy_(0, src_idx, labels_b);
   }
 
@@ -46,7 +44,8 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
     const double nb = static_cast<double>(num_boxes_total > 0 ? num_boxes_total : 1);
     auto prob = outputs.logits.sigmoid();
     auto ce = F::binary_cross_entropy_with_logits(
-        outputs.logits, onehot, F::BinaryCrossEntropyWithLogitsFuncOptions().reduction(torch::kNone));
+        outputs.logits, onehot,
+        F::BinaryCrossEntropyWithLogitsFuncOptions().reduction(torch::kNone));
     auto p_t = prob * onehot + (1 - prob) * (1 - onehot);
     auto loss = ce * (1 - p_t).pow(w_.focal_gamma);
     auto alpha_t = w_.focal_alpha * onehot + (1 - w_.focal_alpha) * (1 - onehot);
@@ -86,8 +85,8 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
     auto src_boxes = torch::cat(src_list, 0);  // [M,4] cxcywh
     auto tgt_boxes = torch::cat(tgt_list, 0);  // [M,4]
     out.loss_bbox =
-        F::l1_loss(src_boxes, tgt_boxes, F::L1LossFuncOptions().reduction(torch::kNone))
-            .sum() / norm;
+        F::l1_loss(src_boxes, tgt_boxes, F::L1LossFuncOptions().reduction(torch::kNone)).sum() /
+        norm;
     auto giou = GeneralizedBoxIou(BoxCxcywhToXyxy(src_boxes), BoxCxcywhToXyxy(tgt_boxes));
     out.loss_giou = (1.0 - giou.diagonal()).sum() / norm;
   }

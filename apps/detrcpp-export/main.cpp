@@ -5,11 +5,11 @@
 // LibTorch). Kept separate from the main `detrcpp` binary because vcpkg-protobuf
 // (for onnx) and LibTorch's bundled protobuf cannot coexist in one link.
 
-#include <cstdio>
-#include <string>
+#include <yaml-cpp/yaml.h>
 
 #include <CLI/CLI.hpp>
-#include <yaml-cpp/yaml.h>
+#include <cstdio>
+#include <string>
 
 #include "detr/onnxexport/detr_export.hpp"
 #include "detr/weights/safetensors.hpp"

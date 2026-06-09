@@ -80,8 +80,8 @@ std::vector<int> HungarianRowsLeqCols(const std::vector<double>& cost, int n, in
 
 }  // namespace
 
-std::vector<std::pair<int, int>> LinearSumAssignment(const std::vector<double>& cost,
-                                                     int n_rows, int n_cols) {
+std::vector<std::pair<int, int>> LinearSumAssignment(const std::vector<double>& cost, int n_rows,
+                                                     int n_cols) {
   std::vector<std::pair<int, int>> result;
   if (n_rows <= 0 || n_cols <= 0) {
     return result;

@@ -17,8 +17,7 @@ Trainer::Trainer(std::shared_ptr<models::IModel> model, TrainConfig cfg)
     torch::manual_seed(cfg_.seed);
   }
   opt_ = std::make_unique<torch::optim::AdamW>(
-      model_->parameters(),
-      torch::optim::AdamWOptions(cfg_.lr).weight_decay(cfg_.weight_decay));
+      model_->parameters(), torch::optim::AdamWOptions(cfg_.lr).weight_decay(cfg_.weight_decay));
 }
 
 float Trainer::TrainStep(const torch::Tensor& images, const TargetBatch& targets) {

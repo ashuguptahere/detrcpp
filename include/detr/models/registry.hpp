@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <yaml-cpp/yaml.h>
+
 #include <functional>
 #include <map>
 #include <memory>
@@ -14,8 +16,6 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <yaml-cpp/yaml.h>
 
 #include "detr/core/result.hpp"
 #include "detr/models/model.hpp"

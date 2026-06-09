@@ -6,15 +6,15 @@
 // iff the max absolute difference is within tolerance. Built with
 // DETR_ENABLE_ONNX.
 
+#include <onnxruntime_cxx_api.h>
+#include <yaml-cpp/yaml.h>
+
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
-
-#include <onnxruntime_cxx_api.h>
-#include <yaml-cpp/yaml.h>
 
 #include "detr/onnxexport/detr_export.hpp"
 #include "detr/weights/safetensors.hpp"
@@ -30,9 +30,8 @@ int GetInt(const YAML::Node& c, const char* key, int def) {
 detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   detr::onnxexport::DetrArch a;
   const std::string model = (c && c["model"]) ? c["model"].as<std::string>() : "detr";
-  a.backbone = (model == "detr-r50" || model == "detr-r101")
-                   ? detr::onnxexport::Backbone::ResNet50
-                   : detr::onnxexport::Backbone::Compact;
+  a.backbone = (model == "detr-r50" || model == "detr-r101") ? detr::onnxexport::Backbone::ResNet50
+                                                             : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
     a.resnet_blocks = {3, 4, 23, 3};
   }
@@ -131,8 +130,7 @@ int main(int argc, char** argv) {
 
   const double d_logits = MaxAbsDiff(ort_logits, golden_logits, n_logits);
   const double d_boxes = MaxAbsDiff(ort_boxes, golden_boxes, n_boxes);
-  std::printf("parity: max|Δlogits|=%.3e  max|Δboxes|=%.3e  (tol=%.1e)\n", d_logits, d_boxes,
-              tol);
+  std::printf("parity: max|Δlogits|=%.3e  max|Δboxes|=%.3e  (tol=%.1e)\n", d_logits, d_boxes, tol);
 
   if (d_logits <= tol && d_boxes <= tol) {
     std::printf("PARITY OK — ONNX matches LibTorch\n");

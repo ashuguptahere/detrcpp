@@ -2,11 +2,11 @@
 
 #include "detr/models/detr_head.hpp"
 
+#include <torch/torch.h>
+
 #include <cstdint>
 #include <tuple>
 #include <vector>
-
-#include <torch/torch.h>
 
 namespace detr::models {
 
@@ -29,8 +29,7 @@ torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64
   auto px = xs.unsqueeze(1) / dim_t.unsqueeze(0);
   auto py = ys.unsqueeze(1) / dim_t.unsqueeze(0);
   auto interleave = [half](torch::Tensor p) {
-    return torch::stack({p.slice(1, 0, half, 2).sin(), p.slice(1, 1, half, 2).cos()}, 2)
-        .flatten(1);
+    return torch::stack({p.slice(1, 0, half, 2).sin(), p.slice(1, 1, half, 2).cos()}, 2).flatten(1);
   };
   px = interleave(px);
   py = interleave(py);
@@ -88,8 +87,8 @@ struct DecoderLayerImpl : nn::Module {
     norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
   }
 
-  torch::Tensor forward(torch::Tensor tgt, const torch::Tensor& memory,
-                        const torch::Tensor& pos, const torch::Tensor& query_pos) {
+  torch::Tensor forward(torch::Tensor tgt, const torch::Tensor& memory, const torch::Tensor& pos,
+                        const torch::Tensor& query_pos) {
     auto q = tgt + query_pos;
     auto sa = std::get<0>(self_attn->forward(q, q, tgt));
     tgt = norm1->forward(tgt + sa);

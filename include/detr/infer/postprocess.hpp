@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <vector>
-
 #include <torch/torch.h>
+
+#include <vector>
 
 #include "detr/eval/coco_eval.hpp"
 #include "detr/models/model.hpp"

@@ -31,7 +31,6 @@ core::Result<StateDict> LoadSafetensors(const std::filesystem::path& path);
 // Writes a StateDict to a .safetensors file. Tensors are laid out in the
 // StateDict's insertion order; the "__metadata__" block is written when the
 // StateDict carries metadata.
-core::Result<void> SaveSafetensors(const std::filesystem::path& path,
-                                   const StateDict& state);
+core::Result<void> SaveSafetensors(const std::filesystem::path& path, const StateDict& state);
 
 }  // namespace detr::weights

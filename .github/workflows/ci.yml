@@ -12,6 +12,9 @@ permissions:
 
 env:
   VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+  # Opt JS actions (checkout, github-script, gitleaks) into Node 24 — Node 20 is
+  # deprecated on the runners. Remove once Node 24 is the default.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:

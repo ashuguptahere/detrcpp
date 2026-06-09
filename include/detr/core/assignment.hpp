@@ -16,7 +16,7 @@ namespace detr::core {
 // [n_rows x n_cols]. Returns min(n_rows, n_cols) matched (row, col) pairs whose
 // total cost is minimal; every index on the smaller side is matched exactly
 // once. Returns empty if either dimension is 0.
-std::vector<std::pair<int, int>> LinearSumAssignment(const std::vector<double>& cost,
-                                                     int n_rows, int n_cols);
+std::vector<std::pair<int, int>> LinearSumAssignment(const std::vector<double>& cost, int n_rows,
+                                                     int n_cols);
 
 }  // namespace detr::core

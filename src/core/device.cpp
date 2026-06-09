@@ -2,6 +2,8 @@
 
 #include "detr/core/device.hpp"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -10,8 +12,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-#include <fmt/format.h>
 
 namespace detr::core {
 
@@ -23,18 +23,18 @@ struct KindName {
 };
 
 constexpr std::array<KindName, 12> kKindNames{{
-    {DeviceKind::Auto,    "auto"},
-    {DeviceKind::Cpu,     "cpu"},
-    {DeviceKind::Cuda,    "cuda"},
-    {DeviceKind::Mps,     "mps"},
-    {DeviceKind::Vulkan,  "vulkan"},
-    {DeviceKind::CoreMl,  "coreml"},
-    {DeviceKind::Nnapi,   "nnapi"},
-    {DeviceKind::Hailo,   "hailo"},
+    {DeviceKind::Auto, "auto"},
+    {DeviceKind::Cpu, "cpu"},
+    {DeviceKind::Cuda, "cuda"},
+    {DeviceKind::Mps, "mps"},
+    {DeviceKind::Vulkan, "vulkan"},
+    {DeviceKind::CoreMl, "coreml"},
+    {DeviceKind::Nnapi, "nnapi"},
+    {DeviceKind::Hailo, "hailo"},
     {DeviceKind::Axelera, "axelera"},
-    {DeviceKind::MemryX,  "memryx"},
-    {DeviceKind::DeepX,   "deepx"},
-    {DeviceKind::Jetson,  "jetson"},
+    {DeviceKind::MemryX, "memryx"},
+    {DeviceKind::DeepX, "deepx"},
+    {DeviceKind::Jetson, "jetson"},
 }};
 
 std::string ToLower(std::string_view s) {
@@ -90,13 +90,12 @@ Result<Device> ParseDevice(std::string_view spec) {
   }
   const std::string lower = ToLower(spec);
   const auto colon = lower.find(':');
-  const std::string_view head = colon == std::string::npos
-                                    ? std::string_view{lower}
-                                    : std::string_view{lower.data(), colon};
-  const std::string_view tail = colon == std::string::npos
-                                    ? std::string_view{}
-                                    : std::string_view{lower.data() + colon + 1,
-                                                       lower.size() - colon - 1};
+  const std::string_view head =
+      colon == std::string::npos ? std::string_view{lower} : std::string_view{lower.data(), colon};
+  const std::string_view tail =
+      colon == std::string::npos
+          ? std::string_view{}
+          : std::string_view{lower.data() + colon + 1, lower.size() - colon - 1};
 
   DeviceKind kind = DeviceKind::Auto;
   bool matched = false;
@@ -108,8 +107,7 @@ Result<Device> ParseDevice(std::string_view spec) {
     }
   }
   if (!matched) {
-    return Err(ErrorCode::InvalidArgument,
-               fmt::format("unknown device kind '{}'", head));
+    return Err(ErrorCode::InvalidArgument, fmt::format("unknown device kind '{}'", head));
   }
 
   Device d;

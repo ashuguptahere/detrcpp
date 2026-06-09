@@ -15,6 +15,10 @@
 // Built without torch, the model-dependent verbs return a stable
 // "not implemented" exit code so the CLI surface stays usable.
 
+#include <fmt/format.h>
+#include <spdlog/spdlog.h>
+
+#include <CLI/CLI.hpp>
 #include <cstdint>
 #include <exception>
 #include <iostream>
@@ -24,22 +28,18 @@
 #include <unordered_map>
 #include <vector>
 
-#include <CLI/CLI.hpp>
-#include <fmt/format.h>
-#include <spdlog/spdlog.h>
-
 #include "detr/core/device.hpp"
 #include "detr/core/result.hpp"
 #include "detr/log/log.hpp"
 #include "detr/version.hpp"
 
 #ifdef DETR_ENABLE_TORCH
+#include <torch/torch.h>
+
 #include <algorithm>
 #include <array>
 #include <filesystem>
 #include <limits>
-
-#include <torch/torch.h>
 
 #include "detr/data/dataset.hpp"
 #include "detr/data/loader.hpp"
@@ -147,8 +147,8 @@ ExitCode RunListModels() {
   detr::models::RegisterBuiltins();
   const auto models = detr::models::Registry::Instance().List();
   detr::log::Get("cli").info("registered models: {}", models.size());
-  std::cout << fmt::format("{:<14}{:>7}{:>9}{:>9}  {}\n", "name", "imgsz", "queries",
-                           "classes", "license");
+  std::cout << fmt::format("{:<14}{:>7}{:>9}{:>9}  {}\n", "name", "imgsz", "queries", "classes",
+                           "license");
   for (const auto& m : models) {
     std::cout << fmt::format("{:<14}{:>7}{:>9}{:>9}  {}\n", m.name, m.imgsz, m.num_queries,
                              m.num_classes, m.license);
@@ -313,10 +313,9 @@ ExitCode RunTrain(const Options& o) {
     lg.error("device parse error: {}", dev.error().message);
     return ExitCode::UsageError;
   }
-  lg.info("train: model={} device={} epochs={} batch={} imgsz={} seed={} resume={}",
-          o.model, detr::core::ToString(*dev), o.epochs, o.batch, o.imgsz,
-          o.seed ? std::to_string(*o.seed) : "<random>",
-          o.resume.empty() ? "<none>" : o.resume);
+  lg.info("train: model={} device={} epochs={} batch={} imgsz={} seed={} resume={}", o.model,
+          detr::core::ToString(*dev), o.epochs, o.batch, o.imgsz,
+          o.seed ? std::to_string(*o.seed) : "<random>", o.resume.empty() ? "<none>" : o.resume);
 #ifdef DETR_ENABLE_TORCH
   try {
     return RunTrainTorch(o, *dev);
@@ -386,8 +385,8 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
   lg.info("evaluating {} split: {} samples{}", detr::data::ToString(split), ds.CountOf(split),
           o.max_eval > 0 ? fmt::format(" (capped to {})", o.max_eval) : "");
 
-  const auto m = detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev,
-                                           o.max_eval, o.aspect);
+  const auto m =
+      detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev, o.max_eval, o.aspect);
 
   auto fmtv = [](double v) { return v < 0 ? std::string(" n/a ") : fmt::format("{:.3f}", v); };
   std::cout << "\nCOCO metrics (" << verb << "):\n";
@@ -399,15 +398,14 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
   std::cout << fmt::format("  mAP50-95 large  : {}\n", fmtv(m.ap_large));
   std::cout << fmt::format("  AR@100          : {}\n", fmtv(m.ar100));
   std::cout << fmt::format("  AR  s / m / l   : {} / {} / {}\n", fmtv(m.ar_small),
-                          fmtv(m.ar_medium), fmtv(m.ar_large));
+                           fmtv(m.ar_medium), fmtv(m.ar_large));
   return ExitCode::Ok;
 }
 #endif  // DETR_ENABLE_TORCH
 
 ExitCode RunEval(const Options& o, std::string_view verb) {
   auto& lg = detr::log::Get("cli.eval");
-  if (!Require(!o.model.empty(), "model", verb) ||
-      !Require(!o.weights.empty(), "weights", verb)) {
+  if (!Require(!o.model.empty(), "model", verb) || !Require(!o.weights.empty(), "weights", verb)) {
     return ExitCode::UsageError;
   }
   lg.info("{}: model={} weights={}", verb, o.model, o.weights);
@@ -417,8 +415,7 @@ ExitCode RunEval(const Options& o, std::string_view verb) {
     lg.error("device parse error: {}", dev.error().message);
     return ExitCode::UsageError;
   }
-  const auto split =
-      verb == "test" ? detr::data::Split::Test : detr::data::Split::Val;
+  const auto split = verb == "test" ? detr::data::Split::Test : detr::data::Split::Val;
   try {
     return RunEvalTorch(o, *dev, verb, split);
   } catch (const std::exception& e) {
@@ -487,8 +484,8 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
   const int num_classes = model->Meta().num_classes;
   const bool focal = model->Meta().focal;
 
-  const std::filesystem::path out_dir = o.save.empty() ? std::filesystem::path("runs/predict")
-                                                       : std::filesystem::path(o.save);
+  const std::filesystem::path out_dir =
+      o.save.empty() ? std::filesystem::path("runs/predict") : std::filesystem::path(o.save);
   std::error_code ec;
   std::filesystem::create_directories(out_dir, ec);
 
@@ -506,7 +503,8 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     }
     auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
     auto outputs = model->Forward(input);
-    auto dets = detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
+    auto dets =
+        detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
     std::sort(dets.begin(), dets.end(),
               [](const auto& a, const auto& b) { return a.score > b.score; });
 
@@ -517,11 +515,11 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
       }
       const auto c = ClassColor(d.category_id);
       detr::io::DrawRect(*rgb, static_cast<int>(d.x), static_cast<int>(d.y),
-                         static_cast<int>(d.x + d.w), static_cast<int>(d.y + d.h), c[0], c[1],
-                         c[2], 2);
+                         static_cast<int>(d.x + d.w), static_cast<int>(d.y + d.h), c[0], c[1], c[2],
+                         2);
       ++kept;
-      lg.info("  class={} score={:.3f} box=[{:.0f},{:.0f},{:.0f},{:.0f}]", d.category_id,
-              d.score, d.x, d.y, d.w, d.h);
+      lg.info("  class={} score={:.3f} box=[{:.0f},{:.0f},{:.0f},{:.0f}]", d.category_id, d.score,
+              d.x, d.y, d.w, d.h);
     }
     const auto stem = std::filesystem::path(path).stem().string();
     const auto save_path = out_dir / (stem + "_pred.png");
@@ -543,8 +541,8 @@ ExitCode RunPredict(const Options& o) {
       !Require(!o.source.empty(), "source", "predict")) {
     return ExitCode::UsageError;
   }
-  lg.info("predict: model={} weights={} source={} track={} sahi={}", o.model, o.weights,
-          o.source, o.track.empty() ? "<none>" : o.track, o.sahi);
+  lg.info("predict: model={} weights={} source={} track={} sahi={}", o.model, o.weights, o.source,
+          o.track.empty() ? "<none>" : o.track, o.sahi);
 #ifdef DETR_ENABLE_TORCH
   const auto dev = detr::core::ParseDevice(o.device);
   if (!dev) {
@@ -626,9 +624,10 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
              o.config.empty() ? "" : fmt::format("--config {} ", o.config), o.weights);
     return NotImplemented("export");
   }
-  lg.error("export to '{}' is not yet available (onnx is supported via detrcpp-export; "
-           "trt/coreml/vendor formats are later phases).",
-           o.export_format);
+  lg.error(
+      "export to '{}' is not yet available (onnx is supported via detrcpp-export; "
+      "trt/coreml/vendor formats are later phases).",
+      o.export_format);
   return NotImplemented("export");
 }
 #endif  // DETR_ENABLE_TORCH
@@ -639,8 +638,8 @@ ExitCode RunExport(const Options& o) {
       !Require(!o.weights.empty(), "weights", "export")) {
     return ExitCode::UsageError;
   }
-  lg.info("export: format={} model={} weights={} precision={}", o.export_format, o.model,
-          o.weights, o.precision);
+  lg.info("export: format={} model={} weights={} precision={}", o.export_format, o.model, o.weights,
+          o.precision);
 #ifdef DETR_ENABLE_TORCH
   const auto dev = detr::core::ParseDevice(o.device);
   if (!dev) {
@@ -688,9 +687,9 @@ int main(int argc, char** argv) {
   app.add_flag("-p,--predict", do_predict, "run inference on a source");
   app.add_flag("--benchmark", do_benchmark, "run benchmarks and emit the model table");
   app.add_flag("--list-models", list_models, "list registered models and exit");
-  auto* export_opt = app.add_option(
-      "-x,--export", o.export_format,
-      "export to FMT (onnx|trt|coreml|executorch|axelera|memryx|deepx|hailo)");
+  auto* export_opt =
+      app.add_option("-x,--export", o.export_format,
+                     "export to FMT (onnx|trt|coreml|executorch|axelera|memryx|deepx|hailo)");
   auto* download_opt =
       app.add_option("-D,--download", o.download_name, "download a dataset by name");
 
@@ -699,15 +698,13 @@ int main(int argc, char** argv) {
   app.add_option("-c,--config", o.config, "YAML architecture/config path");
   app.add_option("--data", o.data, "dataset path");
   app.add_option("-w,--weights", o.weights, "weights path (last.pt / best.pt / .onnx / .engine)");
-  app.add_option("-i,--source", o.source,
-                 "image | video | glob | url | rtsp://… | webcam:N | -");
+  app.add_option("-i,--source", o.source, "image | video | glob | url | rtsp://… | webcam:N | -");
   app.add_option("-d,--device", o.device, "cpu | cuda:N | mps | auto | cuda:0,1,…")
       ->capture_default_str();
   app.add_option("-s,--seed", o.seed, "RNG seed (defaults to a random value)");
   app.add_option("-e,--epochs", o.epochs)->capture_default_str();
   app.add_option("-b,--batch", o.batch)->capture_default_str();
-  app.add_option("--imgsz", o.imgsz, "image size, shared across all models")
-      ->capture_default_str();
+  app.add_option("--imgsz", o.imgsz, "image size, shared across all models")->capture_default_str();
   app.add_option("--resume", o.resume, "resume training from a last.pt checkpoint");
   app.add_flag("--from-scratch", o.from_scratch, "ignore pretrained weights");
   app.add_flag("--deterministic", o.deterministic, "deterministic (slower) kernels");
@@ -734,7 +731,8 @@ int main(int argc, char** argv) {
   // Eval-only.
   app.add_flag("--coco91", o.coco91, "use raw COCO-91 category ids (official DETR weights)");
   app.add_option("--max-eval", o.max_eval, "cap evaluation to N images (0 = all)");
-  app.add_flag("--aspect", o.aspect, "aspect-preserving resize at batch 1 (DETR eval preprocessing)");
+  app.add_flag("--aspect", o.aspect,
+               "aspect-preserving resize at batch 1 (DETR eval preprocessing)");
 
   CLI11_PARSE(app, argc, argv);
 

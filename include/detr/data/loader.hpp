@@ -8,10 +8,10 @@
 
 #pragma once
 
+#include <torch/torch.h>
+
 #include <cstdint>
 #include <vector>
-
-#include <torch/torch.h>
 
 #include "detr/core/result.hpp"
 #include "detr/data/dataset.hpp"
@@ -21,10 +21,10 @@
 namespace detr::data {
 
 struct Batch {
-  torch::Tensor images;                          // [B, 3, imgsz, imgsz]
-  train::TargetBatch targets;                    // B entries
-  std::vector<std::pair<int, int>> sizes;        // original (width, height) per image
-  std::vector<std::size_t> sample_indices;       // index into Dataset::samples
+  torch::Tensor images;                     // [B, 3, imgsz, imgsz]
+  train::TargetBatch targets;               // B entries
+  std::vector<std::pair<int, int>> sizes;   // original (width, height) per image
+  std::vector<std::size_t> sample_indices;  // index into Dataset::samples
 };
 
 class DataLoader {

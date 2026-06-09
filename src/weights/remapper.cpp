@@ -13,9 +13,9 @@ namespace detr::weights {
 struct WeightRemapper::Rule {
   enum class Kind { StripPrefix, AddPrefix, Rename, Replace, Drop };
   Kind kind;
-  std::string a;       // prefix / from / pattern
-  std::string b;       // to / replacement
-  std::regex re;       // compiled for Replace / Drop
+  std::string a;  // prefix / from / pattern
+  std::string b;  // to / replacement
+  std::regex re;  // compiled for Replace / Drop
   bool has_re{false};
 };
 
