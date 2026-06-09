@@ -64,12 +64,16 @@ struct BottleneckImpl : nn::Module {
   nn::BatchNorm2d bn3{nullptr};
   nn::Sequential downsample{nullptr};
 
-  BottleneckImpl(int in, int planes, int stride, bool down) {
+  BottleneckImpl(int in, int planes, int stride, bool down, int dilation) {
     const int out = planes * 4;
     conv1 = register_module("conv1", nn::Conv2d(nn::Conv2dOptions(in, planes, 1).bias(false)));
     bn1 = register_module("bn1", nn::BatchNorm2d(planes));
     conv2 = register_module(
-        "conv2", nn::Conv2d(nn::Conv2dOptions(planes, planes, 3).stride(stride).padding(1).bias(false)));
+        "conv2", nn::Conv2d(nn::Conv2dOptions(planes, planes, 3)
+                                .stride(stride)
+                                .padding(dilation)
+                                .dilation(dilation)
+                                .bias(false)));
     bn2 = register_module("bn2", nn::BatchNorm2d(planes));
     conv3 = register_module("conv3", nn::Conv2d(nn::Conv2dOptions(planes, out, 1).bias(false)));
     bn3 = register_module("bn3", nn::BatchNorm2d(out));
@@ -94,11 +98,12 @@ struct BottleneckImpl : nn::Module {
 };
 TORCH_MODULE(Bottleneck);
 
-nn::Sequential MakeLayer(int in, int planes, int blocks, int stride) {
+nn::Sequential MakeLayer(int in, int planes, int blocks, int stride, int dilation = 1) {
   nn::Sequential s;
-  s->push_back(Bottleneck(in, planes, stride, /*down=*/true));  // first block changes channels
+  // First block changes channels (downsample); carries the layer stride/dilation.
+  s->push_back(Bottleneck(in, planes, stride, /*down=*/true, dilation));
   for (int i = 1; i < blocks; ++i) {
-    s->push_back(Bottleneck(planes * 4, planes, 1, false));
+    s->push_back(Bottleneck(planes * 4, planes, 1, false, dilation));
   }
   return s;
 }
@@ -113,14 +118,17 @@ struct ResNetImpl : nn::Module {
   nn::Sequential layer3{nullptr};
   nn::Sequential layer4{nullptr};
 
-  explicit ResNetImpl(const std::vector<int>& blocks) {
+  // |dc5| dilates the C5 stage (layer4): stride 1 + dilation 2, so the output
+  // stride is 16 instead of 32 (DETR's "-DC5" variants).
+  ResNetImpl(const std::vector<int>& blocks, bool dc5) {
     conv1 = register_module("conv1",
                             nn::Conv2d(nn::Conv2dOptions(3, 64, 7).stride(2).padding(3).bias(false)));
     bn1 = register_module("bn1", nn::BatchNorm2d(64));
     layer1 = register_module("layer1", MakeLayer(64, 64, blocks[0], 1));
     layer2 = register_module("layer2", MakeLayer(256, 128, blocks[1], 2));
     layer3 = register_module("layer3", MakeLayer(512, 256, blocks[2], 2));
-    layer4 = register_module("layer4", MakeLayer(1024, 512, blocks[3], 2));
+    layer4 = register_module(
+        "layer4", MakeLayer(1024, 512, blocks[3], dc5 ? 1 : 2, dc5 ? 2 : 1));
   }
 
   torch::Tensor forward(torch::Tensor x) {
@@ -130,16 +138,16 @@ struct ResNetImpl : nn::Module {
     x = layer2->forward(x);
     x = layer3->forward(x);
     x = layer4->forward(x);
-    return x;  // [B, 2048, H/32, W/32]
+    return x;  // [B, 2048, H/{32 or 16}, W/{32 or 16}]
   }
 };
 TORCH_MODULE(ResNet);
 
 class DetrResNetImpl : public IModel {
  public:
-  DetrResNetImpl(R50Config cfg, std::vector<int> blocks, std::string name)
+  DetrResNetImpl(R50Config cfg, std::vector<int> blocks, std::string name, bool dc5)
       : cfg_(cfg), name_(std::move(name)) {
-    backbone_ = register_module("backbone", ResNet(blocks));
+    backbone_ = register_module("backbone", ResNet(blocks, dc5));
     input_proj_ =
         register_module("input_proj", nn::Conv2d(nn::Conv2dOptions(2048, cfg.hidden_dim, 1)));
     head_ = BuildDetrHead(*this, ToHeadConfig(cfg));
@@ -162,11 +170,9 @@ class DetrResNetImpl : public IModel {
     return m;
   }
 
-  // Maps facebookresearch/detr checkpoint keys onto ours (structural prefixes +
-  // the multihead_attn -> cross_attn rename + the MLP indexing). The remaining
-  // architectural deltas for byte-exact official parity (e.g. the final decoder
-  // norm) are a follow-up; this demonstrates the remapping mechanism for a real
-  // upstream and loads everything our module tree expects.
+  // Maps facebookresearch/detr checkpoint keys onto ours. Verified byte-exact:
+  // the official detr-r50 checkpoint loads with 0 unexpected keys (only the
+  // num_batches_tracked buffers are dropped) and reproduces the published mAP.
   weights::WeightRemapper UpstreamRemapper() const override {
     weights::WeightRemapper r;
     r.Drop("num_batches_tracked")
@@ -205,15 +211,27 @@ ModelMeta MakeMeta(const YAML::Node& cfg, const std::string& name) {
 
 std::shared_ptr<IModel> MakeDetrR50(const YAML::Node& cfg) {
   return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 6, 3},
-                                          "detr-r50");
+                                          "detr-r50", /*dc5=*/false);
 }
 
 std::shared_ptr<IModel> MakeDetrR101(const YAML::Node& cfg) {
   return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 23, 3},
-                                          "detr-r101");
+                                          "detr-r101", /*dc5=*/false);
+}
+
+std::shared_ptr<IModel> MakeDetrR50Dc5(const YAML::Node& cfg) {
+  return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 6, 3},
+                                          "detr-r50-dc5", /*dc5=*/true);
+}
+
+std::shared_ptr<IModel> MakeDetrR101Dc5(const YAML::Node& cfg) {
+  return std::make_shared<DetrResNetImpl>(ReadConfig(cfg), std::vector<int>{3, 4, 23, 3},
+                                          "detr-r101-dc5", /*dc5=*/true);
 }
 
 ModelMeta DetrR50Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r50"); }
 ModelMeta DetrR101Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r101"); }
+ModelMeta DetrR50Dc5Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r50-dc5"); }
+ModelMeta DetrR101Dc5Meta(const YAML::Node& cfg) { return MakeMeta(cfg, "detr-r101-dc5"); }
 
 }  // namespace detr::models

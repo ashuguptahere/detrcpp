@@ -56,6 +56,21 @@ TEST_F(DetrR50Test, R101ForwardShapes) {
   EXPECT_EQ(out.boxes.sizes(), (std::vector<std::int64_t>{1, 6, 4}));
 }
 
+TEST_F(DetrR50Test, Dc5RegistersAndForwards) {
+  EXPECT_TRUE(Registry::Instance().Contains("detr-r50-dc5"));
+  EXPECT_TRUE(Registry::Instance().Contains("detr-r101-dc5"));
+  auto built = Registry::Instance().Build("detr-r50-dc5", R50Tiny());
+  ASSERT_TRUE(built.has_value()) << built.error().message;
+  auto model = *built;
+  model->eval();
+  torch::NoGradGuard ng;
+  // DC5 dilates C5 -> output stride 16, so the head produces the same query/box
+  // shapes, just over a higher-resolution feature map.
+  auto out = model->Forward(torch::randn({1, 3, 64, 64}));
+  EXPECT_EQ(out.logits.sizes(), (std::vector<std::int64_t>{1, 6, 5}));
+  EXPECT_EQ(out.boxes.sizes(), (std::vector<std::int64_t>{1, 6, 4}));
+}
+
 TEST_F(DetrR50Test, ForwardShapes) {
   auto built = Registry::Instance().Build("detr-r50", R50Tiny());
   ASSERT_TRUE(built.has_value()) << built.error().message;

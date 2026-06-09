@@ -139,6 +139,8 @@ void RegisterBuiltins() {
   Registry::Instance().Register("detr", DetrMeta({}), &MakeDetr);
   Registry::Instance().Register("detr-r50", DetrR50Meta({}), &MakeDetrR50);
   Registry::Instance().Register("detr-r101", DetrR101Meta({}), &MakeDetrR101);
+  Registry::Instance().Register("detr-r50-dc5", DetrR50Dc5Meta({}), &MakeDetrR50Dc5);
+  Registry::Instance().Register("detr-r101-dc5", DetrR101Dc5Meta({}), &MakeDetrR101Dc5);
 }
 
 }  // namespace detr::models

@@ -22,4 +22,11 @@ ModelMeta DetrR50Meta(const YAML::Node& cfg);
 std::shared_ptr<IModel> MakeDetrR101(const YAML::Node& cfg);
 ModelMeta DetrR101Meta(const YAML::Node& cfg);
 
+// -dc5: dilated C5 stage (output stride 16 instead of 32) for higher-resolution
+// features — DETR's detr-r50-dc5 / detr-r101-dc5.
+std::shared_ptr<IModel> MakeDetrR50Dc5(const YAML::Node& cfg);
+ModelMeta DetrR50Dc5Meta(const YAML::Node& cfg);
+std::shared_ptr<IModel> MakeDetrR101Dc5(const YAML::Node& cfg);
+ModelMeta DetrR101Dc5Meta(const YAML::Node& cfg);
+
 }  // namespace detr::models

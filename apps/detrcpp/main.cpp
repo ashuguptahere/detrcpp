@@ -10,9 +10,10 @@
 //   detrcpp --download=coco2017 -o data/
 //   detrcpp --benchmark | --list-models | --version | --help
 //
-// Phase 0: parsing, validation, and dispatch are real; the train/val/test/
-// predict/export/download bodies log a structured line and return a stable
-// "not implemented" exit code. The model registry is still empty.
+// With -DDETR_ENABLE_TORCH the train/val/test/predict/export verbs are fully
+// implemented against LibTorch + the model registry; --download is still a stub.
+// Built without torch, the model-dependent verbs return a stable
+// "not implemented" exit code so the CLI surface stays usable.
 
 #include <cstdint>
 #include <exception>
@@ -390,14 +391,14 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
 
   auto fmtv = [](double v) { return v < 0 ? std::string(" n/a ") : fmt::format("{:.3f}", v); };
   std::cout << "\nCOCO metrics (" << verb << "):\n";
-  std::cout << fmt::format("  mAP @[.50:.95]  : {}\n", fmtv(m.ap));
-  std::cout << fmt::format("  mAP @ .50       : {}\n", fmtv(m.ap50));
-  std::cout << fmt::format("  mAP @ .75       : {}\n", fmtv(m.ap75));
-  std::cout << fmt::format("  mAP  (small)    : {}\n", fmtv(m.ap_small));
-  std::cout << fmt::format("  mAP  (medium)   : {}\n", fmtv(m.ap_medium));
-  std::cout << fmt::format("  mAP  (large)    : {}\n", fmtv(m.ap_large));
-  std::cout << fmt::format("  AR @100         : {}\n", fmtv(m.ar100));
-  std::cout << fmt::format("  AR   s / m / l  : {} / {} / {}\n", fmtv(m.ar_small),
+  std::cout << fmt::format("  mAP50-95        : {}\n", fmtv(m.ap));
+  std::cout << fmt::format("  mAP50           : {}\n", fmtv(m.ap50));
+  std::cout << fmt::format("  mAP75           : {}\n", fmtv(m.ap75));
+  std::cout << fmt::format("  mAP50-95 small  : {}\n", fmtv(m.ap_small));
+  std::cout << fmt::format("  mAP50-95 medium : {}\n", fmtv(m.ap_medium));
+  std::cout << fmt::format("  mAP50-95 large  : {}\n", fmtv(m.ap_large));
+  std::cout << fmt::format("  AR@100          : {}\n", fmtv(m.ar100));
+  std::cout << fmt::format("  AR  s / m / l   : {} / {} / {}\n", fmtv(m.ar_small),
                           fmtv(m.ar_medium), fmtv(m.ar_large));
   return ExitCode::Ok;
 }
