@@ -37,6 +37,7 @@ if(DETR_ENABLE_TORCH)
     unit/test_deformable_detr.cpp
     unit/test_rt_detr.cpp
     unit/test_conditional_detr.cpp
+    unit/test_dab_detr.cpp
     unit/test_train.cpp
     unit/test_loader.cpp
     unit/test_io.cpp

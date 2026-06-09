@@ -1,6 +1,6 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
-#include "detr/models/conditional_detr.hpp"
+#include "detr/models/dab_detr.hpp"
 
 #include <torch/torch.h>
 
@@ -30,7 +30,6 @@ struct Config {
   int num_queries{300};
   int num_classes{91};
   int imgsz{640};
-  std::vector<int> backbone_blocks{3, 4, 6, 3};
 };
 
 template <typename T>
@@ -56,7 +55,6 @@ torch::Tensor InverseSigmoid(torch::Tensor x, double eps = 1e-5) {
   return torch::log(x.clamp_min(eps) / (1 - x).clamp_min(eps));
 }
 
-// 2D image sine positional embedding (DETR), no mask: [B, d, H, W].
 torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
                       const torch::TensorOptions& opts) {
   constexpr double kPi = 3.14159265358979323846;
@@ -79,20 +77,21 @@ torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64
   return pos.permute({2, 0, 1}).unsqueeze(0).expand({b, d, h, w}).contiguous();
 }
 
-// Sine embedding of a 2D reference point: [..., 2] -> [..., d].
-torch::Tensor SineEmbedForRef(torch::Tensor pos, std::int64_t d) {
+// Sine embedding of a 4D anchor [..., 4] -> [..., 2d] (concat y, x, w, h parts).
+torch::Tensor SineEmbed4D(torch::Tensor pos, std::int64_t d) {
   constexpr double kPi = 3.14159265358979323846;
   const double scale = 2.0 * kPi;
   const std::int64_t half = d / 2;
   auto dim_t = torch::arange(half, pos.options());
   dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
-  auto x = pos.select(-1, 0).unsqueeze(-1) * scale / dim_t;  // [..., half]
-  auto y = pos.select(-1, 1).unsqueeze(-1) * scale / dim_t;
-  auto interleave = [half](torch::Tensor p) {
+  auto embed = [&](torch::Tensor coord) {  // [...] -> [..., half]
+    auto p = coord.unsqueeze(-1) * scale / dim_t;
     return torch::stack({p.slice(-1, 0, half, 2).sin(), p.slice(-1, 1, half, 2).cos()}, -1)
         .flatten(-2);
   };
-  return torch::cat({interleave(y), interleave(x)}, -1);  // [..., d]
+  return torch::cat({embed(pos.select(-1, 1)), embed(pos.select(-1, 0)), embed(pos.select(-1, 2)),
+                     embed(pos.select(-1, 3))},
+                    -1);  // [..., 2d]
 }
 
 struct MlpImpl : nn::Module {
@@ -142,16 +141,17 @@ struct EncoderLayerImpl : nn::Module {
 };
 TORCH_MODULE(EncoderLayer);
 
-class ConditionalDetrImpl : public IModel {
+class DabDetrImpl : public IModel {
  public:
-  explicit ConditionalDetrImpl(Config cfg) : cfg_(cfg) {
+  explicit DabDetrImpl(Config cfg) : cfg_(cfg) {
     const int d = cfg.hidden_dim;
-    backbone_ = register_module("backbone",
-                                ResNet(cfg.backbone_blocks, /*bottleneck=*/true, /*dc5=*/false));
+    backbone_ = register_module(
+        "backbone", ResNet(std::vector<int>{3, 4, 6, 3}, /*bottleneck=*/true, /*dc5=*/false));
     input_proj_ = register_module("input_proj", nn::Conv2d(nn::Conv2dOptions(2048, d, 1)));
-    query_embed_ = register_module("query_embed", nn::Embedding(cfg.num_queries, d));
-    ref_point_head_ = register_module("ref_point_head", Mlp(d, d, 2, 2));
+    refpoint_embed_ = register_module("refpoint_embed", nn::Embedding(cfg.num_queries, 4));
+    ref_point_head_ = register_module("ref_point_head", Mlp(2 * d, d, d, 2));
     query_scale_ = register_module("query_scale", Mlp(d, d, d, 2));
+    ref_anchor_head_ = register_module("ref_anchor_head", Mlp(d, d, 2, 2));
 
     encoder_ = register_module("encoder", nn::ModuleList());
     for (int i = 0; i < cfg.enc_layers; ++i) {
@@ -167,6 +167,7 @@ class ConditionalDetrImpl : public IModel {
 
   Detections Forward(torch::Tensor images) override {
     const int d = cfg_.hidden_dim;
+    const std::int64_t half = d / 2;
     auto feat = backbone_->forward(images);
     auto src = input_proj_->forward(feat);
     const auto b = src.size(0);
@@ -174,46 +175,56 @@ class ConditionalDetrImpl : public IModel {
     const auto w = src.size(3);
 
     auto pos = SinePos(b, d, h, w, src.options()).flatten(2).permute({2, 0, 1}).contiguous();
-    auto memory = src.flatten(2).permute({2, 0, 1}).contiguous();  // [hw, B, d]
+    auto memory = src.flatten(2).permute({2, 0, 1}).contiguous();
     for (const auto& m : *encoder_) {
       memory = m->as<EncoderLayerImpl>()->forward(memory, pos);
     }
 
-    auto query_pos = query_embed_->weight.unsqueeze(1).repeat({1, b, 1});  // [nq, B, d]
-    auto tgt = torch::zeros_like(query_pos);
-    auto reference = ref_point_head_->forward(query_pos).sigmoid();  // [nq, B, 2]
+    auto anchor = refpoint_embed_->weight.unsqueeze(1).repeat({1, b, 1});  // [nq, B, 4]
+    auto reference = anchor.sigmoid();
+    auto tgt = torch::zeros({reference.size(0), b, d}, src.options());
 
+    torch::Tensor boxes;
     int layer_id = 0;
     for (const auto& m : *decoder_) {
-      auto query_sine = SineEmbedForRef(reference, d);  // [nq, B, d]
+      auto obj = reference;                              // [nq, B, 4]
+      auto sine4 = SineEmbed4D(obj, d);                  // [nq, B, 2d]
+      auto query_pos = ref_point_head_->forward(sine4);  // [nq, B, d]
+      auto query_sine = sine4.narrow(-1, 0, d);          // [nq, B, d] (y,x parts)
       if (layer_id > 0) {
         query_sine = query_sine * query_scale_->forward(tgt);
       }
+      // width/height-modulated positional attention.
+      auto ref_hw = ref_anchor_head_->forward(tgt).sigmoid();  // [nq, B, 2]
+      auto h_mod = (ref_hw.select(-1, 1) / obj.select(-1, 3)).unsqueeze(-1);
+      auto w_mod = (ref_hw.select(-1, 0) / obj.select(-1, 2)).unsqueeze(-1);
+      query_sine = torch::cat(
+          {query_sine.narrow(-1, 0, half) * h_mod, query_sine.narrow(-1, half, half) * w_mod}, -1);
+
       tgt = m->as<CondDecoderLayerImpl>()->forward(tgt, memory, pos, query_pos, query_sine,
                                                    layer_id == 0);
+      // iterative anchor refinement.
+      auto new_ref = (bbox_embed_->forward(tgt) + InverseSigmoid(reference)).sigmoid();
+      boxes = new_ref;
+      reference = new_ref.detach();
       ++layer_id;
     }
 
-    auto hs = tgt.transpose(0, 1);                                // [B, nq, d]
-    auto ref_before = InverseSigmoid(reference).transpose(0, 1);  // [B, nq, 2]
-    auto box = bbox_embed_->forward(hs);                          // [B, nq, 4]
-    box = box + torch::cat({ref_before, torch::zeros_like(ref_before)}, -1);
-
     Detections det;
-    det.logits = class_embed_->forward(hs);  // [B, nq, num_classes] (sigmoid/focal)
-    det.boxes = box.sigmoid();
+    det.logits = class_embed_->forward(tgt.transpose(0, 1));  // [B, nq, num_classes]
+    det.boxes = boxes.transpose(0, 1);                        // [B, nq, 4] cxcywh
     return det;
   }
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = "conditional-detr";
+    m.name = "dab-detr";
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
     m.focal = true;
     m.license = "Apache-2.0";
-    m.upstream = "https://github.com/Atten4Vis/ConditionalDETR";
+    m.upstream = "https://github.com/IDEA-Research/DAB-DETR";
     return m;
   }
 
@@ -221,9 +232,10 @@ class ConditionalDetrImpl : public IModel {
   Config cfg_;
   ResNet backbone_{nullptr};
   nn::Conv2d input_proj_{nullptr};
-  nn::Embedding query_embed_{nullptr};
+  nn::Embedding refpoint_embed_{nullptr};
   Mlp ref_point_head_{nullptr};
   Mlp query_scale_{nullptr};
+  Mlp ref_anchor_head_{nullptr};
   nn::ModuleList encoder_{nullptr};
   nn::ModuleList decoder_{nullptr};
   nn::Linear class_embed_{nullptr};
@@ -232,20 +244,20 @@ class ConditionalDetrImpl : public IModel {
 
 }  // namespace
 
-std::shared_ptr<IModel> MakeConditionalDetr(const YAML::Node& cfg) {
-  return std::make_shared<ConditionalDetrImpl>(ReadConfig(cfg));
+std::shared_ptr<IModel> MakeDabDetr(const YAML::Node& cfg) {
+  return std::make_shared<DabDetrImpl>(ReadConfig(cfg));
 }
 
-ModelMeta ConditionalDetrMeta(const YAML::Node& cfg) {
+ModelMeta DabDetrMeta(const YAML::Node& cfg) {
   Config c = ReadConfig(cfg);
   ModelMeta m;
-  m.name = "conditional-detr";
+  m.name = "dab-detr";
   m.imgsz = c.imgsz;
   m.num_classes = c.num_classes;
   m.num_queries = c.num_queries;
   m.focal = true;
   m.license = "Apache-2.0";
-  m.upstream = "https://github.com/Atten4Vis/ConditionalDETR";
+  m.upstream = "https://github.com/IDEA-Research/DAB-DETR";
   return m;
 }
 
