@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "detr/models/conditional_detr.hpp"
 #include "detr/models/deformable_detr.hpp"
 #include "detr/models/detr_head.hpp"
 #include "detr/models/detr_r50.hpp"
@@ -144,6 +145,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("detr-r50-dc5", DetrR50Dc5Meta({}), &MakeDetrR50Dc5);
   Registry::Instance().Register("detr-r101-dc5", DetrR101Dc5Meta({}), &MakeDetrR101Dc5);
   Registry::Instance().Register("deformable-detr", DeformableDetrMeta({}), &MakeDeformableDetr);
+  Registry::Instance().Register("conditional-detr", ConditionalDetrMeta({}), &MakeConditionalDetr);
   RegisterRtDetr();
 }
 
