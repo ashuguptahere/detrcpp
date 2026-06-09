@@ -176,6 +176,7 @@ if(DETR_ENABLE_TORCH)
     models/registry.cpp
     models/detr_head.cpp
     models/deform_attn.cpp
+    models/deform_head.cpp
     models/cond_decoder.cpp
     models/resnet.cpp
     models/vit.cpp

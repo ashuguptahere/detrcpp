@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "detr/models/deform_attn.hpp"
+#include "detr/models/deform_head.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/models/resnet.hpp"
@@ -74,11 +75,6 @@ Config ReadConfig(const YAML::Node& c) {
   x.num_points = Get(c, "num_points", x.num_points);
   x.imgsz = Get(c, "imgsz", x.imgsz);
   return x;
-}
-
-torch::Tensor InverseSigmoid(torch::Tensor x, double eps = 1e-5) {
-  x = x.clamp(0, 1);
-  return torch::log(x.clamp_min(eps) / (1 - x).clamp_min(eps));
 }
 
 // 2D sin-cos positional embedding for AIFI: [1, H*W, dim].
@@ -183,63 +179,6 @@ struct AIFILayerImpl : nn::Module {
 };
 TORCH_MODULE(AIFILayer);
 
-// Decoder layer: self-attn + deformable cross-attn (4D refs) + FFN.
-struct DecoderLayerImpl : nn::Module {
-  nn::MultiheadAttention self_attn{nullptr};
-  MSDeformAttn cross_attn{nullptr};
-  nn::LayerNorm norm1{nullptr};
-  nn::LayerNorm norm2{nullptr};
-  nn::LayerNorm norm3{nullptr};
-  nn::Linear linear1{nullptr};
-  nn::Linear linear2{nullptr};
-  DecoderLayerImpl(int d, int levels, int heads, int points, int ff) {
-    self_attn = register_module(
-        "self_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, heads).dropout(0.0)));
-    cross_attn = register_module("cross_attn", MSDeformAttn(d, levels, heads, points));
-    norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
-    norm2 = register_module("norm2", nn::LayerNorm(nn::LayerNormOptions({d})));
-    norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
-    linear1 = register_module("linear1", nn::Linear(d, ff));
-    linear2 = register_module("linear2", nn::Linear(ff, d));
-  }
-  torch::Tensor forward(torch::Tensor tgt, const torch::Tensor& query_pos, const torch::Tensor& ref,
-                        const torch::Tensor& memory, const SpatialShapes& shapes) {
-    auto q = (tgt + query_pos).transpose(0, 1);
-    auto sa = std::get<0>(self_attn->forward(q, q, tgt.transpose(0, 1))).transpose(0, 1);
-    tgt = norm1->forward(tgt + sa);
-    auto ca = cross_attn->forward(tgt + query_pos, ref, memory, shapes);
-    tgt = norm2->forward(tgt + ca);
-    auto ff = linear2->forward(torch::relu(linear1->forward(tgt)));
-    return norm3->forward(tgt + ff);
-  }
-};
-TORCH_MODULE(DecoderLayer);
-
-// 3-layer MLP (ReLU between).
-struct MlpImpl : nn::Module {
-  nn::ModuleList layers{nullptr};
-  int n_;
-  MlpImpl(int in, int hidden, int out, int n) : n_(n) {
-    layers = register_module("layers", nn::ModuleList());
-    int prev = in;
-    for (int i = 0; i < n; ++i) {
-      int o = (i + 1 == n) ? out : hidden;
-      layers->push_back(nn::Linear(prev, o));
-      prev = o;
-    }
-  }
-  torch::Tensor forward(torch::Tensor x) {
-    for (int i = 0; i < n_; ++i) {
-      x = layers[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(x);
-      if (i + 1 < n_) {
-        x = torch::relu(x);
-      }
-    }
-    return x;
-  }
-};
-TORCH_MODULE(Mlp);
-
 class RtDetrImpl : public IModel {
  public:
   explicit RtDetrImpl(Config cfg) : cfg_(cfg) {
@@ -276,22 +215,10 @@ class RtDetrImpl : public IModel {
       pan_blocks_->push_back(CSPRep(d * 2, d, 3));
     }
 
-    // Query selection heads + decoder.
-    enc_output_ = register_module("enc_output", nn::Linear(d, d));
-    enc_output_norm_ = register_module("enc_output_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
-    enc_score_head_ = register_module("enc_score_head", nn::Linear(d, cfg.num_classes));
-    enc_bbox_head_ = register_module("enc_bbox_head", Mlp(d, d, 4, 3));
-    query_pos_head_ = register_module("query_pos_head", Mlp(4, 2 * d, d, 2));
-
-    decoder_ = register_module("decoder", nn::ModuleList());
-    dec_score_ = register_module("dec_score_head", nn::ModuleList());
-    dec_bbox_ = register_module("dec_bbox_head", nn::ModuleList());
-    for (int i = 0; i < cfg.dec_layers; ++i) {
-      decoder_->push_back(
-          DecoderLayer(d, cfg.num_levels, cfg.nheads, cfg.num_points, cfg.dim_feedforward));
-      dec_score_->push_back(nn::Linear(d, cfg.num_classes));
-      dec_bbox_->push_back(Mlp(d, d, 4, 3));
-    }
+    // Shared query selection + deformable decoder.
+    head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
+                                  cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
+                                  cfg.num_queries);
   }
 
   Detections Forward(torch::Tensor images) override {
@@ -350,41 +277,7 @@ class RtDetrImpl : public IModel {
       shapes.emplace_back(o.size(2), o.size(3));
       mem.push_back(o.flatten(2).transpose(1, 2));  // [B, hw, d]
     }
-    auto memory = torch::cat(mem, 1);  // [B, sum_hw, d]
-
-    // Anchors + query selection.
-    auto anchors = GenerateAnchors(shapes, images.options());  // [1, sum_hw, 4] (inv-sigmoid)
-    auto out_mem = enc_output_norm_->forward(enc_output_->forward(memory));
-    auto enc_class = enc_score_head_->forward(out_mem);           // [B, S, C]
-    auto enc_coord = enc_bbox_head_->forward(out_mem) + anchors;  // [B, S, 4]
-
-    auto topk = std::get<1>(std::get<0>(enc_class.max(-1)).topk(cfg_.num_queries, 1));  // [B, nq]
-    auto gather_idx = topk.unsqueeze(-1);
-    auto ref_unact = enc_coord.gather(1, gather_idx.expand({b, cfg_.num_queries, 4})).detach();
-    auto target = out_mem.gather(1, gather_idx.expand({b, cfg_.num_queries, d})).detach();
-
-    // Decoder with iterative box refinement.
-    auto ref = ref_unact.sigmoid();
-    torch::Tensor logits;
-    torch::Tensor boxes;
-    auto tgt = target;
-    for (int i = 0; i < cfg_.dec_layers; ++i) {
-      auto ref_input = ref.unsqueeze(2).expand({b, cfg_.num_queries, cfg_.num_levels, 4});
-      auto query_pos = query_pos_head_->forward(ref);
-      tgt = decoder_[static_cast<std::size_t>(i)]->as<DecoderLayerImpl>()->forward(
-          tgt, query_pos, ref_input, memory, shapes);
-      auto bbox = (dec_bbox_[static_cast<std::size_t>(i)]->as<MlpImpl>()->forward(tgt) +
-                   InverseSigmoid(ref))
-                      .sigmoid();
-      logits = dec_score_[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(tgt);
-      boxes = bbox;
-      ref = bbox.detach();
-    }
-
-    Detections det;
-    det.logits = logits;  // [B, nq, num_classes] (sigmoid/focal)
-    det.boxes = boxes;    // [B, nq, 4] cxcywh
-    return det;
+    return RunDeformDetectHead(head_, torch::cat(mem, 1), shapes);
   }
 
   ModelMeta Meta() const override {
@@ -400,28 +293,6 @@ class RtDetrImpl : public IModel {
   }
 
  private:
-  // Grid-center anchors in inverse-sigmoid space: [1, sum_hw, 4].
-  torch::Tensor GenerateAnchors(const SpatialShapes& shapes, const torch::TensorOptions& opts) {
-    std::vector<torch::Tensor> anchors;
-    int lvl = 0;
-    for (const auto& [h, w] : shapes) {
-      auto gy = torch::arange(h, opts);
-      auto gx = torch::arange(w, opts);
-      auto grid = torch::meshgrid({gy, gx}, "ij");
-      auto xy = torch::stack({grid[1], grid[0]}, -1);  // [h, w, 2] (x, y)
-      auto wht = torch::tensor({static_cast<double>(w), static_cast<double>(h)}, opts);
-      auto xyn = (xy.unsqueeze(0) + 0.5) / wht;  // [1, h, w, 2]
-      auto wh = torch::ones_like(xyn) * (0.05 * std::pow(2.0, lvl));
-      anchors.push_back(torch::cat({xyn, wh}, -1).reshape({1, h * w, 4}));
-      ++lvl;
-    }
-    auto a = torch::cat(anchors, 1);                           // [1, sum_hw, 4]
-    auto valid = ((a > 1e-2) * (a < 1 - 1e-2)).all(-1, true);  // [1, sum_hw, 1]
-    a = torch::log(a / (1 - a));
-    a = torch::where(valid.expand_as(a), a, torch::full_like(a, 1e9));
-    return a;
-  }
-
   Config cfg_;
   ResNet backbone_{nullptr};
   nn::ModuleList input_proj_{nullptr};
@@ -430,14 +301,7 @@ class RtDetrImpl : public IModel {
   nn::ModuleList fpn_blocks_{nullptr};
   nn::ModuleList downsample_convs_{nullptr};
   nn::ModuleList pan_blocks_{nullptr};
-  nn::Linear enc_output_{nullptr};
-  nn::LayerNorm enc_output_norm_{nullptr};
-  nn::Linear enc_score_head_{nullptr};
-  Mlp enc_bbox_head_{nullptr};
-  Mlp query_pos_head_{nullptr};
-  nn::ModuleList decoder_{nullptr};
-  nn::ModuleList dec_score_{nullptr};
-  nn::ModuleList dec_bbox_{nullptr};
+  DeformDetectHead head_;
 };
 
 // Sizes (n/s/m/l/x) = backbone depth + width. RT-DETR officially ships s/m/l/x

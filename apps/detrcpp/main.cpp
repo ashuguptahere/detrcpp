@@ -161,7 +161,7 @@ ExitCode RunListModels() {
 }
 
 ExitCode NotImplemented(std::string_view verb) {
-  detr::log::Get("cli").warn("'{}' is not implemented yet (Phase 0 skeleton)", verb);
+  detr::log::Get("cli").warn("'{}' is not implemented in this build", verb);
   return ExitCode::NotImplemented;
 }
 
