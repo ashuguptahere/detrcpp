@@ -16,6 +16,16 @@ cmake/ninja/vcpkg + LibTorch 2.5.1 CPU. Both the lightweight build
 pass with zero warnings in project code.
 
 ### Added
+- **Official DETR weights run end-to-end → real COCO mAP.** With the head
+  aligned and a COCO-91 eval mode (`--coco91`, raw category ids) plus an
+  eval-image cap (`--max-eval`), the official facebookresearch/detr `detr-r50`
+  checkpoint loads byte-exact (458 tensors, 0 unexpected) and reproduces the
+  published metric: **mAP@[.50:.95] = 0.416 on 500 COCO val images** (official
+  full-val 0.420). The legacy-format `.pth` was converted to `.safetensors` by a
+  one-off script kept entirely in `/tmp` (the repo stays Python-free). Detections
+  on a real COCO image are correct (cat/couch/remote at 0.99+). Remaining gap to
+  42.0 is small-object AP from square-resize preprocessing (aspect-preserving
+  resize is the tracked follow-up).
 - **ResNet-backbone DETR models: `detr-r50` and `detr-r101`** — prove the
   framework is modular end to end. A DRY refactor extracts the shared transformer
   head (`detr_head`) used by every variant; the ResNet builder is parameterized by

@@ -60,8 +60,11 @@ ordered for shippability; items inside a phase can parallelize.
       train, ONNX parity-verified; UpstreamRemapper for fb/detr keys
 - [x] Official-DETR head alignment (final decoder LayerNorm); parity re-verified
 - [x] `.pth` loader (modern zip format) + auto-dispatch; legacy format detected
-- [ ] **Legacy (pre-1.6) .pth unpickler** — needed for the 2020 official DETR
-      checkpoint → then real mAP from pretrained weights
+- [x] **Real COCO mAP from official detr-r50 weights = 41.6** (official 42.0) via
+      `--coco91` eval mode; checkpoint converted in /tmp (repo stays Python-free)
+- [ ] Aspect-preserving resize (+ padding mask) — closes the small-object AP gap
+      (0.129 vs 0.205) to reach the exact 42.0
+- [ ] Legacy (pre-1.6) .pth unpickler in C++ (so no /tmp conversion is needed)
 - [ ] Same-`imgsz` enforcement across registered models (default 640)
 - [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
