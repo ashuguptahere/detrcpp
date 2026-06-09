@@ -47,7 +47,9 @@ struct Dataset {
 Format DetectFormat(const std::filesystem::path& root);
 
 // Loads a dataset from |root|, dispatching on |format| (Auto -> DetectFormat).
+// |raw_coco_ids| keeps raw COCO category ids (for evaluating COCO-91 models like
+// official DETR); ignored for non-COCO formats.
 core::Result<Dataset> LoadDataset(const std::filesystem::path& root,
-                                  Format format = Format::Auto);
+                                  Format format = Format::Auto, bool raw_coco_ids = false);
 
 }  // namespace detr::data

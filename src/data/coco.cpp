@@ -28,7 +28,7 @@ bool GetInt(simdjson::dom::element e, const char* key, std::int64_t& out) {
 }  // namespace
 
 Result<Dataset> LoadCocoJson(const fs::path& annotations_json, const fs::path& images_dir,
-                             Split split) {
+                             Split split, bool raw_category_ids) {
   simdjson::dom::parser parser;
   simdjson::dom::element doc;
   auto err = parser.load(annotations_json.string()).get(doc);
@@ -136,7 +136,7 @@ Result<Dataset> LoadCocoJson(const fs::path& annotations_json, const fs::path& i
     b.cy = (static_cast<float>(xywh[1]) + static_cast<float>(xywh[3]) / 2.0F) / fh;
     b.w = static_cast<float>(xywh[2]) / fw;
     b.h = static_cast<float>(xywh[3]) / fh;
-    b.class_id = cls->second;
+    b.class_id = raw_category_ids ? static_cast<int>(cat_id) : cls->second;
     s.boxes.push_back(b);
   }
 

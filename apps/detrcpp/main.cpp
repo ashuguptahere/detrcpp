@@ -105,6 +105,10 @@ struct Options {
   // Download.
   std::string download_name;
   std::string out{"./data"};
+
+  // Eval.
+  bool coco91{false};  // use raw COCO-91 category ids (for official DETR weights)
+  int max_eval{0};     // cap eval to N images (0 = all)
 };
 
 void ApplyGlobalLogging(const Options& o) {
@@ -367,7 +371,7 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
     lg.error("--data is required for --{}", verb);
     return ExitCode::UsageError;
   }
-  auto ds_r = detr::data::LoadDataset(o.data);
+  auto ds_r = detr::data::LoadDataset(o.data, detr::data::Format::Auto, o.coco91);
   if (!ds_r) {
     lg.error("dataset: {}", ds_r.error().message);
     return ExitCode::UsageError;
@@ -377,9 +381,11 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
   const auto torch_dev = ToTorchDevice(dev);
   model->to(torch_dev);
   const int imgsz = model->Meta().imgsz;
-  lg.info("evaluating {} split: {} samples", detr::data::ToString(split), ds.CountOf(split));
+  lg.info("evaluating {} split: {} samples{}", detr::data::ToString(split), ds.CountOf(split),
+          o.max_eval > 0 ? fmt::format(" (capped to {})", o.max_eval) : "");
 
-  const auto m = detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev);
+  const auto m =
+      detr::eval::EvaluateModel(*model, ds, split, imgsz, o.batch, torch_dev, o.max_eval);
 
   auto fmtv = [](double v) { return v < 0 ? std::string(" n/a ") : fmt::format("{:.3f}", v); };
   std::cout << "\nCOCO metrics (" << verb << "):\n";
@@ -721,6 +727,10 @@ int main(int argc, char** argv) {
 
   // Download-only.
   app.add_option("-o,--out", o.out, "download output directory")->capture_default_str();
+
+  // Eval-only.
+  app.add_flag("--coco91", o.coco91, "use raw COCO-91 category ids (official DETR weights)");
+  app.add_option("--max-eval", o.max_eval, "cap evaluation to N images (0 = all)");
 
   CLI11_PARSE(app, argc, argv);
 

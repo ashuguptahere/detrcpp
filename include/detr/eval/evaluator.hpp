@@ -15,7 +15,9 @@
 
 namespace detr::eval {
 
+// Evaluates up to |max_images| of the split (0 = all).
 CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
-                          data::Split split, int imgsz, int batch, torch::Device device);
+                          data::Split split, int imgsz, int batch, torch::Device device,
+                          int max_images = 0);
 
 }  // namespace detr::eval

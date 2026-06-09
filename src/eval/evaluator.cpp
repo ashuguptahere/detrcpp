@@ -14,7 +14,8 @@
 namespace detr::eval {
 
 CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
-                          data::Split split, int imgsz, int batch, torch::Device device) {
+                          data::Split split, int imgsz, int batch, torch::Device device,
+                          int max_images) {
   torch::NoGradGuard no_grad;
   model.eval();
   const int num_classes = model.Meta().num_classes;
@@ -25,6 +26,9 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
 
   const std::size_t batches = loader.NumBatches();
   for (std::size_t b = 0; b < batches; ++b) {
+    if (max_images > 0 && eval_images.size() >= static_cast<std::size_t>(max_images)) {
+      break;
+    }
     auto loaded = loader.At(b);
     if (!loaded) {
       detr::log::Get("eval").warn("{}", loaded.error().message);

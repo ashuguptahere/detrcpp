@@ -18,8 +18,11 @@ namespace detr::data {
 
 // Parses one COCO annotation json. |images_dir| is prepended to each
 // image file_name to form Sample::image_path. All produced samples are tagged
-// with |split|.
+// with |split|. If |raw_category_ids| is true, the raw COCO category_id is used
+// as the class id (the 91-class scheme official DETR predicts in); otherwise
+// ids are remapped to a 0-based, id-sorted contiguous index (training default).
 core::Result<Dataset> LoadCocoJson(const std::filesystem::path& annotations_json,
-                                   const std::filesystem::path& images_dir, Split split);
+                                   const std::filesystem::path& images_dir, Split split,
+                                   bool raw_category_ids = false);
 
 }  // namespace detr::data

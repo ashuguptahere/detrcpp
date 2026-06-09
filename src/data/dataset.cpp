@@ -101,7 +101,7 @@ Format DetectFormat(const fs::path& root) {
   return Format::Auto;
 }
 
-core::Result<Dataset> LoadDataset(const fs::path& root, Format format) {
+core::Result<Dataset> LoadDataset(const fs::path& root, Format format, bool raw_coco_ids) {
   if (format == Format::Auto) {
     format = DetectFormat(root);
   }
@@ -112,7 +112,7 @@ core::Result<Dataset> LoadDataset(const fs::path& root, Format format) {
       // as a single annotation json.
       std::error_code ec;
       if (fs::is_regular_file(root, ec)) {
-        return LoadCocoJson(root, root.parent_path(), Split::Val);
+        return LoadCocoJson(root, root.parent_path(), Split::Val, raw_coco_ids);
       }
       Dataset merged;
       bool any = false;
@@ -127,7 +127,7 @@ core::Result<Dataset> LoadDataset(const fs::path& root, Format format) {
         }
         const std::string stem =
             split == Split::Train ? "train2017" : "val2017";
-        auto part = LoadCocoJson(ann, root / stem, split);
+        auto part = LoadCocoJson(ann, root / stem, split, raw_coco_ids);
         if (!part) {
           return part;
         }
