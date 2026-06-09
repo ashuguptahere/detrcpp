@@ -21,7 +21,8 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
       torch::full({batch, queries}, static_cast<std::int64_t>(num_classes_),
                   torch::TensorOptions().dtype(torch::kInt64).device(device));
   for (std::int64_t b = 0; b < batch; ++b) {
-    const auto& [src_idx, tgt_idx] = matches[static_cast<std::size_t>(b)];
+    auto src_idx = matches[static_cast<std::size_t>(b)].first.to(device);
+    auto tgt_idx = matches[static_cast<std::size_t>(b)].second.to(device);
     if (src_idx.numel() == 0) {
       continue;
     }
@@ -64,7 +65,8 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
   std::vector<torch::Tensor> tgt_list;
   std::int64_t num_boxes = 0;
   for (std::int64_t b = 0; b < batch; ++b) {
-    const auto& [src_idx, tgt_idx] = matches[static_cast<std::size_t>(b)];
+    auto src_idx = matches[static_cast<std::size_t>(b)].first.to(device);
+    auto tgt_idx = matches[static_cast<std::size_t>(b)].second.to(device);
     if (src_idx.numel() == 0) {
       continue;
     }
