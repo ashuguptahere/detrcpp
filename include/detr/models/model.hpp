@@ -20,12 +20,16 @@ struct ModelMeta {
   int imgsz{640};
   int num_classes{91};   // COCO categories (the +1 no-object slot is internal)
   int num_queries{100};
+  // Classification mode. false: softmax over num_classes+1 (DETR, with a no-object
+  // slot). true: sigmoid/focal over num_classes (Deformable-DETR and the modern
+  // variants — no no-object slot). Drives the criterion, matcher, and postprocess.
+  bool focal{false};
   std::string license{"Apache-2.0"};
   std::string upstream;  // provenance URL for the architecture / weights
 };
 
-// DETR's set-prediction output. logits: [B, Q, num_classes + 1] (last = no
-// object); boxes: [B, Q, 4] as normalized cxcywh in [0,1].
+// DETR's set-prediction output. logits: [B, Q, num_classes (+1 for softmax
+// models, where the last is no-object)]; boxes: [B, Q, 4] normalized cxcywh.
 struct Detections {
   torch::Tensor logits;
   torch::Tensor boxes;

@@ -43,6 +43,7 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
   torch::NoGradGuard no_grad;
   model.eval();
   const int num_classes = model.Meta().num_classes;
+  const bool focal = model.Meta().focal;
   std::vector<EvalImage> eval_images;
 
   if (aspect_preserve) {
@@ -63,7 +64,7 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
       auto input = infer::PreprocessImageAspect(*rgb, imgsz, max_size).to(device);
       auto outputs = model.Forward(input);
       EvalImage ei = MakeGt(s, static_cast<float>(rgb->width), static_cast<float>(rgb->height));
-      ei.dts = infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes);
+      ei.dts = infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
       eval_images.push_back(std::move(ei));
       if ((k + 1) % 500 == 0) {
         detr::log::Get("eval").info("evaluated {}/{}", k + 1, limit);
@@ -93,7 +94,7 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset,
             dataset.samples[loaded->sample_indices[static_cast<std::size_t>(j)]];
         EvalImage ei = MakeGt(s, w_scale, h_scale);
         ei.dts = infer::PostprocessImage(outputs, j, static_cast<int>(w_scale),
-                                         static_cast<int>(h_scale), num_classes);
+                                         static_cast<int>(h_scale), num_classes, focal);
         eval_images.push_back(std::move(ei));
       }
     }

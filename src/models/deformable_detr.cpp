@@ -270,6 +270,7 @@ class DeformableDetrImpl : public IModel {
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
+    m.focal = true;
     m.license = "Apache-2.0";
     m.upstream = "https://github.com/fundamentalvision/Deformable-DETR";
     return m;

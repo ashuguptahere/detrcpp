@@ -485,6 +485,7 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
   torch::NoGradGuard no_grad;
   const int imgsz = model->Meta().imgsz;
   const int num_classes = model->Meta().num_classes;
+  const bool focal = model->Meta().focal;
 
   const std::filesystem::path out_dir = o.save.empty() ? std::filesystem::path("runs/predict")
                                                        : std::filesystem::path(o.save);
@@ -505,7 +506,7 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     }
     auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
     auto outputs = model->Forward(input);
-    auto dets = detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes);
+    auto dets = detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
     std::sort(dets.begin(), dets.end(),
               [](const auto& a, const auto& b) { return a.score > b.score; });
 

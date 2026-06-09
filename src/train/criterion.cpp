@@ -30,11 +30,34 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
     target_classes[b].index_copy_(0, src_idx, labels_b);
   }
 
-  auto weight = torch::ones({num_classes_ + 1}, outputs.logits.options());
-  weight[num_classes_] = w_.eos_coef;
-  // cross_entropy wants [N, C, ...] vs [N, ...]; use [B, C+1, Q] vs [B, Q].
-  auto loss_ce = F::cross_entropy(outputs.logits.transpose(1, 2), target_classes,
-                                  F::CrossEntropyFuncOptions().weight(weight));
+  // Count target boxes (also the focal normalizer).
+  std::int64_t num_boxes_total = 0;
+  for (std::int64_t b = 0; b < batch; ++b) {
+    num_boxes_total += matches[static_cast<std::size_t>(b)].first.numel();
+  }
+
+  torch::Tensor loss_ce;
+  if (focal_) {
+    // Sigmoid focal loss over num_classes (one-hot targets; background -> all 0).
+    auto onehot = torch::zeros({batch, queries, num_classes_ + 1}, outputs.logits.options());
+    onehot.scatter_(2, target_classes.unsqueeze(-1), 1.0);
+    onehot = onehot.narrow(2, 0, num_classes_);  // drop the background column
+    const double nb = static_cast<double>(num_boxes_total > 0 ? num_boxes_total : 1);
+    auto prob = outputs.logits.sigmoid();
+    auto ce = F::binary_cross_entropy_with_logits(
+        outputs.logits, onehot, F::BinaryCrossEntropyWithLogitsFuncOptions().reduction(torch::kNone));
+    auto p_t = prob * onehot + (1 - prob) * (1 - onehot);
+    auto loss = ce * (1 - p_t).pow(w_.focal_gamma);
+    auto alpha_t = w_.focal_alpha * onehot + (1 - w_.focal_alpha) * (1 - onehot);
+    loss = alpha_t * loss;
+    loss_ce = loss.mean(1).sum() / nb * static_cast<double>(queries);
+  } else {
+    auto weight = torch::ones({num_classes_ + 1}, outputs.logits.options());
+    weight[num_classes_] = w_.eos_coef;
+    // cross_entropy wants [N, C, ...] vs [N, ...]; use [B, C+1, Q] vs [B, Q].
+    loss_ce = F::cross_entropy(outputs.logits.transpose(1, 2), target_classes,
+                               F::CrossEntropyFuncOptions().weight(weight));
+  }
 
   // (2,3) Box losses over matched pairs, normalized by number of target boxes.
   std::vector<torch::Tensor> src_list;

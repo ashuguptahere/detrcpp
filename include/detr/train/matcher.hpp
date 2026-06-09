@@ -21,6 +21,9 @@ struct MatchWeights {
   double cls{1.0};
   double bbox{5.0};
   double giou{2.0};
+  bool focal{false};         // sigmoid-focal classification cost (vs softmax prob).
+  double focal_alpha{0.25};
+  double focal_gamma{2.0};
 };
 
 // One matched index pair per image: src (query indices) and tgt (target

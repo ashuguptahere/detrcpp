@@ -23,7 +23,9 @@ struct LossWeights {
   double cls{1.0};
   double bbox{5.0};
   double giou{2.0};
-  double eos_coef{0.1};  // down-weight of the "no object" class.
+  double eos_coef{0.1};       // softmax: down-weight of the "no object" class.
+  double focal_alpha{0.25};   // sigmoid-focal models only.
+  double focal_gamma{2.0};
 };
 
 struct Losses {
@@ -35,14 +37,16 @@ struct Losses {
 
 class SetCriterion {
  public:
-  SetCriterion(int num_classes, LossWeights weights) : num_classes_(num_classes), w_(weights) {}
+  SetCriterion(int num_classes, LossWeights weights, bool focal = false)
+      : num_classes_(num_classes), w_(weights), focal_(focal) {}
 
   Losses Compute(const models::Detections& outputs, const TargetBatch& targets,
                  const std::vector<MatchIndices>& matches) const;
 
  private:
-  int num_classes_;  // the "no object" class id is num_classes_ (the last logit).
+  int num_classes_;  // background class id = num_classes_ (last softmax logit).
   LossWeights w_;
+  bool focal_;       // sigmoid focal classification (no no-object slot).
 };
 
 }  // namespace detr::train

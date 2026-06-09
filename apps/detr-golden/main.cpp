@@ -55,12 +55,18 @@ int main(int argc, char** argv) {
 
   detr::weights::StateDict in_sd;
   in_sd.Set("input", *detr::weights::FromTensor(input));
-  detr::weights::SaveSafetensors(out + "/input.safetensors", in_sd);
+  if (auto r = detr::weights::SaveSafetensors(out + "/input.safetensors", in_sd); !r) {
+    std::fprintf(stderr, "save input: %s\n", r.error().message.c_str());
+    return 1;
+  }
 
   detr::weights::StateDict golden;
   golden.Set("logits", *detr::weights::FromTensor(outputs.logits));
   golden.Set("boxes", *detr::weights::FromTensor(outputs.boxes));
-  detr::weights::SaveSafetensors(out + "/golden.safetensors", golden);
+  if (auto r = detr::weights::SaveSafetensors(out + "/golden.safetensors", golden); !r) {
+    std::fprintf(stderr, "save golden: %s\n", r.error().message.c_str());
+    return 1;
+  }
 
   std::printf("golden written to %s (imgsz=%d, %zu weights)\n", out.c_str(), imgsz,
               weights.Size());

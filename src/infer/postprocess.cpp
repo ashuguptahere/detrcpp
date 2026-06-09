@@ -9,14 +9,31 @@
 namespace detr::infer {
 
 std::vector<eval::DtBox> PostprocessImage(const models::Detections& outputs, int batch_index,
-                                          int orig_w, int orig_h, int num_classes) {
+                                          int orig_w, int orig_h, int num_classes, bool focal) {
   torch::NoGradGuard no_grad;
-  auto logits = outputs.logits[batch_index];                 // [Q, C+1]
-  auto boxes = outputs.boxes[batch_index].to(torch::kCPU);   // [Q, 4] cxcywh
-  auto prob = logits.softmax(-1).narrow(1, 0, num_classes);  // drop no-object
-  auto best = prob.max(1);
-  auto scores = std::get<0>(best).to(torch::kCPU);
-  auto labels = std::get<1>(best).to(torch::kCPU);
+  auto logits = outputs.logits[batch_index];               // [Q, C(+1)]
+  auto box_q = outputs.boxes[batch_index].to(torch::kCPU);  // [Q, 4] cxcywh
+
+  torch::Tensor boxes;   // [K, 4] cxcywh (one row per emitted detection)
+  torch::Tensor scores;  // [K]
+  torch::Tensor labels;  // [K]
+  if (focal) {
+    // sigmoid scores; keep the top-100 query x class pairs.
+    auto prob = logits.sigmoid().flatten();  // [Q*num_classes]
+    const auto topk = std::min<std::int64_t>(100, prob.numel());
+    auto top = prob.topk(topk);
+    scores = std::get<0>(top).to(torch::kCPU);
+    auto idx = std::get<1>(top);
+    auto query_idx = idx.div(num_classes, "floor");
+    labels = idx.remainder(num_classes).to(torch::kCPU);
+    boxes = box_q.index_select(0, query_idx.to(torch::kCPU));
+  } else {
+    auto prob = logits.softmax(-1).narrow(1, 0, num_classes);  // drop no-object
+    auto best = prob.max(1);
+    scores = std::get<0>(best).to(torch::kCPU);
+    labels = std::get<1>(best).to(torch::kCPU);
+    boxes = box_q;
+  }
 
   const auto q = boxes.size(0);
   auto ba = boxes.accessor<float, 2>();

@@ -10,8 +10,9 @@ namespace detr::train {
 Trainer::Trainer(std::shared_ptr<models::IModel> model, TrainConfig cfg)
     : model_(std::move(model)),
       cfg_(cfg),
-      criterion_(model_->Meta().num_classes, cfg.loss),
+      criterion_(model_->Meta().num_classes, cfg.loss, model_->Meta().focal),
       ema_(*model_, cfg.ema_decay) {
+  cfg_.match.focal = model_->Meta().focal;  // matcher cost follows the class mode
   if (cfg_.seed != 0) {
     torch::manual_seed(cfg_.seed);
   }

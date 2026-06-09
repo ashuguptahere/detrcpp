@@ -33,8 +33,17 @@ std::vector<MatchIndices> HungarianMatch(const models::Detections& outputs,
     auto labels = t.labels.to(logits.device());            // [T]
     auto tgt_boxes = t.boxes.to(boxes.device());           // [T, 4]
 
-    auto prob = logits.softmax(-1);                        // [Q, C+1]
-    auto cost_class = -prob.index_select(1, labels);       // [Q, T]
+    torch::Tensor cost_class;
+    if (weights.focal) {
+      // Focal matching cost: pos_cost(label) - neg_cost(label).
+      auto p = logits.sigmoid();  // [Q, num_classes]
+      auto neg = (1 - weights.focal_alpha) * p.pow(weights.focal_gamma) *
+                 (-(1 - p + 1e-8).log());
+      auto pos = weights.focal_alpha * (1 - p).pow(weights.focal_gamma) * (-(p + 1e-8).log());
+      cost_class = pos.index_select(1, labels) - neg.index_select(1, labels);  // [Q, T]
+    } else {
+      cost_class = -logits.softmax(-1).index_select(1, labels);  // [Q, T]
+    }
     auto cost_bbox = torch::cdist(boxes, tgt_boxes, /*p=*/1);  // [Q, T]
     auto cost_giou =
         -GeneralizedBoxIou(BoxCxcywhToXyxy(boxes), BoxCxcywhToXyxy(tgt_boxes));  // [Q, T]

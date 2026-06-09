@@ -8,6 +8,8 @@
 #include <torch/torch.h>
 
 #include "detr/models/registry.hpp"
+#include "detr/train/target.hpp"
+#include "detr/train/trainer.hpp"
 
 namespace detr::models {
 namespace {
@@ -45,6 +47,22 @@ TEST_F(DeformableDetrTest, RegistersAndForwards) {
   EXPECT_EQ(out.boxes.sizes(), (std::vector<std::int64_t>{1, 8, 4}));
   EXPECT_GE(out.boxes.min().item<float>(), 0.0F);
   EXPECT_LE(out.boxes.max().item<float>(), 1.0F);
+}
+
+TEST_F(DeformableDetrTest, FocalTrainingStep) {
+  auto model = *Registry::Instance().Build("deformable-detr", Tiny());
+  EXPECT_TRUE(model->Meta().focal);  // sigmoid-focal classification
+  train::TrainConfig tc;
+  tc.lr = 1e-4;
+  train::Trainer trainer(model, tc);
+
+  auto images = torch::randn({1, 3, 64, 64});
+  train::Target t;
+  t.labels = torch::tensor({1L, 3L});
+  t.boxes = torch::tensor({{0.3F, 0.3F, 0.2F, 0.2F}, {0.7F, 0.6F, 0.25F, 0.3F}});
+  const float loss = trainer.TrainStep(images, {t});
+  EXPECT_TRUE(std::isfinite(loss));
+  EXPECT_GE(loss, 0.0F);
 }
 
 }  // namespace
