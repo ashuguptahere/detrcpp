@@ -90,7 +90,8 @@ ordered for shippability; items inside a phase can parallelize.
 - [ ] DN-DETR denoising training (noised GT queries + attn mask) on DAB
 - [ ] DINO contrastive denoising (CDN) training
 - [ ] RF-DETR DINOv2 backbone fidelity (windowed attn, register tokens) + sizes
-- [ ] Official-weight validation for the focal family (real mAP)
+- [x] DRY: shared deformable detection head (deform_head) for RT-DETR/RF-DETR/DINO
+- [ ] Official-weight validation for the focal family (real mAP) — per-model arch alignment
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
 
 ### Training

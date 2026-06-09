@@ -15,6 +15,11 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 (`-DDETR_ENABLE_TORCH=ON`, 60+ tests) passes with zero warnings in project code,
 on both CPU and the Blackwell GPU.
 
+### Changed
+- **DRY**: RT-DETR / RF-DETR / DINO now share one deformable detection head
+  (`models/deform_head`: query selection + deformable decoder + iterative
+  refinement) instead of three copies (~200 lines removed; behaviour unchanged).
+
 ### Added
 - **DINO + RF-DETR + a ViT backbone.** DINO: a multi-scale deformable encoder +
   IoU-aware query selection + iterative-refinement deformable decoder. RF-DETR:
