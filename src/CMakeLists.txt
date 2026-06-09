@@ -178,12 +178,14 @@ if(DETR_ENABLE_TORCH)
     models/deform_attn.cpp
     models/cond_decoder.cpp
     models/resnet.cpp
+    models/vit.cpp
     models/detr.cpp
     models/detr_r50.cpp
     models/deformable_detr.cpp
     models/rt_detr.cpp
     models/conditional_detr.cpp
     models/dab_detr.cpp
+    models/rf_detr.cpp
   )
   target_link_libraries(detr_models
     PUBLIC
