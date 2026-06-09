@@ -60,13 +60,20 @@ ordered for shippability; items inside a phase can parallelize.
       train, ONNX parity-verified; UpstreamRemapper for fb/detr keys
 - [x] Official-DETR head alignment (final decoder LayerNorm); parity re-verified
 - [x] `.pth` loader (modern zip format) + auto-dispatch; legacy format detected
-- [x] **Real COCO mAP from official detr-r50 weights = 41.6** (official 42.0) via
-      `--coco91` eval mode; checkpoint converted in /tmp (repo stays Python-free)
-- [ ] Aspect-preserving resize (+ padding mask) — closes the small-object AP gap
-      (0.129 vs 0.205) to reach the exact 42.0
+- [x] **Real COCO mAP, full 5000-img val: mAP50-95 0.415 / mAP50 0.617**
+      (official 0.420 / 0.624) via `--coco91 --aspect`; checkpoint converted in
+      /tmp (repo stays Python-free)
+- [x] Aspect-preserving resize (`--aspect`, batch-1) — closed the small-object AP
+      gap (0.129 → 0.163 full-val / 0.207 subset)
+- [x] **detr-r50-dc5 / detr-r101-dc5** (dilated C5, stride 16) registered + tested
+- [x] **GPU: CUDA LibTorch 2.7.1+cu128 on Blackwell** (`--device cuda:0`, ~17x);
+      no-root toolkit via `scripts/setup_cuda_toolkit.sh`
+- [ ] Padding mask in the head — enables batched aspect-preserving eval (speed)
 - [ ] Legacy (pre-1.6) .pth unpickler in C++ (so no /tmp conversion is needed)
 - [ ] Same-`imgsz` enforcement across registered models (default 640)
-- [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L
+- [ ] Deformable multi-scale attention op (torch grid_sample; ONNX GridSample) —
+      the shared gateway for Deformable-DETR / DINO / RT-DETR
+- [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L (hybrid encoder + deformable decoder)
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
 
 ### Training

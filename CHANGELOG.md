@@ -5,17 +5,25 @@ All notable changes to detrcpp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 (`MAJOR.MINOR.PATCH`). The authoritative version lives in the top-level `VERSION`
-file; use `scripts/bump_version.py` to bump it and promote the `[Unreleased]`
-section below.
+file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote the
+`[Unreleased]` section below.
 
 ## [Unreleased]
 
-Phase 1 (in progress). Verified against a real toolchain: portable
-cmake/ninja/vcpkg + LibTorch 2.5.1 CPU. Both the lightweight build
-(no LibTorch, 28 tests) and the full build (`-DDETR_ENABLE_TORCH=ON`, 34 tests)
-pass with zero warnings in project code.
+Phase 1–2 (in progress). Verified against a real toolchain: portable
+cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
+(`-DDETR_ENABLE_TORCH=ON`, 60+ tests) passes with zero warnings in project code,
+on both CPU and the Blackwell GPU.
 
 ### Added
+- **GPU support (CUDA).** Builds against CUDA LibTorch (2.7.1+cu128) and runs on
+  NVIDIA Blackwell (sm_120) via `--device cuda:0` — ~17x faster than CPU (500-image
+  COCO eval: 9s vs ~150s), same numbers. `scripts/setup_cuda_toolkit.sh` assembles
+  a CUDA 12.8 build toolkit with no root (pip wheels + NVIDIA redistribs).
+- **DETR backbone variants: `detr-r50-dc5`, `detr-r101-dc5`** (dilated C5, output
+  stride 16) — five registered ResNet DETR models.
+- **Full-val accuracy.** Official detr-r50 weights over all 5000 COCO val images
+  (`--aspect`): **mAP50-95 0.415, mAP50 0.617** (official 0.420 / 0.624).
 - **Official DETR weights run end-to-end → real COCO mAP.** With the head
   aligned and a COCO-91 eval mode (`--coco91`, raw category ids) plus an
   eval-image cap (`--max-eval`), the official facebookresearch/detr `detr-r50`
