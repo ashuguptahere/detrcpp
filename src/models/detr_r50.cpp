@@ -58,7 +58,7 @@ class DetrResNetImpl : public IModel {
  public:
   DetrResNetImpl(R50Config cfg, std::vector<int> blocks, std::string name, bool dc5)
       : cfg_(cfg), name_(std::move(name)) {
-    backbone_ = register_module("backbone", ResNet(blocks, dc5));
+    backbone_ = register_module("backbone", ResNet(blocks, /*bottleneck=*/true, dc5));
     input_proj_ =
         register_module("input_proj", nn::Conv2d(nn::Conv2dOptions(2048, cfg.hidden_dim, 1)));
     head_ = BuildDetrHead(*this, ToHeadConfig(cfg));

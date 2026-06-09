@@ -49,6 +49,24 @@ TEST_F(RtDetrTest, RegistersAndForwards) {
   EXPECT_LE(out.boxes.max().item<float>(), 1.0F);
 }
 
+TEST_F(RtDetrTest, SizeVariantsForward) {
+  // s/n use a ResNet-18 (BasicBlock) backbone; l/x use Bottleneck. All must
+  // forward to the same head shapes.
+  for (const char* name :
+       {"rt-detr-n", "rt-detr-s", "rt-detr-m", "rt-detr-x", "rt-detrv2-l", "rt-detrv3-s"}) {
+    EXPECT_TRUE(Registry::Instance().Contains(name)) << name;
+    YAML::Node c = Tiny();
+    auto built = Registry::Instance().Build(name, c);
+    ASSERT_TRUE(built.has_value()) << name << ": " << built.error().message;
+    auto model = *built;
+    model->eval();
+    torch::NoGradGuard ng;
+    auto out = model->Forward(torch::randn({1, 3, 64, 64}));
+    EXPECT_EQ(out.logits.sizes(), (std::vector<std::int64_t>{1, 8, 5})) << name;
+    EXPECT_EQ(out.boxes.sizes(), (std::vector<std::int64_t>{1, 8, 4})) << name;
+  }
+}
+
 TEST_F(RtDetrTest, FocalTrainingStep) {
   auto model = *Registry::Instance().Build("rt-detr", Tiny());
   train::TrainConfig tc;

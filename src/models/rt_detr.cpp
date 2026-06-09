@@ -23,6 +23,8 @@ namespace nn = torch::nn;
 namespace F = torch::nn::functional;
 
 struct Config {
+  std::string backbone{"r50"};  // r18 / r34 / r50 / r101
+  std::string name{"rt-detr"};  // registry name (rt-detr[vN]-{size})
   int hidden_dim{256};
   int nheads{8};
   int enc_layers{1};  // AIFI layers (on the top level only)
@@ -35,6 +37,24 @@ struct Config {
   int imgsz{640};
 };
 
+struct BackboneSpec {
+  std::vector<int> blocks;
+  bool bottleneck;
+};
+
+BackboneSpec BackboneFor(const std::string& name) {
+  if (name == "r18") {
+    return {{2, 2, 2, 2}, false};
+  }
+  if (name == "r34") {
+    return {{3, 4, 6, 3}, false};
+  }
+  if (name == "r101") {
+    return {{3, 4, 23, 3}, true};
+  }
+  return {{3, 4, 6, 3}, true};  // r50
+}
+
 template <typename T>
 T Get(const YAML::Node& c, const char* k, T fb) {
   return (c && c[k]) ? c[k].as<T>() : fb;
@@ -42,6 +62,7 @@ T Get(const YAML::Node& c, const char* k, T fb) {
 
 Config ReadConfig(const YAML::Node& c) {
   Config x;
+  x.backbone = Get<std::string>(c, "backbone", x.backbone);
   x.hidden_dim = Get(c, "hidden_dim", x.hidden_dim);
   x.nheads = Get(c, "nheads", x.nheads);
   x.enc_layers = Get(c, "enc_layers", x.enc_layers);
@@ -223,14 +244,16 @@ class RtDetrImpl : public IModel {
  public:
   explicit RtDetrImpl(Config cfg) : cfg_(cfg) {
     const int d = cfg.hidden_dim;
-    backbone_ = register_module("backbone", ResNet(std::vector<int>{3, 4, 6, 3}, /*dc5=*/false));
+    auto spec = BackboneFor(cfg.backbone);
+    backbone_ = register_module("backbone", ResNet(spec.blocks, spec.bottleneck, /*dc5=*/false));
+    const auto backbone_ch = backbone_->feature_channels();  // {C3, C4, C5}
 
     // input_proj: 1x1 conv + BN to hidden, per backbone level (C3,C4,C5).
-    const int backbone_ch[3] = {512, 1024, 2048};
     input_proj_ = register_module("input_proj", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels; ++i) {
       input_proj_->push_back(nn::Sequential(
-          nn::Conv2d(nn::Conv2dOptions(backbone_ch[i], d, 1).bias(false)), nn::BatchNorm2d(d)));
+          nn::Conv2d(nn::Conv2dOptions(backbone_ch[static_cast<std::size_t>(i)], d, 1).bias(false)),
+          nn::BatchNorm2d(d)));
     }
 
     // AIFI on the top level.
@@ -366,7 +389,7 @@ class RtDetrImpl : public IModel {
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = "rt-detr";
+    m.name = cfg_.name;
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
@@ -417,23 +440,51 @@ class RtDetrImpl : public IModel {
   nn::ModuleList dec_bbox_{nullptr};
 };
 
-}  // namespace
+// Sizes (n/s/m/l/x) = backbone depth + width. RT-DETR officially ships s/m/l/x
+// (R18/R34/R50/R101); n is our smaller nano (R18 @ width 128).
+struct SizeSpec {
+  const char* tag;
+  const char* backbone;
+  int hidden;
+};
+constexpr SizeSpec kSizes[] = {
+    {"n", "r18", 128}, {"s", "r18", 256}, {"m", "r34", 256}, {"l", "r50", 256}, {"x", "r101", 256},
+};
+// v1/v2/v3 share this inference architecture; v2/v3's published gains are largely
+// training recipes (discrete sampling, dense supervision) — tracked follow-ups.
+constexpr const char* kVersions[] = {"rt-detr", "rt-detrv2", "rt-detrv3"};
 
-std::shared_ptr<IModel> MakeRtDetr(const YAML::Node& cfg) {
-  return std::make_shared<RtDetrImpl>(ReadConfig(cfg));
+void RegisterOne(const std::string& name, const std::string& backbone, int hidden) {
+  auto build = [name, backbone, hidden](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+    Config c = ReadConfig(cfg);
+    if (!(cfg && cfg["backbone"])) {
+      c.backbone = backbone;
+    }
+    if (!(cfg && cfg["hidden_dim"])) {
+      c.hidden_dim = hidden;
+    }
+    c.name = name;
+    return std::make_shared<RtDetrImpl>(c);
+  };
+  ModelMeta meta;
+  meta.name = name;
+  meta.num_classes = 80;
+  meta.num_queries = 300;
+  meta.focal = true;
+  meta.license = "Apache-2.0";
+  meta.upstream = "https://github.com/lyuwenyu/RT-DETR";
+  Registry::Instance().Register(name, meta, std::move(build));
 }
 
-ModelMeta RtDetrMeta(const YAML::Node& cfg) {
-  Config c = ReadConfig(cfg);
-  ModelMeta m;
-  m.name = "rt-detr";
-  m.imgsz = c.imgsz;
-  m.num_classes = c.num_classes;
-  m.num_queries = c.num_queries;
-  m.focal = true;
-  m.license = "Apache-2.0";
-  m.upstream = "https://github.com/lyuwenyu/RT-DETR";
-  return m;
+}  // namespace
+
+void RegisterRtDetr() {
+  for (const char* ver : kVersions) {
+    for (const auto& sz : kSizes) {
+      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden);
+    }
+    RegisterOne(ver, "r50", 256);  // plain version name defaults to the -l config
+  }
 }
 
 }  // namespace detr::models

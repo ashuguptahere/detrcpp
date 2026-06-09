@@ -16,7 +16,8 @@
 
 namespace detr::models {
 
-std::shared_ptr<IModel> MakeRtDetr(const YAML::Node& cfg);
-ModelMeta RtDetrMeta(const YAML::Node& cfg);
+// Registers the rt-detr / rt-detrv2 / rt-detrv3 family in n/s/m/l/x sizes (plus
+// the plain version name as an alias for -l) into the global Registry.
+void RegisterRtDetr();
 
 }  // namespace detr::models

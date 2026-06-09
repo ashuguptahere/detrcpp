@@ -163,7 +163,8 @@ class DeformableDetrImpl : public IModel {
  public:
   explicit DeformableDetrImpl(Config cfg) : cfg_(cfg) {
     const int d = cfg.hidden_dim;
-    backbone_ = register_module("backbone", ResNet(std::vector<int>{3, 4, 6, 3}, /*dc5=*/false));
+    backbone_ = register_module(
+        "backbone", ResNet(std::vector<int>{3, 4, 6, 3}, /*bottleneck=*/true, /*dc5=*/false));
 
     // input_proj: 1x1 on C3/C4/C5 (+ GroupNorm), then 3x3 stride-2 extra levels.
     input_proj_ = register_module("input_proj", nn::ModuleList());
