@@ -186,6 +186,7 @@ if(DETR_ENABLE_TORCH)
     models/conditional_detr.cpp
     models/dab_detr.cpp
     models/rf_detr.cpp
+    models/dino.cpp
   )
   target_link_libraries(detr_models
     PUBLIC

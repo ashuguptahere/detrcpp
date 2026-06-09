@@ -12,6 +12,7 @@
 #include "detr/models/deformable_detr.hpp"
 #include "detr/models/detr_head.hpp"
 #include "detr/models/detr_r50.hpp"
+#include "detr/models/dino.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/models/rf_detr.hpp"
@@ -150,6 +151,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("conditional-detr", ConditionalDetrMeta({}), &MakeConditionalDetr);
   Registry::Instance().Register("dab-detr", DabDetrMeta({}), &MakeDabDetr);
   Registry::Instance().Register("rf-detr", RfDetrMeta({}), &MakeRfDetr);
+  Registry::Instance().Register("dino", DinoMeta({}), &MakeDino);
   RegisterRtDetr();
 }
 
