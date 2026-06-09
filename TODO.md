@@ -80,9 +80,11 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] GPU criterion fix (move matcher indices to the output device)
 - [ ] Validate deformable-detr vs official weights (HF SenseTime/deformable-detr
       or Google-Drive checkpoint) for real mAP
+- [x] **RT-DETR** (hybrid AIFI+CCFM encoder + query selection + deformable decoder
+      with iterative refinement) — registered, forward + focal-train, GPU-validated
+- [ ] RT-DETR depth variants (R18/R34/R101) + validate vs official weights
 - [ ] Conditional-DETR, DAB-DETR (custom decoder attention; standard ops)
 - [ ] DN-DETR (denoising training on DAB)
-- [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L (hybrid encoder + deformable decoder)
 - [ ] DINO (deformable + contrastive denoising + mixed query selection)
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance
 

@@ -16,6 +16,13 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 on both CPU and the Blackwell GPU.
 
 ### Added
+- **RT-DETR (real-time DETR).** The flagship real-time model: a hybrid encoder
+  (AIFI transformer on the top level + CCFM CNN cross-scale fusion with RepVGG/
+  CSPRepLayer FPN+PAN), IoU-aware query selection from grid anchors, and a
+  deformable decoder with 4D reference points + per-layer iterative box refinement
+  (sigmoid/focal head). Reuses the shared ResNet + deformable op + focal path.
+  Registered as `rt-detr`; forward + focal-train tested, trains on GPU (focal loss
+  3534 → 58 / 20 epochs). The deformable op gained a 4D-reference-point path.
 - **Multi-scale deformable attention + Deformable-DETR.** `MSDeformAttn` (the
   Deformable-DETR op, via grid_sample) is validated numerically against the torch
   reference (max|Δ| < 1e-5) and is the shared gateway for the deformable family.
