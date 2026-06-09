@@ -15,6 +15,14 @@ cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
 (`-DDETR_ENABLE_TORCH=ON`, 60+ tests) passes with zero warnings in project code,
 on both CPU and the Blackwell GPU.
 
+### Added
+"- **Deformable-DETR official weights → real COCO mAP.** The HF SenseTime/
+  deformable-detr checkpoint loads into our model with **0 unexpected** (a /tmp
+  converter renames keys + concatenates the decoder self-attn q/k/v into
+  in_proj_weight; the repo is unchanged) and reproduces the published metric:
+  **mAP50-95 0.438, mAP50 0.627 on full COCO val** (official 0.445). Correct
+  detections on a real image. Second focal-family model validated end to end.
+
 ### Changed
 - **DRY**: RT-DETR / RF-DETR / DINO now share one deformable detection head
   (`models/deform_head`: query selection + deformable decoder + iterative

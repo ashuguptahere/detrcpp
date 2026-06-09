@@ -78,8 +78,8 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] **Shared focal/sigmoid path** (focal loss + focal matcher cost + sigmoid-
       topk postprocess) — deformable-detr trains on GPU (loss 3639->157/15 ep)
 - [x] GPU criterion fix (move matcher indices to the output device)
-- [ ] Validate deformable-detr vs official weights (HF SenseTime/deformable-detr
-      or Google-Drive checkpoint) for real mAP
+- [x] **Validated deformable-detr vs official weights → real COCO mAP 43.8**
+      (official 44.5); HF convert (rename + qkv concat) loads 0 unexpected
 - [x] **RT-DETR** (hybrid AIFI+CCFM encoder + query selection + deformable decoder
       with iterative refinement) — registered, forward + focal-train, GPU-validated
 - [ ] RT-DETR depth variants (R18/R34/R101) + validate vs official weights
