@@ -75,9 +75,11 @@ ordered for shippability; items inside a phase can parallelize.
       (max|Δ|<1e-5); the shared gateway for the deformable family
 - [x] **Deformable-DETR** architecture (multi-scale deformable enc/dec + sigmoid
       head) registered + forward-tested
-- [ ] **Shared focal/sigmoid path** (focal loss + sigmoid-topk postprocess) —
-      prerequisite to TRAIN/EVAL every modern variant (Deformable/Conditional/
-      DAB/DN/DINO/RT-DETR all use it); then validate Deformable-DETR vs official
+- [x] **Shared focal/sigmoid path** (focal loss + focal matcher cost + sigmoid-
+      topk postprocess) — deformable-detr trains on GPU (loss 3639->157/15 ep)
+- [x] GPU criterion fix (move matcher indices to the output device)
+- [ ] Validate deformable-detr vs official weights (HF SenseTime/deformable-detr
+      or Google-Drive checkpoint) for real mAP
 - [ ] Conditional-DETR, DAB-DETR (custom decoder attention; standard ops)
 - [ ] DN-DETR (denoising training on DAB)
 - [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L (hybrid encoder + deformable decoder)
