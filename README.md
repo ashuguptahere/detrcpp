@@ -14,16 +14,18 @@ hood.
 
 ## Highlights
 
-- **Official DETR weights → real COCO mAP.** The official facebookresearch/detr
-  `detr-r50` checkpoint loads byte-exact and reproduces the published metric:
-  **mAP50-95 = 0.415, mAP50 = 0.617** on all 5000 COCO val images (official
-  0.420 / 0.624).
+- **Three models reproduce official COCO mAP from real weights** (full 5000-image
+  val, within ~0.7 AP of published): `detr-r50` **41.5** (42.0), `deformable-detr`
+  **43.8** (44.5), `conditional-detr` **40.3** (40.9) — across both the softmax and
+  sigmoid/focal heads. Each loads with **0 unexpected** tensors.
 - **Python-free ONNX export with numeric parity** — a hand-written C++ ONNX
   emitter matches LibTorch to `max|Δ| ~1e-6` (verified in onnxruntime).
 - **GPU (CUDA) on NVIDIA Blackwell** — `--device cuda:0`, ~17× faster than CPU.
 - **The deformable family** — multi-scale deformable attention (validated vs the
-  PyTorch reference to `<1e-5`), powering Deformable-DETR and RT-DETR.
+  PyTorch reference to `<1e-5`), powering Deformable-DETR, RT-DETR, DINO, RF-DETR.
 - **One registry, many models** — adding a variant is one file + one registration.
+
+See [`docs/STATUS.md`](docs/STATUS.md) for a full done/remaining breakdown.
 
 ## Models
 

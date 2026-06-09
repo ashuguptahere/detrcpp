@@ -12,8 +12,10 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 Phase 1–2 (in progress). Verified against a real toolchain: portable
 cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
-(`-DDETR_ENABLE_TORCH=ON`, 60+ tests) passes with zero warnings in project code,
-on both CPU and the Blackwell GPU.
+(`-DDETR_ENABLE_TORCH=ON`, 76 tests) passes with zero warnings in project code,
+on both CPU and the Blackwell GPU. **28 models registered; 3 validated against
+official weights with real COCO mAP** (detr-r50 41.5, deformable-detr 43.8,
+conditional-detr 40.3). See [`docs/STATUS.md`](docs/STATUS.md) for done/remaining.
 
 ### Added
 "- **Deformable-DETR official weights → real COCO mAP.** The HF SenseTime/

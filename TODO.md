@@ -5,6 +5,11 @@ Master task list, traceable to the approved plan
 requirements. `[x]` done, `[~]` in progress, `[ ]` not started. Phases are
 ordered for shippability; items inside a phase can parallelize.
 
+> For a concise done/remaining snapshot, see [`docs/STATUS.md`](docs/STATUS.md).
+> Highlights: 28 models registered; 3 validated vs official weights (detr-r50
+> 41.5, deformable-detr 43.8, conditional-detr 40.3); GPU on Blackwell. Next:
+> dab-detr (PReLU + encoder query_scale) and rt-detr (ResNet-VD) validation.
+
 ---
 
 ## Phase 0 — Skeleton ✅
