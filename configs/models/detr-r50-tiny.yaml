@@ -1,0 +1,12 @@
+# Tiny detr-r50 for fast smoke/parity. The ResNet-50 backbone is full size (it is
+# not shrinkable); only the transformer + head are tiny here. num_classes must
+# match the dataset's category count.
+model: detr-r50
+hidden_dim: 32
+nheads: 4
+enc_layers: 1
+dec_layers: 1
+dim_feedforward: 64
+num_queries: 6
+num_classes: 4
+imgsz: 64

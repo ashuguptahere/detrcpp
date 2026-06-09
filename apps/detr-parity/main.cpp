@@ -29,6 +29,9 @@ int GetInt(const YAML::Node& c, const char* key, int def) {
 
 detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   detr::onnxexport::DetrArch a;
+  const std::string model = (c && c["model"]) ? c["model"].as<std::string>() : "detr";
+  a.backbone = (model == "detr-r50") ? detr::onnxexport::Backbone::ResNet50
+                                     : detr::onnxexport::Backbone::Compact;
   a.hidden_dim = GetInt(c, "hidden_dim", a.hidden_dim);
   a.nheads = GetInt(c, "nheads", a.nheads);
   a.enc_layers = GetInt(c, "enc_layers", a.enc_layers);

@@ -2,15 +2,13 @@
 
 #include "detr/models/detr.hpp"
 
-#include <cmath>
-#include <cstdint>
 #include <memory>
 #include <string>
-#include <tuple>
-#include <vector>
 
 #include <torch/torch.h>
 
+#include "detr/models/detr_head.hpp"
+#include "detr/models/detr_r50.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
 
@@ -54,30 +52,9 @@ Config ReadConfig(const YAML::Node& cfg) {
   return c;
 }
 
-// 2D sine positional embedding (DETR's PositionEmbeddingSine, no padding mask).
-// Returns [B, d, h, w].
-torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
-                      const torch::TensorOptions& opts) {
-  constexpr double kPi = 3.14159265358979323846;
-  const std::int64_t half = d / 2;
-  const double scale = 2.0 * kPi;
-  auto ys = torch::arange(1, h + 1, opts) / (static_cast<double>(h) + 1e-6) * scale;  // [h]
-  auto xs = torch::arange(1, w + 1, opts) / (static_cast<double>(w) + 1e-6) * scale;  // [w]
-  auto dim_t = torch::arange(0, half, opts);
-  dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));  // [half]
-
-  auto px = xs.unsqueeze(1) / dim_t.unsqueeze(0);  // [w, half]
-  auto py = ys.unsqueeze(1) / dim_t.unsqueeze(0);  // [h, half]
-  auto interleave = [half](torch::Tensor p) {
-    return torch::stack({p.slice(1, 0, half, 2).sin(), p.slice(1, 1, half, 2).cos()}, 2)
-        .flatten(1);  // [n, half]
-  };
-  px = interleave(px);  // [w, half]
-  py = interleave(py);  // [h, half]
-  auto pyf = py.unsqueeze(1).expand({h, w, half});  // [h, w, half]
-  auto pxf = px.unsqueeze(0).expand({h, w, half});  // [h, w, half]
-  auto pos = torch::cat({pyf, pxf}, 2);             // [h, w, d]
-  return pos.permute({2, 0, 1}).unsqueeze(0).expand({b, d, h, w}).contiguous();
+DetrConfig ToHeadConfig(const Config& c) {
+  return DetrConfig{c.hidden_dim, c.nheads,       c.enc_layers,
+                    c.dec_layers, c.dim_feedforward, c.num_queries, c.num_classes};
 }
 
 nn::Sequential MakeBackbone(int w0) {
@@ -107,123 +84,19 @@ nn::Sequential MakeBackbone(int w0) {
   return s;
 }
 
-struct EncoderLayerImpl : nn::Module {
-  nn::MultiheadAttention self_attn{nullptr};
-  nn::Linear linear1{nullptr};
-  nn::Linear linear2{nullptr};
-  nn::LayerNorm norm1{nullptr};
-  nn::LayerNorm norm2{nullptr};
-
-  EncoderLayerImpl(int d, int nhead, int ff) {
-    self_attn = register_module(
-        "self_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.1)));
-    linear1 = register_module("linear1", nn::Linear(d, ff));
-    linear2 = register_module("linear2", nn::Linear(ff, d));
-    norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
-    norm2 = register_module("norm2", nn::LayerNorm(nn::LayerNormOptions({d})));
-  }
-
-  torch::Tensor forward(torch::Tensor src, const torch::Tensor& pos) {
-    auto q = src + pos;
-    auto attn = std::get<0>(self_attn->forward(q, q, src));
-    src = norm1->forward(src + attn);
-    auto ff = linear2->forward(torch::relu(linear1->forward(src)));
-    src = norm2->forward(src + ff);
-    return src;
-  }
-};
-TORCH_MODULE(EncoderLayer);
-
-struct DecoderLayerImpl : nn::Module {
-  nn::MultiheadAttention self_attn{nullptr};
-  nn::MultiheadAttention cross_attn{nullptr};
-  nn::Linear linear1{nullptr};
-  nn::Linear linear2{nullptr};
-  nn::LayerNorm norm1{nullptr};
-  nn::LayerNorm norm2{nullptr};
-  nn::LayerNorm norm3{nullptr};
-
-  DecoderLayerImpl(int d, int nhead, int ff) {
-    self_attn = register_module(
-        "self_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.1)));
-    cross_attn = register_module(
-        "cross_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.1)));
-    linear1 = register_module("linear1", nn::Linear(d, ff));
-    linear2 = register_module("linear2", nn::Linear(ff, d));
-    norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
-    norm2 = register_module("norm2", nn::LayerNorm(nn::LayerNormOptions({d})));
-    norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
-  }
-
-  torch::Tensor forward(torch::Tensor tgt, const torch::Tensor& memory,
-                        const torch::Tensor& pos, const torch::Tensor& query_pos) {
-    auto q = tgt + query_pos;
-    auto sa = std::get<0>(self_attn->forward(q, q, tgt));
-    tgt = norm1->forward(tgt + sa);
-    auto ca = std::get<0>(cross_attn->forward(tgt + query_pos, memory + pos, memory));
-    tgt = norm2->forward(tgt + ca);
-    auto ff = linear2->forward(torch::relu(linear1->forward(tgt)));
-    tgt = norm3->forward(tgt + ff);
-    return tgt;
-  }
-};
-TORCH_MODULE(DecoderLayer);
-
 class DetrImpl : public IModel {
  public:
   explicit DetrImpl(Config cfg) : cfg_(cfg) {
     backbone_ = register_module("backbone", MakeBackbone(cfg.backbone_width));
     input_proj_ = register_module(
         "input_proj", nn::Conv2d(nn::Conv2dOptions(8 * cfg.backbone_width, cfg.hidden_dim, 1)));
-    query_embed_ = register_module("query_embed", nn::Embedding(cfg.num_queries, cfg.hidden_dim));
-
-    encoder_ = register_module("encoder", nn::ModuleList());
-    for (int i = 0; i < cfg.enc_layers; ++i) {
-      encoder_->push_back(EncoderLayer(cfg.hidden_dim, cfg.nheads, cfg.dim_feedforward));
-    }
-    decoder_ = register_module("decoder", nn::ModuleList());
-    for (int i = 0; i < cfg.dec_layers; ++i) {
-      decoder_->push_back(DecoderLayer(cfg.hidden_dim, cfg.nheads, cfg.dim_feedforward));
-    }
-
-    class_embed_ =
-        register_module("class_embed", nn::Linear(cfg.hidden_dim, cfg.num_classes + 1));
-    bbox_embed_ = register_module(
-        "bbox_embed",
-        nn::Sequential(nn::Linear(cfg.hidden_dim, cfg.hidden_dim), nn::Functional(torch::relu),
-                       nn::Linear(cfg.hidden_dim, cfg.hidden_dim), nn::Functional(torch::relu),
-                       nn::Linear(cfg.hidden_dim, 4)));
+    head_ = BuildDetrHead(*this, ToHeadConfig(cfg));
   }
 
   Detections Forward(torch::Tensor images) override {
-    auto feat = backbone_->forward(images);     // [B, 8w, h, w]
-    auto src = input_proj_->forward(feat);       // [B, d, h, w]
-    const auto b = src.size(0);
-    const auto d = src.size(1);
-    const auto h = src.size(2);
-    const auto w = src.size(3);
-
-    auto pos = SinePos(b, d, h, w, src.options());   // [B, d, h, w]
-    // [B, d, h, w] -> [h*w, B, d]
-    auto src_seq = src.flatten(2).permute({2, 0, 1}).contiguous();
-    auto pos_seq = pos.flatten(2).permute({2, 0, 1}).contiguous();
-
-    auto memory = src_seq;
-    for (const auto& m : *encoder_) {
-      memory = m->as<EncoderLayerImpl>()->forward(memory, pos_seq);
-    }
-
-    auto query = query_embed_->weight.unsqueeze(1).repeat({1, b, 1});  // [Q, B, d]
-    auto tgt = torch::zeros_like(query);
-    for (const auto& m : *decoder_) {
-      tgt = m->as<DecoderLayerImpl>()->forward(tgt, memory, pos_seq, query);
-    }
-
-    auto hs = tgt.transpose(0, 1);                       // [B, Q, d]
-    Detections out;
-    out.logits = class_embed_->forward(hs);              // [B, Q, C+1]
-    out.boxes = bbox_embed_->forward(hs).sigmoid();      // [B, Q, 4]
-    return out;
+    auto feat = backbone_->forward(images);
+    auto src = input_proj_->forward(feat);
+    return RunDetrHead(head_, src, ToHeadConfig(cfg_));
   }
 
   ModelMeta Meta() const override {
@@ -241,11 +114,7 @@ class DetrImpl : public IModel {
   Config cfg_;
   nn::Sequential backbone_{nullptr};
   nn::Conv2d input_proj_{nullptr};
-  nn::Embedding query_embed_{nullptr};
-  nn::ModuleList encoder_{nullptr};
-  nn::ModuleList decoder_{nullptr};
-  nn::Linear class_embed_{nullptr};
-  nn::Sequential bbox_embed_{nullptr};
+  DetrHead head_;
 };
 
 }  // namespace
@@ -268,6 +137,7 @@ ModelMeta DetrMeta(const YAML::Node& cfg) {
 
 void RegisterBuiltins() {
   Registry::Instance().Register("detr", DetrMeta({}), &MakeDetr);
+  Registry::Instance().Register("detr-r50", DetrR50Meta({}), &MakeDetrR50);
 }
 
 }  // namespace detr::models

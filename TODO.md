@@ -55,7 +55,10 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] YAML architecture config (hidden_dim/nheads/enc/dec/queries/classes…)
 - [x] DETR (conv backbone + transformer enc/dec + queries + class/box heads),
       forward-pass + weight-roundtrip tested, registered, shown in `--list-models`
-- [ ] Swap compact backbone for ResNet-50 with torchvision-exact naming
+- [x] Shared transformer head (`detr_head`) — DRY across backbone variants
+- [x] **detr-r50** (torchvision ResNet-50 backbone) — registered, trains, ONNX
+      parity-verified; UpstreamRemapper for fb/detr keys
+- [ ] Byte-exact official-checkpoint parity for detr-r50 (final decoder norm etc.)
 - [ ] Same-`imgsz` enforcement across registered models (default 640)
 - [ ] RT-DETR-S / RT-DETR-M / RT-DETR-L
 - [ ] Port/verify weights from Apache-2.0 upstreams; document provenance

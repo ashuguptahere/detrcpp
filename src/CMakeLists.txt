@@ -174,7 +174,9 @@ if(DETR_ENABLE_TORCH)
   # detr_models — model registry + DETR variants (torch modules).
   add_library(detr_models STATIC
     models/registry.cpp
+    models/detr_head.cpp
     models/detr.cpp
+    models/detr_r50.cpp
   )
   target_link_libraries(detr_models
     PUBLIC

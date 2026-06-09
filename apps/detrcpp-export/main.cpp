@@ -37,8 +37,8 @@ int main(int argc, char** argv) {
   app.add_option("--imgsz", imgsz, "override image size (fixed in the exported graph)");
   CLI11_PARSE(app, argc, argv);
 
-  if (model != "detr") {
-    std::fprintf(stderr, "only 'detr' is supported so far (got '%s')\n", model.c_str());
+  if (model != "detr" && model != "detr-r50") {
+    std::fprintf(stderr, "unsupported model '%s' (have: detr, detr-r50)\n", model.c_str());
     return 2;
   }
 
@@ -53,6 +53,8 @@ int main(int argc, char** argv) {
   }
 
   detr::onnxexport::DetrArch arch;
+  arch.backbone = (model == "detr-r50") ? detr::onnxexport::Backbone::ResNet50
+                                        : detr::onnxexport::Backbone::Compact;
   arch.hidden_dim = GetInt(cfg, "hidden_dim", arch.hidden_dim);
   arch.nheads = GetInt(cfg, "nheads", arch.nheads);
   arch.enc_layers = GetInt(cfg, "enc_layers", arch.enc_layers);

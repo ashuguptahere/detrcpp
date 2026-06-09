@@ -16,8 +16,11 @@
 
 namespace detr::onnxexport {
 
-// Mirrors models::DetrImpl's Config (the architecture the weights belong to).
+enum class Backbone { Compact, ResNet50 };
+
+// Mirrors the model's Config (the architecture the weights belong to).
 struct DetrArch {
+  Backbone backbone{Backbone::Compact};
   int hidden_dim{256};
   int nheads{8};
   int enc_layers{6};
@@ -26,7 +29,7 @@ struct DetrArch {
   int num_queries{100};
   int num_classes{91};
   int imgsz{640};
-  int backbone_width{64};
+  int backbone_width{64};  // Compact backbone only
 };
 
 // Builds the ONNX model from |arch| + |weights| and writes it to |path| (after

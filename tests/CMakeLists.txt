@@ -32,6 +32,7 @@ if(DETR_ENABLE_TORCH)
   target_sources(detr_unit_tests PRIVATE
     unit/test_torch_bridge.cpp
     unit/test_detr.cpp
+    unit/test_detr_r50.cpp
     unit/test_train.cpp
     unit/test_loader.cpp
     unit/test_io.cpp

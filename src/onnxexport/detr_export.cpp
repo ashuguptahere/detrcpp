@@ -241,6 +241,56 @@ struct Emitter {
     return Gemm(flat, prefix + ".out_proj.weight", prefix + ".out_proj.bias");
   }
 
+  // --- backbones (return the final feature map [1, C, h, w]) ---
+
+  std::string CompactBackbone(const std::string& input) {
+    std::string x = Conv(input, "backbone.0.weight", "", 7, 2, 3);
+    x = Bn(x, "backbone.1");
+    x = Unary("Relu", x);
+    x = Pool(x, 3, 2, 1);
+    const int stage_base[4] = {4, 10, 16, 22};
+    for (int s = 0; s < 4; ++s) {
+      const int base = stage_base[s];
+      const int stride = (s == 0) ? 1 : 2;
+      x = Conv(x, fmt::format("backbone.{}.weight", base), "", 3, stride, 1);
+      x = Bn(x, fmt::format("backbone.{}", base + 1));
+      x = Unary("Relu", x);
+      x = Conv(x, fmt::format("backbone.{}.weight", base + 3), "", 3, 1, 1);
+      x = Bn(x, fmt::format("backbone.{}", base + 4));
+      x = Unary("Relu", x);
+    }
+    return x;
+  }
+
+  // ResNet-50 bottleneck: 1x1 -> 3x3(stride) -> 1x1, plus an optional 1x1
+  // downsample on the residual; relu(main + identity).
+  std::string Bottleneck(const std::string& x, const std::string& p, int stride, bool has_down) {
+    std::string c = Unary("Relu", Bn(Conv(x, p + ".conv1.weight", "", 1, 1, 0), p + ".bn1"));
+    c = Unary("Relu", Bn(Conv(c, p + ".conv2.weight", "", 3, stride, 1), p + ".bn2"));
+    c = Bn(Conv(c, p + ".conv3.weight", "", 1, 1, 0), p + ".bn3");
+    std::string id = x;
+    if (has_down) {
+      id = Bn(Conv(x, p + ".downsample.0.weight", "", 1, stride, 0), p + ".downsample.1");
+    }
+    return Unary("Relu", Binary("Add", c, id));
+  }
+
+  std::string ResNet50Backbone(const std::string& input) {
+    std::string x = Unary(
+        "Relu", Bn(Conv(input, "backbone.conv1.weight", "", 7, 2, 3), "backbone.bn1"));
+    x = Pool(x, 3, 2, 1);
+    const int blocks[4] = {3, 4, 6, 3};
+    const int strides[4] = {1, 2, 2, 2};
+    for (int lyr = 0; lyr < 4; ++lyr) {
+      for (int b = 0; b < blocks[lyr]; ++b) {
+        const std::string p = fmt::format("backbone.layer{}.{}", lyr + 1, b);
+        const int stride = (b == 0) ? strides[lyr] : 1;
+        x = Bottleneck(x, p, stride, /*has_down=*/b == 0);
+      }
+    }
+    return x;
+  }
+
   // Replicates SinePos -> a constant [L, d] positional encoding (L = h*w).
   std::vector<float> SinePos(int h, int w) {
     const int d = a.hidden_dim;
@@ -291,26 +341,14 @@ core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& we
 
   g.AddInput("images", {1, 3, arch.imgsz, arch.imgsz});
 
-  // --- backbone (mirrors MakeBackbone indices) ---
-  std::string x = e.Conv("images", "backbone.0.weight", "", 7, 2, 3);
-  x = e.Bn(x, "backbone.1");
-  x = e.Unary("Relu", x);
-  x = e.Pool(x, 3, 2, 1);
-  // 4 stages at base indices 4,10,16,22; stride 1 for stage 0 else 2.
-  const int stage_base[4] = {4, 10, 16, 22};
-  for (int s = 0; s < 4; ++s) {
-    const int base = stage_base[s];
-    const int stride = (s == 0) ? 1 : 2;
-    x = e.Conv(x, fmt::format("backbone.{}.weight", base), "", 3, stride, 1);
-    x = e.Bn(x, fmt::format("backbone.{}", base + 1));
-    x = e.Unary("Relu", x);
-    x = e.Conv(x, fmt::format("backbone.{}.weight", base + 3), "", 3, 1, 1);
-    x = e.Bn(x, fmt::format("backbone.{}", base + 4));
-    x = e.Unary("Relu", x);
-  }
+  // --- backbone (compact conv stack or torchvision ResNet-50) ---
+  std::string backbone_out = (arch.backbone == Backbone::ResNet50)
+                                 ? e.ResNet50Backbone("images")
+                                 : e.CompactBackbone("images");
 
-  // input_proj 1x1 conv (has bias) -> [1,d,feat,feat]
-  x = e.Conv(x, "input_proj.weight", "input_proj.bias", 1, 1, 0);
+  // input_proj 1x1 conv (has bias) -> [1,d,feat,feat]. The weight initializer
+  // carries the input channel count, so this is the same for both backbones.
+  std::string x = e.Conv(backbone_out, "input_proj.weight", "input_proj.bias", 1, 1, 0);
 
   // [1,d,h,w] -> [d, L] -> [L, d]
   std::string src = e.Transpose(e.Reshape(x, {d, L}), {1, 0});

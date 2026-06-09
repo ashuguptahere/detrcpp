@@ -28,7 +28,8 @@ int main(int argc, char** argv) {
 
   detr::models::RegisterBuiltins();
   YAML::Node cfg = YAML::LoadFile(config);
-  auto built = detr::models::Registry::Instance().Build("detr", cfg);
+  const std::string model_name = cfg["model"] ? cfg["model"].as<std::string>() : "detr";
+  auto built = detr::models::Registry::Instance().Build(model_name, cfg);
   if (!built) {
     std::fprintf(stderr, "build: %s\n", built.error().message.c_str());
     return 1;

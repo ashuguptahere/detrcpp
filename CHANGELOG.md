@@ -16,6 +16,15 @@ cmake/ninja/vcpkg + LibTorch 2.5.1 CPU. Both the lightweight build
 pass with zero warnings in project code.
 
 ### Added
+- **Second model: `detr-r50`** (DETR with a torchvision ResNet-50 backbone) —
+  proves the framework is modular end to end. A DRY refactor extracts the shared
+  transformer head (`detr_head`) used by both `detr` and `detr-r50`; only the
+  backbone differs. The new model registers, lists, trains (a real step),
+  predicts, evaluates, and **exports to ONNX with numeric parity** (the ONNX
+  emitter gained a ResNet-50 bottleneck/residual path; parity max|Δ| ~1e-6 vs
+  LibTorch). It ships an `UpstreamRemapper` mapping facebookresearch/detr keys
+  (backbone.0.body→backbone, transformer.*.layers→enc/dec, multihead_attn→
+  cross_attn, bbox_embed.layers.N→…). `configs/models/detr-r50-tiny.yaml`.
 - **Weight interop (`detr::weights`)** — bidirectional compatibility with the
   original repos, Python-free: `RawTensor`/`DType`, `StateDict`, a
   simdjson-backed safetensors reader/writer, and a `WeightRemapper` that adapts
