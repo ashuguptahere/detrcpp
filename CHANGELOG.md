@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **RT-DETR-CDN training recipe.** A new `rt-detr-cdn` model — RT-DETR (ResNet-VD +
+  hybrid AIFI/CCFM encoder + shared deformable head) with contrastive denoising
+  training, reusing the shared deform-head CDN entry + the contrastive noise
+  generator (a `denoising` flag + `label_enc` + an `Encode`/`Forward` split +
+  `ForwardDenoise`, mirroring dino-cdn/rf-detr-cdn; no new infra). A single
+  training-recipe alias (the -l config), not a size matrix. Inference is plain
+  RT-DETR; rt-detr/v2/v3 stay byte-identical. Verified by an overfit test. This
+  brings CDN denoising to every deformable family (dino, rf-detr, rt-detr).
 
 ### Changed
 

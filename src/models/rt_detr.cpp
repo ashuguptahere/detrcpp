@@ -177,7 +177,7 @@ TORCH_MODULE(AIFILayer);
 
 class RtDetrImpl : public IModel {
  public:
-  explicit RtDetrImpl(Config cfg) : cfg_(cfg) {
+  explicit RtDetrImpl(Config cfg, bool denoising = false) : cfg_(cfg), denoising_(denoising) {
     const int d = cfg.hidden_dim;
     auto spec = BackboneFor(cfg.backbone);
     // RT-DETR uses a ResNet-D/VD backbone (deep stem + avg-pool downsample).
@@ -224,9 +224,45 @@ class RtDetrImpl : public IModel {
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
                                   cfg.num_queries);
+    if (denoising_) {
+      // RT-DETR-CDN: content embedding for denoising queries (+1 unused row).
+      // Registered only for rt-detr-cdn, so plain rt-detr stays byte-identical.
+      label_enc_ = register_module("label_enc", nn::Embedding(cfg.num_classes + 1, d));
+    }
   }
 
   Detections Forward(torch::Tensor images) override {
+    auto enc = Encode(images);
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes);
+  }
+
+  bool SupportsDenoising() const override { return denoising_; }
+
+  Detections ForwardDenoise(torch::Tensor images, const DenoisingInput& dn_in,
+                            DenoisingOut& dn_out) override {
+    if (!denoising_ || !dn_in.active || !is_training()) {
+      dn_out = DenoisingOut{};
+      return Forward(images);
+    }
+    auto enc = Encode(images);
+    DeformCdn cdn;
+    cdn.active = true;
+    cdn.num_dn = dn_in.num_dn;
+    cdn.dn_tgt = label_enc_->forward(dn_in.dn_labels.transpose(0, 1).contiguous());  // [B,num_dn,d]
+    cdn.dn_ref = dn_in.dn_ref.transpose(0, 1).contiguous();                          // [B,num_dn,4]
+    cdn.attn_mask = dn_in.attn_mask;
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes, cdn, dn_out);
+  }
+
+ private:
+  struct Encoded {
+    torch::Tensor memory;  // [B, Sum(HW), d]
+    SpatialShapes shapes;
+  };
+
+  // Backbone + input_proj + AIFI + CCFM (FPN/PAN) + decoder_input_proj -> the
+  // flattened multi-scale memory the deformable head consumes (shared forward).
+  Encoded Encode(torch::Tensor images) {
     const int d = cfg_.hidden_dim;
     const auto b = images.size(0);
     auto feats = backbone_->forward_features(images);  // {C3, C4, C5}
@@ -283,12 +319,14 @@ class RtDetrImpl : public IModel {
       shapes.emplace_back(o.size(2), o.size(3));
       mem.push_back(o.flatten(2).transpose(1, 2));  // [B, hw, d]
     }
-    return RunDeformDetectHead(head_, torch::cat(mem, 1), shapes);
+    return {torch::cat(mem, 1), shapes};
   }
+
+ public:
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = cfg_.name;
+    m.name = denoising_ ? "rt-detr-cdn" : cfg_.name;
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
@@ -304,6 +342,7 @@ class RtDetrImpl : public IModel {
 
  private:
   Config cfg_;
+  bool denoising_{false};
   ResNet backbone_{nullptr};
   nn::ModuleList input_proj_{nullptr};
   nn::ModuleList decoder_input_proj_{nullptr};
@@ -313,6 +352,7 @@ class RtDetrImpl : public IModel {
   nn::ModuleList downsample_convs_{nullptr};
   nn::ModuleList pan_blocks_{nullptr};
   DeformDetectHead head_;
+  nn::Embedding label_enc_{nullptr};
 };
 
 // Sizes (n/s/m/l/x) = backbone depth + width. RT-DETR officially ships s/m/l/x
@@ -366,6 +406,29 @@ void RegisterRtDetr() {
     }
     RegisterOne(ver, "r50", 256, dense_k);  // plain version name defaults to the -l config
   }
+
+  // RT-DETR-CDN: RT-DETR (the -l config) + contrastive denoising training. Like
+  // the other -cdn variants, a single training-recipe alias (not a size matrix).
+  auto cdn_build = [](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+    Config c = ReadConfig(cfg);
+    if (!(cfg && cfg["backbone"])) {
+      c.backbone = "r50";
+    }
+    if (!(cfg && cfg["hidden_dim"])) {
+      c.hidden_dim = 256;
+    }
+    c.name = "rt-detr-cdn";
+    return std::make_shared<RtDetrImpl>(c, /*denoising=*/true);
+  };
+  ModelMeta cdn_meta;
+  cdn_meta.name = "rt-detr-cdn";
+  cdn_meta.num_classes = 80;
+  cdn_meta.num_queries = 300;
+  cdn_meta.focal = true;
+  cdn_meta.imagenet_norm = false;
+  cdn_meta.license = "Apache-2.0";
+  cdn_meta.upstream = "https://github.com/lyuwenyu/RT-DETR";
+  Registry::Instance().Register("rt-detr-cdn", cdn_meta, std::move(cdn_build));
 }
 
 }  // namespace detr::models
