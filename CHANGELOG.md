@@ -24,6 +24,12 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   self-attn mask — both default-off, so rt-detr/rf-detr/dino-plain/deformable-detr
   stay byte-identical (regression-verified). Inference is plain DINO. Verified by a
   CDN-layout property test + an overfit-a-tiny-batch test.
+- **RF-DETR-CDN training recipe.** A new `rf-detr-cdn` model — RF-DETR (ViT backbone)
+  with contrastive denoising training, reusing the shared deformable head's CDN entry
+  and the contrastive noise generator wholesale (just a `denoising` flag + `label_enc`
+  + `ForwardDenoise`, mirroring dino-cdn; no new infra). Inference is plain RF-DETR;
+  plain rf-detr byte-identical. Completes the denoising-training trilogy
+  (DN-DETR → DINO-CDN → RF-DETR-CDN). Verified by an overfit-a-tiny-batch test.
 
 ### Changed
 

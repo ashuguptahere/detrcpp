@@ -61,7 +61,7 @@ Config ReadConfig(const YAML::Node& c) {
 
 class RfDetrImpl : public IModel {
  public:
-  explicit RfDetrImpl(Config cfg) : cfg_(cfg) {
+  explicit RfDetrImpl(Config cfg, bool denoising = false) : cfg_(cfg), denoising_(denoising) {
     const int d = cfg.hidden_dim;
     backbone_ =
         register_module("backbone", ViT(cfg.vit_embed, cfg.vit_depth, cfg.vit_heads, cfg.patch, 4));
@@ -78,29 +78,40 @@ class RfDetrImpl : public IModel {
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
                                   cfg.num_queries);
+    if (denoising_) {
+      // RF-DETR-CDN: per-class content embedding for denoising queries (+1 unused
+      // row). Registered only for rf-detr-cdn, so plain rf-detr stays byte-identical.
+      label_enc_ = register_module("label_enc", nn::Embedding(cfg.num_classes + 1, d));
+    }
   }
 
   Detections Forward(torch::Tensor images) override {
-    auto feat = backbone_->forward(images);  // [B, vit_embed, h, w]
-    std::vector<torch::Tensor> srcs;
-    srcs.push_back(input_proj_[0]->as<nn::SequentialImpl>()->forward(feat));
-    for (int i = 1; i < cfg_.num_levels; ++i) {
-      srcs.push_back(
-          input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(srcs.back()));
-    }
+    auto enc = Encode(images);
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes);
+  }
 
-    SpatialShapes shapes;
-    std::vector<torch::Tensor> mem;
-    for (const auto& s : srcs) {
-      shapes.emplace_back(s.size(2), s.size(3));
-      mem.push_back(s.flatten(2).transpose(1, 2));
+  bool SupportsDenoising() const override { return denoising_; }
+
+  Detections ForwardDenoise(torch::Tensor images, const DenoisingInput& dn_in,
+                            DenoisingOut& dn_out) override {
+    if (!denoising_ || !dn_in.active || !is_training()) {
+      dn_out = DenoisingOut{};
+      return Forward(images);
     }
-    return RunDeformDetectHead(head_, torch::cat(mem, 1), shapes);
+    auto enc = Encode(images);
+    // The deform head is batch-major [B, L, *]; DenoisingInput is query-major.
+    DeformCdn cdn;
+    cdn.active = true;
+    cdn.num_dn = dn_in.num_dn;
+    cdn.dn_tgt = label_enc_->forward(dn_in.dn_labels.transpose(0, 1).contiguous());  // [B,num_dn,d]
+    cdn.dn_ref = dn_in.dn_ref.transpose(0, 1).contiguous();                          // [B,num_dn,4]
+    cdn.attn_mask = dn_in.attn_mask;
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes, cdn, dn_out);
   }
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = "rf-detr";
+    m.name = denoising_ ? "rf-detr-cdn" : "rf-detr";
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
@@ -111,10 +122,35 @@ class RfDetrImpl : public IModel {
   }
 
  private:
+  struct Encoded {
+    torch::Tensor memory;  // [B, Sum(HW), d]
+    SpatialShapes shapes;
+  };
+
+  // ViT backbone + the multi-scale projection -> the deformable head memory.
+  Encoded Encode(torch::Tensor images) {
+    auto feat = backbone_->forward(images);  // [B, vit_embed, h, w]
+    std::vector<torch::Tensor> srcs;
+    srcs.push_back(input_proj_[0]->as<nn::SequentialImpl>()->forward(feat));
+    for (int i = 1; i < cfg_.num_levels; ++i) {
+      srcs.push_back(
+          input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(srcs.back()));
+    }
+    SpatialShapes shapes;
+    std::vector<torch::Tensor> mem;
+    for (const auto& s : srcs) {
+      shapes.emplace_back(s.size(2), s.size(3));
+      mem.push_back(s.flatten(2).transpose(1, 2));
+    }
+    return {torch::cat(mem, 1), shapes};
+  }
+
   Config cfg_;
+  bool denoising_{false};
   ViT backbone_{nullptr};
   nn::ModuleList input_proj_{nullptr};
   DeformDetectHead head_;
+  nn::Embedding label_enc_{nullptr};
 };
 
 }  // namespace
@@ -133,6 +169,18 @@ ModelMeta RfDetrMeta(const YAML::Node& cfg) {
   m.focal = true;
   m.license = "Apache-2.0";
   m.upstream = "https://github.com/roboflow/rf-detr";
+  return m;
+}
+
+// RF-DETR-CDN: RF-DETR + contrastive denoising training (a label_enc + train-only
+// ForwardDenoise via the shared deform head's CDN entry). Inference == RF-DETR.
+std::shared_ptr<IModel> MakeRfDetrCdn(const YAML::Node& cfg) {
+  return std::make_shared<RfDetrImpl>(ReadConfig(cfg), /*denoising=*/true);
+}
+
+ModelMeta RfDetrCdnMeta(const YAML::Node& cfg) {
+  ModelMeta m = RfDetrMeta(cfg);
+  m.name = "rf-detr-cdn";
   return m;
 }
 
