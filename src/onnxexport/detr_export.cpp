@@ -202,11 +202,12 @@ struct Emitter {
     AddFloatConst(dst, {i1 - i0}, sub);
   }
 
-  // Multi-head attention, decomposed. Returns the [Lq, d] output.
+  // Multi-head attention, decomposed. Returns the [Lq, d] output. |d_over|/|nh_over|
+  // override the model dim/heads (the ViT backbone runs at vit_embed/vit_heads).
   std::string Mha(const std::string& qin, const std::string& kin, const std::string& vin,
-                  const std::string& prefix, int lq, int lk) {
-    const int d = a.hidden_dim;
-    const int nh = a.nheads;
+                  const std::string& prefix, int lq, int lk, int d_over = -1, int nh_over = -1) {
+    const int d = d_over > 0 ? d_over : a.hidden_dim;
+    const int nh = nh_over > 0 ? nh_over : a.nheads;
     const int hd = d / nh;
 
     const RawTensor* ipw = Need(prefix + ".in_proj_weight");  // [3d, d]
@@ -547,6 +548,54 @@ struct Emitter {
       }
     }
     return pos;
+  }
+
+  // ViT 2D sin-cos position [HW, dim]: meshgrid("ij") on (h,w) -> H-major flatten,
+  // cat(sin(h),cos(h),sin(w),cos(w)). Matches the tokens' flatten order (no shift).
+  std::vector<float> SinCos2dVit(int h, int w, int dim) {
+    const int pd = dim / 4;
+    std::vector<double> omega(static_cast<std::size_t>(pd));
+    for (int k = 0; k < pd; ++k) {
+      omega[static_cast<std::size_t>(k)] = 1.0 / std::pow(10000.0, static_cast<double>(k) / pd);
+    }
+    std::vector<float> pos(static_cast<std::size_t>(h) * static_cast<std::size_t>(w) *
+                           static_cast<std::size_t>(dim));
+    for (int ih = 0; ih < h; ++ih) {
+      for (int jw = 0; jw < w; ++jw) {
+        const auto base = static_cast<std::size_t>(ih * w + jw) * static_cast<std::size_t>(dim);
+        for (int c = 0; c < pd; ++c) {
+          pos[base + static_cast<std::size_t>(c)] = static_cast<float>(std::sin(ih * omega[static_cast<std::size_t>(c)]));
+          pos[base + static_cast<std::size_t>(pd + c)] = static_cast<float>(std::cos(ih * omega[static_cast<std::size_t>(c)]));
+          pos[base + static_cast<std::size_t>(2 * pd + c)] = static_cast<float>(std::sin(jw * omega[static_cast<std::size_t>(c)]));
+          pos[base + static_cast<std::size_t>(3 * pd + c)] = static_cast<float>(std::cos(jw * omega[static_cast<std::size_t>(c)]));
+        }
+      }
+    }
+    return pos;
+  }
+
+  // ViT backbone: patch embed conv + pre-norm transformer blocks (GELU FFN) ->
+  // [1, vit_embed, h, w] (h=w=imgsz/patch).
+  std::string ViTBackbone(const std::string& input, int h, int w) {
+    const int dim = a.vit_embed;
+    const int nh = a.vit_heads;
+    const int L = h * w;
+    std::string x = Conv(input, "backbone.patch_embed.weight", "backbone.patch_embed.bias", a.patch,
+                         a.patch, 0);             // [1, dim, h, w]
+    std::string tok = Transpose(Reshape(x, {dim, L}), {1, 0});  // [L, dim]
+    AddFloatConst("vit_pos", {L, dim}, SinCos2dVit(h, w, dim));
+    for (int i = 0; i < a.vit_depth; ++i) {
+      const std::string p = fmt::format("backbone.blocks.{}", i);
+      std::string n = LayerNorm(tok, p + ".norm1");
+      std::string att = Mha(Binary("Add", n, "vit_pos"), Binary("Add", n, "vit_pos"), n, p + ".attn",
+                            L, L, dim, nh);
+      tok = Binary("Add", tok, att);
+      std::string ff = Gemm(Gelu(Gemm(LayerNorm(tok, p + ".norm2"), p + ".fc1.weight", p + ".fc1.bias")),
+                            p + ".fc2.weight", p + ".fc2.bias");
+      tok = Binary("Add", tok, ff);
+    }
+    tok = LayerNorm(tok, "backbone.norm");
+    return Reshape(Transpose(tok, {1, 0}), {1, dim, h, w});
   }
 
   // Multi-scale deformable attention (MSDeformAttnImpl::forward + Core), batch 1.
@@ -1401,6 +1450,59 @@ core::Result<void> ExportRtDetr(const DetrArch& arch, const weights::StateDict& 
     Lv += h * w;
   }
   std::string memory = e.Concat(mem_flat, 0);  // [Lv, d]
+
+  auto heads = e.DeformHead(memory, shapes);
+  std::string logits = e.Reshape(heads.first, {1, nq, C});
+  std::string boxes = e.Reshape(heads.second, {1, nq, 4});
+  g.AddNode("Identity", {logits}, {"logits"});
+  g.AddNode("Identity", {boxes}, {"boxes"});
+  g.AddOutput("logits", {1, nq, C});
+  g.AddOutput("boxes", {1, nq, 4});
+
+  if (e.error) {
+    return tl::make_unexpected(*e.error);
+  }
+  return g.Save(path, /*opset=*/17);
+}
+
+core::Result<void> ExportRfDetr(const DetrArch& arch, const weights::StateDict& weights,
+                                const std::string& path) {
+  GraphBuilder g("rf-detr");
+  Emitter e{g, weights, arch, std::nullopt};
+
+  const int d = arch.hidden_dim;
+  const int C = arch.num_classes;
+  const int nq = arch.num_queries;
+  const int nl = arch.num_levels;
+  const int hp = arch.imgsz / arch.patch;  // ViT patch grid (square)
+  g.AddInput("images", {1, 3, arch.imgsz, arch.imgsz});
+
+  // --- ViT backbone + multi-scale input_proj (1x1 then strided 3x3, GroupNorm) ---
+  std::string feat = e.ViTBackbone("images", hp, hp);  // [1, vit_embed, hp, hp]
+  std::vector<std::string> proj;
+  std::vector<std::pair<int, int>> shapes;
+  std::string c0 = e.Conv(feat, "input_proj.0.0.weight", "input_proj.0.0.bias", 1, 1, 0);
+  proj.push_back(e.GroupNorm(c0, "input_proj.0.1", 32, d, hp, hp));
+  shapes.emplace_back(hp, hp);
+  int prev = hp;
+  for (int i = 1; i < nl; ++i) {
+    std::string c = e.Conv(proj.back(), fmt::format("input_proj.{}.0.weight", i),
+                           fmt::format("input_proj.{}.0.bias", i), 3, 2, 1);
+    const int sp = (prev - 1) / 2 + 1;
+    proj.push_back(e.GroupNorm(c, fmt::format("input_proj.{}.1", i), 32, d, sp, sp));
+    shapes.emplace_back(sp, sp);
+    prev = sp;
+  }
+
+  int Lv = 0;
+  std::vector<std::string> mem_flat;
+  for (int l = 0; l < nl; ++l) {
+    const int h = shapes[static_cast<std::size_t>(l)].first;
+    const int w = shapes[static_cast<std::size_t>(l)].second;
+    mem_flat.push_back(e.Transpose(e.Reshape(proj[static_cast<std::size_t>(l)], {d, h * w}), {1, 0}));
+    Lv += h * w;
+  }
+  std::string memory = e.Concat(mem_flat, 0);
 
   auto heads = e.DeformHead(memory, shapes);
   std::string logits = e.Reshape(heads.first, {1, nq, C});

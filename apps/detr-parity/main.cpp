@@ -48,6 +48,10 @@ detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   a.backbone_width = GetInt(c, "backbone_width", a.backbone_width);
   a.num_levels = GetInt(c, "num_levels", a.num_levels);
   a.num_points = GetInt(c, "num_points", a.num_points);
+  a.vit_embed = GetInt(c, "vit_embed", a.vit_embed);
+  a.vit_depth = GetInt(c, "vit_depth", a.vit_depth);
+  a.vit_heads = GetInt(c, "vit_heads", a.vit_heads);
+  a.patch = GetInt(c, "patch", a.patch);
   return a;
 }
 
@@ -92,6 +96,7 @@ int main(int argc, char** argv) {
       : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *weights, onnx_path)
       : (model == "dino")            ? detr::onnxexport::ExportDino(arch, *weights, onnx_path)
       : (model.rfind("rt-detr", 0) == 0) ? detr::onnxexport::ExportRtDetr(arch, *weights, onnx_path)
+      : (model == "rf-detr")             ? detr::onnxexport::ExportRfDetr(arch, *weights, onnx_path)
                                          : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
   if (!export_r) {
     std::fprintf(stderr, "export: %s\n", export_r.error().message.c_str());

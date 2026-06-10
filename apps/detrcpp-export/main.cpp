@@ -72,6 +72,10 @@ int main(int argc, char** argv) {
   arch.backbone_width = GetInt(cfg, "backbone_width", arch.backbone_width);
   arch.num_levels = GetInt(cfg, "num_levels", arch.num_levels);
   arch.num_points = GetInt(cfg, "num_points", arch.num_points);
+  arch.vit_embed = GetInt(cfg, "vit_embed", arch.vit_embed);
+  arch.vit_depth = GetInt(cfg, "vit_depth", arch.vit_depth);
+  arch.vit_heads = GetInt(cfg, "vit_heads", arch.vit_heads);
+  arch.patch = GetInt(cfg, "patch", arch.patch);
   if (imgsz > 0) {
     arch.imgsz = imgsz;
   }
@@ -87,6 +91,7 @@ int main(int argc, char** argv) {
       : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *sd, out)
       : (model == "dino")            ? detr::onnxexport::ExportDino(arch, *sd, out)
       : (model.rfind("rt-detr", 0) == 0) ? detr::onnxexport::ExportRtDetr(arch, *sd, out)
+      : (model == "rf-detr")             ? detr::onnxexport::ExportRfDetr(arch, *sd, out)
                                          : detr::onnxexport::ExportDetr(arch, *sd, out);
   if (!exported) {
     std::fprintf(stderr, "export: %s\n", exported.error().message.c_str());

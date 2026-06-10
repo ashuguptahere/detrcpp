@@ -1,0 +1,18 @@
+# Tiny RF-DETR for fast ONNX parity / CI. ViT backbone (patch embed + pre-norm
+# blocks) at vit_embed 128 (!= hidden_dim 64, exercising the Mha dim override),
+# then 3-level GroupNorm projection + topk deform head. imgsz 64, patch 8 -> ViT
+# grid 8x8; levels 8/4/2 (Lv=84); num_queries (20) <= Lv.
+model: rf-detr
+vit_embed: 128
+vit_depth: 2
+vit_heads: 8
+patch: 8
+hidden_dim: 64
+nheads: 8
+dim_feedforward: 128
+dec_layers: 2
+num_queries: 20
+num_classes: 91
+num_levels: 3
+num_points: 4
+imgsz: 64

@@ -33,6 +33,10 @@ struct DetrArch {
   int backbone_width{64};                        // Compact backbone only
   int num_levels{4};                             // deformable: feature levels
   int num_points{4};                             // deformable: sampling points
+  int vit_embed{256};                            // rf-detr: ViT embedding dim
+  int vit_depth{4};                              // rf-detr: ViT transformer blocks
+  int vit_heads{8};                              // rf-detr: ViT attention heads
+  int patch{16};                                 // rf-detr: ViT patch size
   std::array<int, 4> resnet_blocks{3, 4, 6, 3};  // ResNet50; {3,4,23,3} = R101
 };
 
@@ -71,6 +75,12 @@ core::Result<void> ExportDino(const DetrArch& arch, const weights::StateDict& we
 // top level + a CCFM conv FPN/PAN), and the topk deformable decoder head. Outputs:
 // "logits" [1,num_queries,num_classes], "boxes" [1,num_queries,4].
 core::Result<void> ExportRtDetr(const DetrArch& arch, const weights::StateDict& weights,
+                                const std::string& path);
+
+// RF-DETR (focal): a ViT (DINOv2-style) backbone + multi-scale projection + the
+// topk deformable decoder head. Outputs: "logits" [1,num_queries,num_classes],
+// "boxes" [1,num_queries,4].
+core::Result<void> ExportRfDetr(const DetrArch& arch, const weights::StateDict& weights,
                                 const std::string& path);
 
 }  // namespace detr::onnxexport
