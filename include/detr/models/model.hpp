@@ -82,6 +82,10 @@ class IModel : public torch::nn::Module {
   // queries and only calls Forward.
   virtual bool SupportsDenoising() const { return false; }
 
+  // RT-DETRv3 hierarchical dense positive supervision: >0 => the trainer adds a
+  // one-to-many (each GT -> top-k queries) auxiliary loss. 0 (default) disables it.
+  virtual int DenseSupervisionK() const { return 0; }
+
   // Train-only joint forward over [denoising ; matching] queries with
   // dn_in.attn_mask on self-attention. Returns the matching Detections and fills
   // dn_out with the denoising slice. Default ignores dn_in (== Forward).

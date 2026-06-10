@@ -36,6 +36,7 @@ struct Config {
   int num_levels{3};
   int num_points{4};
   int imgsz{640};
+  int dense_o2m_k{0};  // RT-DETRv3 hierarchical dense supervision (0 = off)
 };
 
 struct BackboneSpec {
@@ -74,6 +75,7 @@ Config ReadConfig(const YAML::Node& c) {
   x.num_levels = Get(c, "num_levels", x.num_levels);
   x.num_points = Get(c, "num_points", x.num_points);
   x.imgsz = Get(c, "imgsz", x.imgsz);
+  x.dense_o2m_k = Get(c, "dense_o2m_k", x.dense_o2m_k);
   return x;
 }
 
@@ -297,6 +299,9 @@ class RtDetrImpl : public IModel {
     return m;
   }
 
+  // RT-DETRv3: one-to-many dense positive supervision (k>0 only for the v3 matrix).
+  int DenseSupervisionK() const override { return cfg_.dense_o2m_k; }
+
  private:
   Config cfg_;
   ResNet backbone_{nullptr};
@@ -320,18 +325,23 @@ struct SizeSpec {
 constexpr SizeSpec kSizes[] = {
     {"n", "r18", 128}, {"s", "r18", 256}, {"m", "r34", 256}, {"l", "r50", 256}, {"x", "r101", 256},
 };
-// v1/v2/v3 share this inference architecture; v2/v3's published gains are largely
-// training recipes (discrete sampling, dense supervision) — tracked follow-ups.
+// v1/v2/v3 share this inference architecture; v3's published gain is largely a
+// training recipe — hierarchical dense positive supervision (one-to-many matching),
+// enabled here via dense_o2m_k. (v2's discrete sampling is a tracked follow-up.)
 constexpr const char* kVersions[] = {"rt-detr", "rt-detrv2", "rt-detrv3"};
+constexpr int kDenseV3 = 6;  // RT-DETRv3 one-to-many top-k per GT
 
-void RegisterOne(const std::string& name, const std::string& backbone, int hidden) {
-  auto build = [name, backbone, hidden](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+void RegisterOne(const std::string& name, const std::string& backbone, int hidden, int dense_k) {
+  auto build = [name, backbone, hidden, dense_k](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
     Config c = ReadConfig(cfg);
     if (!(cfg && cfg["backbone"])) {
       c.backbone = backbone;
     }
     if (!(cfg && cfg["hidden_dim"])) {
       c.hidden_dim = hidden;
+    }
+    if (!(cfg && cfg["dense_o2m_k"])) {
+      c.dense_o2m_k = dense_k;
     }
     c.name = name;
     return std::make_shared<RtDetrImpl>(c);
@@ -350,10 +360,11 @@ void RegisterOne(const std::string& name, const std::string& backbone, int hidde
 
 void RegisterRtDetr() {
   for (const char* ver : kVersions) {
+    const int dense_k = (std::string(ver) == "rt-detrv3") ? kDenseV3 : 0;
     for (const auto& sz : kSizes) {
-      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden);
+      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden, dense_k);
     }
-    RegisterOne(ver, "r50", 256);  // plain version name defaults to the -l config
+    RegisterOne(ver, "r50", 256, dense_k);  // plain version name defaults to the -l config
   }
 }
 

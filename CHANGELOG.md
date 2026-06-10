@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **RT-DETRv3 dense supervision training recipe.** Hierarchical dense positive
+  supervision: a new `OneToManyMatch` assigns each ground-truth its top-k
+  lowest-cost queries (reusing the Hungarian cost matrix), and the trainer adds
+  that one-to-many loss (on the final + aux outputs) for denser positive gradient.
+  Gated by a new `IModel::DenseSupervisionK()` virtual — set to k=6 only for the
+  `rt-detrv3` registry matrix (rt-detr / rt-detrv2 stay at 0, so they're
+  unchanged). Train-only; inference is unaffected. Verified by a one-to-many
+  property test, the per-version gating, a training step, and an overfit test.
 
 ### Changed
 

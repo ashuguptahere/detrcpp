@@ -91,6 +91,23 @@ float Trainer::TrainStep(const torch::Tensor& images, const TargetBatch& targets
     const auto aux_matches = HungarianMatch(aux, targets, cfg_.match);
     losses.total = losses.total + criterion_.Compute(aux, targets, aux_matches).total;
   }
+  // RT-DETRv3 dense supervision: an extra one-to-many loss (each GT supervises its
+  // top-k queries) on the final + aux outputs, for denser positive gradient.
+  const int o2m_k = model_->DenseSupervisionK();
+  if (o2m_k > 0) {
+    losses.total =
+        losses.total + criterion_.Compute(outputs, targets, OneToManyMatch(outputs, targets, o2m_k,
+                                                                            cfg_.match))
+                           .total;
+    for (std::size_t i = 0; i < outputs.aux_logits.size(); ++i) {
+      const models::Detections aux{outputs.aux_logits[i], outputs.aux_boxes[i], {}, {}};
+      losses.total =
+          losses.total + criterion_.Compute(aux, targets, OneToManyMatch(aux, targets, o2m_k,
+                                                                          cfg_.match))
+                             .total;
+    }
+  }
+
   // DN reconstruction loss: the assignment is KNOWN (no Hungarian) and the same
   // for every decoder layer, so reuse the criterion with the prebuilt matches.
   if (dn_out.active && dn_out.dn_logits.size(1) > 0) {
