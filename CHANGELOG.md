@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.9.0] - 2026-06-10
+
+### Added
 - **ONNX export for rf-detr** — completes ONNX export for the whole model zoo.
   `ExportRfDetr` reconstructs the **ViT backbone** in pure ONNX (patch-embed conv +
   a 2D sin-cos position + pre-norm transformer blocks with a GELU FFN + a final
