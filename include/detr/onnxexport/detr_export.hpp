@@ -40,4 +40,10 @@ struct DetrArch {
 core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& weights,
                               const std::string& path);
 
+// Conditional-DETR (focal): decoupled self-attention + conditional cross-
+// attention with a fixed sine reference. Outputs: "logits" [1,num_queries,
+// num_classes] (sigmoid/focal, no no-object slot), "boxes" [1,num_queries,4].
+core::Result<void> ExportConditional(const DetrArch& arch, const weights::StateDict& weights,
+                                     const std::string& path);
+
 }  // namespace detr::onnxexport

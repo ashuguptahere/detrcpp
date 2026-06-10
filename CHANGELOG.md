@@ -11,6 +11,12 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **ONNX export for conditional-detr** (focal). A new hand-written `ExportConditional`
+  mirrors the conditional decoder op-for-op: decoupled self-attention, conditional
+  cross-attention (query content + sine concatenated head-wise), and the fixed sine
+  reference (precomputed exactly from the learned query embeddings). Verified at
+  **max|Δ| ≈ 5e-7 vs LibTorch** via the parity harness (`configs/models/conditional-
+  tiny.yaml`). Wired into `detrcpp-export` and `detr-parity`.
 
 ### Changed
 

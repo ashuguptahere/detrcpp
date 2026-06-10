@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
   }
 
   detr::onnxexport::DetrArch arch;
-  arch.backbone = (model == "detr-r50" || model == "detr-r101")
+  arch.backbone = (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr")
                       ? detr::onnxexport::Backbone::ResNet50
                       : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
@@ -78,8 +78,11 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "weights '%s': %s\n", weights.c_str(), sd.error().message.c_str());
     return 1;
   }
-  if (auto r = detr::onnxexport::ExportDetr(arch, *sd, out); !r) {
-    std::fprintf(stderr, "export: %s\n", r.error().message.c_str());
+  auto exported = (model == "conditional-detr")
+                      ? detr::onnxexport::ExportConditional(arch, *sd, out)
+                      : detr::onnxexport::ExportDetr(arch, *sd, out);
+  if (!exported) {
+    std::fprintf(stderr, "export: %s\n", exported.error().message.c_str());
     return 1;
   }
   std::printf("exported %s -> %s  (input images[1,3,%d,%d])\n", model.c_str(), out.c_str(),

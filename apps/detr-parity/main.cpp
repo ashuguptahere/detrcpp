@@ -30,8 +30,10 @@ int GetInt(const YAML::Node& c, const char* key, int def) {
 detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   detr::onnxexport::DetrArch a;
   const std::string model = (c && c["model"]) ? c["model"].as<std::string>() : "detr";
-  a.backbone = (model == "detr-r50" || model == "detr-r101") ? detr::onnxexport::Backbone::ResNet50
-                                                             : detr::onnxexport::Backbone::Compact;
+  a.backbone =
+      (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr")
+          ? detr::onnxexport::Backbone::ResNet50
+          : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
     a.resnet_blocks = {3, 4, 23, 3};
   }
@@ -74,6 +76,7 @@ int main(int argc, char** argv) {
 
   const YAML::Node cfg = YAML::LoadFile(config);
   const auto arch = ArchFromYaml(cfg);
+  const std::string model = (cfg && cfg["model"]) ? cfg["model"].as<std::string>() : "detr";
 
   auto weights = detr::weights::LoadSafetensors(dir + "/weights.safetensors");
   if (!weights) {
@@ -81,8 +84,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::string onnx_path = dir + "/model.onnx";
-  if (auto r = detr::onnxexport::ExportDetr(arch, *weights, onnx_path); !r) {
-    std::fprintf(stderr, "export: %s\n", r.error().message.c_str());
+  auto export_r = (model == "conditional-detr")
+                      ? detr::onnxexport::ExportConditional(arch, *weights, onnx_path)
+                      : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
+  if (!export_r) {
+    std::fprintf(stderr, "export: %s\n", export_r.error().message.c_str());
     return 1;
   }
 
