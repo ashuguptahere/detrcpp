@@ -16,6 +16,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.3.0] - 2026-06-10
+
+### Added
+- **dab-detr validated against official weights** — the HF
+  IDEA-Research/dab-detr-resnet-50 checkpoint loads 0-missing/0-unexpected and
+  reproduces real COCO mAP (**mAP50-95 0.419** on full val; official 0.409), the
+  4th model validated end-to-end. Aligned the architecture with official DAB:
+  PReLU FFN (encoder + decoder), an encoder `query_scale`, a decoder LayerNorm,
+  the bbox-head-on-normed-state split, and **sine temperature 20** (DAB's
+  signature, vs DETR's 10000). `SinePos` gained a `temperature` param (default
+  10000), so detr/r50/r101/dc5/dino are byte-identical; conditional-detr's
+  shared decoder layer stays relu by default (regression-verified).
+
 ## [0.2.5] - 2026-06-10
 
 ### Changed
