@@ -82,18 +82,20 @@ TEST_F(RtDetrV3Test, DenseSupervisionTrainingStep) {
 }
 
 TEST_F(RtDetrV3Test, OverfitsTinyBatch) {
+  torch::manual_seed(0);  // deterministic init + batch + training (no flaky threshold)
   auto model = *Registry::Instance().Build("rt-detrv3-l", Tiny());
   train::TrainConfig tc;
   tc.lr = 2e-3;
-  tc.seed = 0;
   tc.grad_clip = 0.1;
   train::Trainer trainer(model, tc);
 
   auto images = torch::randn({1, 3, 64, 64});
   const train::TargetBatch batch{TinyTarget()};
   const float first = trainer.TrainStep(images, batch);
+  // Dense supervision adds the one-to-many loss (k=6) on every layer, so the loss
+  // is larger and converges slower than the plain models — give it more steps.
   float last = first;
-  for (int i = 0; i < 25; ++i) {
+  for (int i = 0; i < 60; ++i) {
     last = trainer.TrainStep(images, batch);
   }
   EXPECT_TRUE(std::isfinite(last));

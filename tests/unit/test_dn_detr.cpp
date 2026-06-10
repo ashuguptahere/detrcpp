@@ -78,6 +78,7 @@ TEST_F(DnDetrTest, DenoisingTrainingStep) {
 }
 
 TEST_F(DnDetrTest, OverfitsTinyBatch) {
+  torch::manual_seed(0);  // deterministic init + batch + training (no flaky threshold)
   auto model = *Registry::Instance().Build("dn-detr", Tiny());
   train::TrainConfig tc;
   tc.lr = 2e-3;

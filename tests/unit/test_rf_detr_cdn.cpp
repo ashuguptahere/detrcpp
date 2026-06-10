@@ -68,6 +68,7 @@ TEST_F(RfDetrCdnTest, InferenceForwardReturnsOnlyMatchingQueries) {
 }
 
 TEST_F(RfDetrCdnTest, OverfitsTinyBatch) {
+  torch::manual_seed(0);  // deterministic init + batch + training (no flaky threshold)
   auto model = *Registry::Instance().Build("rf-detr-cdn", Tiny());
   train::TrainConfig tc;
   tc.lr = 2e-3;

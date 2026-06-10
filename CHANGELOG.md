@@ -15,6 +15,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Changed
 
 ### Fixed
+- **Deterministic overfit tests.** The denoising / dense-supervision overfit-a-tiny-
+  batch tests (dn-detr, dino-cdn, rf-detr-cdn, rt-detrv3) seeded via `tc.seed=0`,
+  which is the "no seed" sentinel — so model init + the random batch were unseeded
+  and the loss-threshold assert was flaky under parallel CI (it tripped once for
+  rt-detrv3, whose larger dense-supervision loss converges slower). They now call
+  `torch::manual_seed(0)` before building the model, making each trajectory
+  reproducible; rt-detrv3's loop is lengthened to 60 steps to clear the threshold
+  with margin.
 
 ## [0.12.0] - 2026-06-10
 

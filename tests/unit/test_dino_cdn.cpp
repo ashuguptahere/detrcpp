@@ -101,6 +101,7 @@ TEST_F(DinoCdnTest, DenoisingTrainingStep) {
 }
 
 TEST_F(DinoCdnTest, OverfitsTinyBatch) {
+  torch::manual_seed(0);  // deterministic init + batch + training (no flaky threshold)
   auto model = *Registry::Instance().Build("dino-cdn", Tiny());
   train::TrainConfig tc;
   tc.lr = 2e-3;
