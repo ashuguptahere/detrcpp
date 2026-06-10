@@ -16,6 +16,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.2.2] - 2026-06-10
+
+### Changed
+- **Loss uses a paired (O(M)) GIoU instead of pairwise-then-diagonal (O(M²)).**
+  `SetCriterion` no longer builds the full `[M,M]` `GeneralizedBoxIou` matrix just
+  to take its diagonal; a new `GeneralizedBoxIouPaired` computes GIoU elementwise
+  over matched pairs. Numerically identical (proven by `test_box_ops`), so the
+  loss and training are unchanged — just less compute/memory. The pairwise
+  `GeneralizedBoxIou` stays for the matcher.
+
 ## [0.2.1] - 2026-06-10
 
 ### Changed
