@@ -16,6 +16,24 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.4.0] - 2026-06-10
+
+### Added
+- **rt-detr validated against official weights** — the HF PekingU/rtdetr_r50vd
+  checkpoint loads 0-missing/0-unexpected and reproduces real COCO mAP
+  (**mAP50-95 0.530** on full val; official 0.534), the 5th model validated and
+  the first with no debug iterations. Adds a **ResNet-D/VD backbone** (gated
+  `deep_stem` + `avg_down` on `ResNetImpl`, default off so every other model is
+  byte-identical), drops CSPRep's `conv3` (HF's is Identity), switches the AIFI
+  FFN to GELU, and adds `decoder_input_proj`.
+- `ModelMeta::imagenet_norm` (default true) + a `normalize` flag on
+  `PreprocessImage`: RT-DETR runs on raw [0,1] inputs with a square (non-aspect)
+  eval resize. DETR-family preprocessing is unchanged.
+
+### Changed
+
+### Fixed
+
 ## [0.3.0] - 2026-06-10
 
 ### Added
