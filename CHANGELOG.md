@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.6.0] - 2026-06-10
+
+### Added
 - **ONNX export for deformable-detr** — the deformable tier. A hand-written
   `ExportDeformable` reconstructs **multi-scale deformable attention** in pure ONNX:
   per-level **GridSample** (bilinear, zeros-pad, align_corners=0) at `2·loc−1`,
