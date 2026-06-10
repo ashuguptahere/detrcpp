@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.10.0] - 2026-06-10
+
+### Added
 - **DN-DETR denoising training.** A new `dn-detr` model (the DAB-DETR network plus
   a `label_enc`) and a train-only denoising recipe: per image, `dn_number` groups
   of denoising queries whose anchor is a noised GT box and whose content embeds a
