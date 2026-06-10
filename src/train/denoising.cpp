@@ -23,7 +23,12 @@ std::pair<models::DenoisingInput, DnLayout> MakeDenoising(const TargetBatch& tar
   if (t_pad == 0 || G <= 0) {
     return {in, layout};  // active = false
   }
-  const int num_dn = G * t_pad;
+  // CDN: each GT yields a positive + a negative query (P=2), laid out per group as
+  // [positive_T | negative_T] with group stride gw, so one [L,L] mask is valid.
+  const bool cdn = cfg.contrastive;
+  const int P = cdn ? 2 : 1;
+  const int gw = P * t_pad;
+  const int num_dn = G * gw;
   const auto fopt = torch::TensorOptions(torch::kFloat32);
   const auto iopt = torch::TensorOptions(torch::kInt64);
 
@@ -39,39 +44,51 @@ std::pair<models::DenoisingInput, DnLayout> MakeDenoising(const TargetBatch& tar
       continue;
     }
     auto boxes = targets[static_cast<std::size_t>(b)].boxes.to(torch::kCPU).to(torch::kFloat32);  // [T,4] cxcywh
-    auto rep = boxes.unsqueeze(0).repeat({G, 1, 1});                    // [G,T,4]
-    auto wh = rep.narrow(2, 2, 2);                                      // [G,T,2]
-    auto diff = torch::cat({wh * 0.5, wh}, 2);                          // [G,T,4] (center, size)
+    auto rep = boxes.unsqueeze(0).repeat({G, P, 1});                    // [G, P*T, 4]
+    auto wh = rep.narrow(2, 2, 2);                                      // [G, P*T, 2]
+    auto diff = torch::cat({wh * 0.5, wh}, 2);                          // [G, P*T, 4] (center, size)
     auto rand_sign = torch::randint(0, 2, rep.sizes(), fopt) * 2 - 1;   // +-1
-    auto rand_part = torch::rand(rep.sizes(), fopt);                    // [0,1)
+    auto rand_part = torch::rand(rep.sizes(), fopt);                    // positives [0,1)
+    if (cdn) {
+      rand_part.narrow(1, T, T) += 1.0;  // negatives -> [1,2): a larger box perturbation
+    }
     auto noised = rep + rand_sign * rand_part * diff * cfg.box_noise_scale;
     noised = noised.clamp(1e-4, 1.0 - 1e-4);  // keep valid sigmoid space
 
-    auto labels = targets[static_cast<std::size_t>(b)].labels.to(torch::kCPU).unsqueeze(0).repeat({G, 1});  // [G,T]
-    auto flip = torch::rand({G, T}, fopt) < cfg.label_noise_ratio;
-    auto rnd = torch::randint(0, num_classes, {G, T}, iopt);
+    auto labels =
+        targets[static_cast<std::size_t>(b)].labels.to(torch::kCPU).unsqueeze(0).repeat({G, P});  // [G,P*T]
+    auto flip = torch::rand({G, P * T}, fopt) < (cfg.label_noise_ratio * (cdn ? 0.5 : 1.0));
+    auto rnd = torch::randint(0, num_classes, {G, P * T}, iopt);
     labels = torch::where(flip, rnd, labels);  // noised labels (clean kept for the LOSS)
 
     for (int g = 0; g < G; ++g) {
-      const int base = g * t_pad;
-      dn_ref[b].narrow(0, base, T) = noised[g];
-      dn_labels[b].narrow(0, base, T) = labels[g];
+      const int base = g * gw;
+      // positives [base, base+T): matchable -> reconstruct their GT.
+      dn_ref[b].narrow(0, base, T) = noised[g].narrow(0, 0, T);
+      dn_labels[b].narrow(0, base, T) = labels[g].narrow(0, 0, T);
       pad_mask[b].narrow(0, base, T).fill_(true);
       tgt_index[b].narrow(0, base, T) = torch::arange(T, iopt);
+      if (cdn) {
+        // negatives [base+t_pad, base+t_pad+T): present but not matchable (pad_mask
+        // stays false / tgt_index -1) -> the criterion gives them no-object.
+        dn_ref[b].narrow(0, base + t_pad, T) = noised[g].narrow(0, T, T);
+        dn_labels[b].narrow(0, base + t_pad, T) = labels[g].narrow(0, T, T);
+      }
     }
   }
 
-  // Group-isolation self-attention mask [L,L] (true = block), batch-shared.
+  // Group-isolation self-attention mask [L,L] (true = block), batch-shared. Group
+  // width gw (positives + negatives attend within a group; groups are isolated).
   const int nq = num_queries;
   const int L = num_dn + nq;
   auto mask = torch::zeros({L, L}, torch::kBool);
   mask.narrow(0, num_dn, nq).narrow(1, 0, num_dn).fill_(true);  // matching can't see any dn
   for (int i = 0; i < G; ++i) {
-    const int bi = i * t_pad;
-    mask.narrow(0, bi, t_pad).narrow(1, num_dn, nq).fill_(true);  // dn group i can't see matching
+    const int bi = i * gw;
+    mask.narrow(0, bi, gw).narrow(1, num_dn, nq).fill_(true);  // dn group i can't see matching
     for (int j = 0; j < G; ++j) {
       if (j != i) {
-        mask.narrow(0, bi, t_pad).narrow(1, j * t_pad, t_pad).fill_(true);  // nor dn group j
+        mask.narrow(0, bi, gw).narrow(1, j * gw, gw).fill_(true);  // nor dn group j
       }
     }
   }

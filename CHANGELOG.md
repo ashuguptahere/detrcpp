@@ -11,6 +11,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DINO-CDN (contrastive denoising) training.** A new `dino-cdn` model (the DINO
+  network plus a `label_enc`) that extends the DN-DETR denoising infra with
+  **contrastive** queries: per GT, a *positive* (small box noise) query that
+  reconstructs the GT and a *negative* (large box noise, `rand_part ∈ [1,2)`) query
+  that must predict **no-object** — taught to reject low-quality anchors. The
+  contrastive layout (`DnConfig.contrastive`) packs each group as `[positive_T |
+  negative_T]` with stride `2·T`; `BuildDnMatches` matches only positives, so the
+  criterion gives negatives the background loss (no box loss). The shared deform
+  head gained an optional CDN entry (prepends the denoising queries + an additive
+  self-attention mask, splits the outputs) and the deform decoder layer an optional
+  self-attn mask — both default-off, so rt-detr/rf-detr/dino-plain/deformable-detr
+  stay byte-identical (regression-verified). Inference is plain DINO. Verified by a
+  CDN-layout property test + an overfit-a-tiny-batch test.
 
 ### Changed
 

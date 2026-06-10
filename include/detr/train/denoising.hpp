@@ -23,7 +23,8 @@ struct DnConfig {
   int dn_number{5};            // denoising groups per image
   double box_noise_scale{0.4};
   double label_noise_ratio{0.2};
-  double weight{1.0};  // multiplier on the whole DN loss contribution
+  double weight{1.0};        // multiplier on the whole DN loss contribution
+  bool contrastive{false};   // DINO-CDN: a positive + a negative query per GT.
 };
 
 // Per-group layout used to build the known reconstruction assignment.

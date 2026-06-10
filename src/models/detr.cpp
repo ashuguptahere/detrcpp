@@ -153,6 +153,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("dn-detr", DnDetrMeta({}), &MakeDnDetr);
   Registry::Instance().Register("rf-detr", RfDetrMeta({}), &MakeRfDetr);
   Registry::Instance().Register("dino", DinoMeta({}), &MakeDino);
+  Registry::Instance().Register("dino-cdn", DinoCdnMeta({}), &MakeDinoCdn);
   RegisterRtDetr();
 }
 

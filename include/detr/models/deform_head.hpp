@@ -42,9 +42,27 @@ DeformDetectHead BuildDeformDetectHead(torch::nn::Module& model, int d, int leve
                                        int points, int ff, int dec_layers, int num_classes,
                                        int num_queries);
 
+// Optional contrastive-denoising prefix (DINO-CDN). When active, num_dn denoising
+// queries are PREPENDED to the topk matching queries and the joint decoder runs
+// under attn_mask. Empty/inactive by default.
+struct DeformCdn {
+  bool active{false};
+  torch::Tensor dn_tgt;     // [B, num_dn, d] content (label-embedded by the model)
+  torch::Tensor dn_ref;     // [B, num_dn, 4] noised anchor in sigmoid space (0,1)
+  torch::Tensor attn_mask;  // [L, L] bool, true = BLOCK (L = num_dn + num_queries)
+  int num_dn{0};
+};
+
 // memory: [B, Sum(H*W), d]. Returns focal logits [B, nq, num_classes] + boxes
 // [B, nq, 4] (cxcywh).
 Detections RunDeformDetectHead(const DeformDetectHead& head, torch::Tensor memory,
                                const SpatialShapes& shapes);
+
+// CDN variant: prepends cdn.dn_* under cdn.attn_mask, runs the joint decoder, and
+// splits per-layer outputs — the matching slice is returned, the denoising slice
+// fills dn_out. cdn.active==false (or eval) => identical to the 3-arg overload.
+Detections RunDeformDetectHead(const DeformDetectHead& head, torch::Tensor memory,
+                               const SpatialShapes& shapes, const DeformCdn& cdn,
+                               DenoisingOut& dn_out);
 
 }  // namespace detr::models

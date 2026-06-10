@@ -44,6 +44,7 @@ if(DETR_ENABLE_TORCH)
     unit/test_dn_detr.cpp
     unit/test_rf_detr.cpp
     unit/test_dino.cpp
+    unit/test_dino_cdn.cpp
     unit/test_train.cpp
     unit/test_loader.cpp
     unit/test_io.cpp
