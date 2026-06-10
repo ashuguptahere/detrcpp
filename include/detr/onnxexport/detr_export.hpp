@@ -61,4 +61,10 @@ core::Result<void> ExportDab(const DetrArch& arch, const weights::StateDict& wei
 core::Result<void> ExportDeformable(const DetrArch& arch, const weights::StateDict& weights,
                                     const std::string& path);
 
+// DINO (focal): deformable encoder + a topk query-selection deformable decoder
+// with iterative refinement (the shared deform head). Outputs: "logits"
+// [1,num_queries,num_classes], "boxes" [1,num_queries,4].
+core::Result<void> ExportDino(const DetrArch& arch, const weights::StateDict& weights,
+                              const std::string& path);
+
 }  // namespace detr::onnxexport

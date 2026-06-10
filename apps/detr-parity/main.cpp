@@ -31,7 +31,7 @@ detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   detr::onnxexport::DetrArch a;
   const std::string model = (c && c["model"]) ? c["model"].as<std::string>() : "detr";
   a.backbone = (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr" ||
-                model == "dab-detr" || model == "deformable-detr")
+                model == "dab-detr" || model == "deformable-detr" || model == "dino")
                    ? detr::onnxexport::Backbone::ResNet50
                    : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
       (model == "conditional-detr") ? detr::onnxexport::ExportConditional(arch, *weights, onnx_path)
       : (model == "dab-detr")       ? detr::onnxexport::ExportDab(arch, *weights, onnx_path)
       : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *weights, onnx_path)
+      : (model == "dino")            ? detr::onnxexport::ExportDino(arch, *weights, onnx_path)
                                      : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
   if (!export_r) {
     std::fprintf(stderr, "export: %s\n", export_r.error().message.c_str());

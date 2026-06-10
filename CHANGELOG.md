@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **ONNX export for dino** — completes the deformable query-selection path. Reuses
+  the deformable encoder (MSDeformAttn) and adds the shared **deform head**: grid-
+  center anchors baked as a constant, **topk query selection** (ReduceMax → TopK →
+  Gather over the encoder classification), and a 4D-reference deformable decoder
+  with iterative box refinement. New emit helpers: ReduceMax, TopK, Gather, Expand.
+  Verified at **max|Δ| ≈ 4e-6 vs LibTorch** (`configs/models/dino-tiny.yaml`). Six
+  deformable models now share the GridSample MSDeformAttn + topk head (rt-detr/rf
+  remain, needing ResNet-VD+CCFM / ViT backbone emit).
 
 ### Changed
 
