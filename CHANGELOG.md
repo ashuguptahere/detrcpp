@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.11.0] - 2026-06-10
+
+### Added
 - **DINO-CDN (contrastive denoising) training.** A new `dino-cdn` model (the DINO
   network plus a `label_enc`) that extends the DN-DETR denoising infra with
   **contrastive** queries: per GT, a *positive* (small box noise) query that
