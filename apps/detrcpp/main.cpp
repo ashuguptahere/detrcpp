@@ -538,16 +538,19 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
   }
 
   std::size_t total = 0;
+  double infer_ms = 0.0;
   for (const auto& path : *sources) {
     auto rgb = detr::io::LoadRgb(path);
     if (!rgb) {
       lg.warn("{}", rgb.error().message);
       continue;
     }
+    const detr::log::Stopwatch sw_inf;
     auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
     auto outputs = model->Forward(input);
     auto dets =
         detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
+    infer_ms += sw_inf.ElapsedMs();  // postprocess syncs the device, so this is real latency
     std::sort(dets.begin(), dets.end(),
               [](const auto& a, const auto& b) { return a.score > b.score; });
 
@@ -572,7 +575,10 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     lg.info("{}: {} detection(s) >= {:.2f} -> {}", path, kept, o.conf, save_path.string());
     ++total;
   }
-  lg.info("predicted {} image(s); results in {}", total, out_dir.string());
+  const double fps = infer_ms > 0.0 ? 1000.0 * static_cast<double>(total) / infer_ms : 0.0;
+  lg.info("predicted {} image(s) in {:.0f} ms inference ({:.1f} img/s, {:.1f} ms/img); results in {}",
+          total, infer_ms, fps, total > 0 ? infer_ms / static_cast<double>(total) : 0.0,
+          out_dir.string());
   return ExitCode::Ok;
 }
 #endif  // DETR_ENABLE_TORCH

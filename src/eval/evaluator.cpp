@@ -13,6 +13,7 @@
 #include "detr/infer/preprocess.hpp"
 #include "detr/io/image.hpp"
 #include "detr/log/log.hpp"
+#include "detr/log/timer.hpp"
 
 namespace detr::eval {
 
@@ -44,6 +45,7 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, d
                           bool aspect_preserve, int max_size) {
   torch::NoGradGuard no_grad;
   model.eval();
+  const detr::log::Stopwatch sw;
   const int num_classes = model.Meta().num_classes;
   const bool focal = model.Meta().focal;
   std::vector<EvalImage> eval_images;
@@ -101,6 +103,11 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, d
       }
     }
   }
+
+  const double secs = sw.ElapsedSec();
+  const double ips = secs > 0.0 ? static_cast<double>(eval_images.size()) / secs : 0.0;
+  detr::log::Get("eval").info("evaluated {} images in {:.1f}s ({:.1f} img/s)", eval_images.size(),
+                              secs, ips);
 
   std::vector<int> cats;
   cats.reserve(static_cast<std::size_t>(num_classes));
