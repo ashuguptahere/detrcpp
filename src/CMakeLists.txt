@@ -249,6 +249,7 @@ if(DETR_ENABLE_TORCH)
     data/stb_impl.cpp
     infer/postprocess.cpp
     infer/preprocess.cpp
+    infer/sahi.cpp
     io/image.cpp
     io/source.cpp
     eval/evaluator.cpp

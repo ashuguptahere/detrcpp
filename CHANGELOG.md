@@ -38,6 +38,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   lightweight (no-LibTorch) config. Tested: stable id on a moving box, id
   persistence through an occlusion gap, stage-2 low-score recovery, the spawn gate,
   buffer expiry, and Kalman convergence.
+- **SAHI sliced inference** (`detr::infer::SahiDetect`, `--sahi`). Slices a large
+  image into overlapping tiles (`ComputeSlices`, last tile flush to the border),
+  detects per tile, shifts each tile's boxes back to full-image coordinates, and
+  merges across tiles with the repo's first NMS (`NmsPerClass`, class-aware, built
+  on `train::BoxIou`; an optional NMM mode folds seam-straddling boxes). A
+  `TileDetector` callback decouples the tiling from the model (a model overload
+  runs preprocess→Forward→postprocess on the model's device); output is the same
+  `DtBox` xywh as the single-pass path, so the predict draw/save tail is reused via
+  one `--sahi` branch. Improves small-object recall on high-resolution inputs.
 
 ### Changed
 
