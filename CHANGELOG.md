@@ -15,6 +15,20 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Changed
 
 ### Fixed
+- **Legacy `.pth` unpickler now loads real-world checkpoints.** The initial version
+  only handled the synthetic round-trip; testing against a real legacy DETR
+  checkpoint surfaced constructs torch actually emits, now all supported: Python-2
+  `str` keys (`SHORT_BINSTRING`/`BINSTRING`), integer storage ids (normalized to
+  their decimal string to match the storage-key list), the `_rebuild_tensor` (v1)
+  global, and — for training checkpoints — `BINFLOAT`/`NEWOBJ` (optimizer floats /
+  argparse namespaces, parsed as inert) plus unwrapping a state_dict nested under
+  `model`/`state_dict`. Per-storage dtypes are now recorded at every `persistent_id`
+  (so the storage walk never lacks a size, even for shared/optimizer storages),
+  making an unrecognized file fail cleanly with `Unsupported` instead of erroring
+  mid-walk. **Verified end-to-end:** loading the real legacy `detr-r50` checkpoint
+  reports 458 tensors, 0 missing / 0 unexpected / 0 shape-mismatched, and the model
+  detects correctly (cats @ 0.998). A gated `DETR_LEGACY_PTH` test exercises a real
+  file when present (CI-skipped otherwise).
 
 ## [0.13.0] - 2026-06-10
 

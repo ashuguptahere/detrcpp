@@ -8,7 +8,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -235,6 +238,35 @@ TEST(LegacyPickle, BigEndianRejected) {
   auto sd = LoadLegacyPthBytes(bytes);
   ASSERT_FALSE(sd.has_value());
   EXPECT_EQ(sd.error().code, core::ErrorCode::Unsupported);
+}
+
+// Opt-in check against a real legacy .pth (CI-skipped unless DETR_LEGACY_PTH is set
+// to such a file). Prints a few tensors for manual inspection.
+TEST(LegacyPickle, RealFileIfPresent) {
+  const char* env = std::getenv("DETR_LEGACY_PTH");
+  if (env == nullptr) {
+    GTEST_SKIP() << "set DETR_LEGACY_PTH to a real legacy (pre-1.6) .pth to run this";
+  }
+  const std::filesystem::path path(env);
+  if (!std::filesystem::exists(path)) {
+    GTEST_SKIP() << "DETR_LEGACY_PTH not found: " << env;
+  }
+  auto sd = LoadLegacyPth(path);
+  ASSERT_TRUE(sd.has_value()) << sd.error().message;
+  EXPECT_GT(sd->Size(), 0U);
+  std::cout << "loaded " << sd->Size() << " tensors, " << sd->TotalBytes() << " bytes\n";
+  std::size_t shown = 0;
+  for (const auto& name : sd->Keys()) {
+    const RawTensor* t = sd->Find(name);
+    std::cout << "  " << name << " " << DTypeName(t->dtype) << " [";
+    for (const std::int64_t d : t->shape) {
+      std::cout << d << ",";
+    }
+    std::cout << "]\n";
+    if (++shown >= 8) {
+      break;
+    }
+  }
 }
 
 }  // namespace

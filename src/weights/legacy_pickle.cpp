@@ -65,6 +65,9 @@ class Unpickler {
  public:
   Unpickler(std::span<const std::byte> buf, std::size_t pos) : buf_(buf), pos_(pos) {}
   std::size_t pos() const { return pos_; }
+  // Every storage seen via persistent_id -> its dtype (covers all archive-#5 keys,
+  // regardless of whether the consuming reduce was a tensor we recognized).
+  const std::map<std::string, DType>& storages() const { return storages_; }
 
   Result<Value> Run() {
     while (true) {
@@ -84,6 +87,10 @@ class Unpickler {
         case 0x6a: MemoGet(U32()); break;                          // LONG_BINGET
         case 0x58: Push(MakeStr(Bytes(U32()))); break;             // BINUNICODE
         case 0x8c: Push(MakeStr(Bytes(U8()))); break;              // SHORT_BINUNICODE
+        case 0x55: Push(MakeStr(Bytes(U8()))); break;              // SHORT_BINSTRING (py2 str)
+        case 0x54: Push(MakeStr(Bytes(U32()))); break;             // BINSTRING (py2 str)
+        case 0x47: SkipBytes(8); Push(MakeKind(Value::Kind::Opaque)); break;  // BINFLOAT
+        case 0x81: Pop(); Pop(); Push(MakeKind(Value::Kind::Opaque)); break;  // NEWOBJ (cls,args)
         case 0x4a: Push(MakeInt(static_cast<std::int64_t>(I32()))); break;  // BININT
         case 0x4b: Push(MakeInt(static_cast<std::int64_t>(U8()))); break;   // BININT1
         case 0x4d: Push(MakeInt(static_cast<std::int64_t>(U16()))); break;  // BININT2
@@ -125,6 +132,7 @@ class Unpickler {
   std::size_t pos_;
   std::vector<Value> stack_;
   std::unordered_map<std::uint32_t, Value> memo_;
+  std::map<std::string, DType> storages_;
   bool err_{false};
   ErrorCode code_{ErrorCode::ParseError};
   std::string msg_;
@@ -204,6 +212,13 @@ class Unpickler {
     return static_cast<std::int64_t>(u);
   }
 
+  void SkipBytes(std::size_t n) {
+    if (pos_ + n > buf_.size()) {
+      Fail(ErrorCode::ParseError, "pickle: truncated");
+      return;
+    }
+    pos_ += n;
+  }
   std::string Bytes(std::size_t n) {
     if (pos_ + n > buf_.size()) {
       Fail(ErrorCode::ParseError, "pickle: truncated string");
@@ -311,9 +326,16 @@ class Unpickler {
       return;
     }
     Value s = MakeKind(Value::Kind::Storage);
-    s.s = (t.items[2].kind == Value::Kind::Str) ? t.items[2].s : std::string{};
+    // The storage key may be a string or an integer id; normalize to its decimal
+    // string so it matches the key form used in the storage-key list (archive #5).
+    if (t.items[2].kind == Value::Kind::Str) {
+      s.s = t.items[2].s;
+    } else if (t.items[2].kind == Value::Kind::Int) {
+      s.s = std::to_string(t.items[2].i);
+    }
     s.dt = *dt;
     s.numel = (t.items[4].kind == Value::Kind::Int) ? t.items[4].i : 0;
+    storages_[s.s] = s.dt;
     Push(std::move(s));
   }
 
@@ -327,7 +349,7 @@ class Unpickler {
       Push(MakeKind(Value::Kind::Opaque));
       return;
     }
-    if (fn.s2 == "_rebuild_tensor_v2") {
+    if (fn.s2 == "_rebuild_tensor_v2" || fn.s2 == "_rebuild_tensor") {  // v2 / v1 (very old)
       if (args.kind != Value::Kind::Tuple || args.items.size() < 4 ||
           args.items[0].kind != Value::Kind::Storage) {
         Fail(ErrorCode::Unsupported, "pickle: bad _rebuild_tensor_v2 args");
@@ -416,6 +438,17 @@ bool IsContiguous(const std::vector<std::int64_t>& size, const std::vector<std::
   return true;
 }
 
+// The (name -> tensor) pairs directly under a dict (one state_dict level).
+std::vector<std::pair<std::string, Value>> NamedTensors(const Value& d) {
+  std::vector<std::pair<std::string, Value>> out;
+  for (const auto& [k, v] : d.entries) {
+    if (k.kind == Value::Kind::Str && v.kind == Value::Kind::Tensor) {
+      out.emplace_back(k.s, v);
+    }
+  }
+  return out;
+}
+
 std::int64_t ReadI64Le(std::span<const std::byte> b, std::size_t off) {
   std::uint64_t v = 0;
   for (std::size_t k = 0; k < 8; ++k) {
@@ -469,21 +502,40 @@ Result<StateDict> LoadLegacyPthBytes(std::span<const std::byte> bytes) {
   }
   std::vector<std::string> keys;
   for (const Value& e : keylist->items) {
-    if (e.kind != Value::Kind::Str) {
-      return Err(ErrorCode::Unsupported, "legacy storage-key list is not all strings");
+    if (e.kind == Value::Kind::Str) {
+      keys.push_back(e.s);
+    } else if (e.kind == Value::Kind::Int) {
+      keys.push_back(std::to_string(e.i));
+    } else {
+      return Err(ErrorCode::Unsupported, "legacy storage-key list has a non-string key");
     }
-    keys.push_back(e.s);
   }
 
-  // Collect (name -> tensor descriptor) and the per-storage dtype.
-  std::vector<std::pair<std::string, Value>> tensors;
-  std::map<std::string, DType> key_dt;
-  for (const auto& [k, v] : main->entries) {
-    if (k.kind == Value::Kind::Str && v.kind == Value::Kind::Tensor) {
-      tensors.emplace_back(k.s, v);
-      key_dt[v.s] = v.dt;
+  // Output tensors: the top-level state_dict, or — for a training checkpoint that
+  // wraps it — the nested "model"/"state_dict" (else the richest nested dict).
+  std::vector<std::pair<std::string, Value>> tensors = NamedTensors(*main);
+  if (tensors.empty()) {
+    std::size_t best = 0;
+    for (const auto& [k, v] : main->entries) {
+      if (v.kind != Value::Kind::Dict) {
+        continue;
+      }
+      auto nested = NamedTensors(v);
+      const bool canonical = k.kind == Value::Kind::Str &&
+                             (k.s == "model" || k.s == "state_dict" || k.s == "model_state_dict");
+      if (canonical && !nested.empty()) {
+        tensors = std::move(nested);
+        break;
+      }
+      if (nested.size() > best) {
+        best = nested.size();
+        tensors = std::move(nested);
+      }
     }
   }
+  // The storage-key list covers EVERY storage, so use the dtypes recorded at every
+  // persistent_id during parsing (more complete than walking only output tensors).
+  std::map<std::string, DType> key_dt = a4.storages();
 
   // Walk the storage section: for each key, an int64 element count then the bytes.
   std::size_t sp = a5.pos();
