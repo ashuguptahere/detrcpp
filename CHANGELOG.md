@@ -15,6 +15,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Changed
 
 ### Fixed
+
+## [0.12.1] - 2026-06-10
+
+### Added
+
+### Changed
+
+### Fixed
 - **Deterministic overfit tests.** The denoising / dense-supervision overfit-a-tiny-
   batch tests (dn-detr, dino-cdn, rf-detr-cdn, rt-detrv3) seeded via `tc.seed=0`,
   which is the "no seed" sentinel — so model init + the random batch were unseeded
