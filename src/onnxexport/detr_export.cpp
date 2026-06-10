@@ -14,6 +14,7 @@
 #include <cstring>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,7 @@ struct Emitter {
   const weights::StateDict& sd;
   DetrArch a;
   std::optional<core::Error> error;
+  std::set<std::string> added_weights;  // weights shared across layers add once
 
   void Fail(std::string msg) {
     if (!error) {
@@ -66,6 +68,9 @@ struct Emitter {
   }
 
   void AddWeight(const std::string& name) {
+    if (!added_weights.insert(name).second) {
+      return;  // a shared weight (e.g. a per-layer-applied MLP) — already emitted
+    }
     const RawTensor* t = Need(name);
     if (t != nullptr) {
       g.AddInitializerF32(name, t->shape, Floats(*t));
@@ -270,6 +275,85 @@ struct Emitter {
     return Reshape(Transpose(ctx, {1, 0, 2}), {lq, v_dim});               // [lq,v_dim]
   }
 
+  std::string Slice(const std::string& x, std::int64_t start, std::int64_t end, std::int64_t axis,
+                    std::int64_t step = 1) {
+    const std::string st = g.Unique("st"), en = g.Unique("en"), ax = g.Unique("ax"),
+                      sp = g.Unique("sp");
+    AddShape(st, {start});
+    AddShape(en, {end});
+    AddShape(ax, {axis});
+    AddShape(sp, {step});
+    std::string y = g.Unique("slice");
+    g.AddNode("Slice", {x, st, en, ax, sp}, {y});
+    return y;
+  }
+
+  std::string Unsqueeze(const std::string& x, std::int64_t axis) {
+    const std::string ax = g.Unique("uax");
+    AddShape(ax, {axis});
+    std::string y = g.Unique("unsqueeze");
+    g.AddNode("Unsqueeze", {x, ax}, {y});
+    return y;
+  }
+
+  // Multi-layer perceptron `prefix.layers.{0..n-1}` with relu between layers.
+  std::string MlpN(const std::string& x, const std::string& prefix, int n) {
+    std::string y = x;
+    for (int i = 0; i < n; ++i) {
+      y = Gemm(y, fmt::format("{}.layers.{}.weight", prefix, i),
+               fmt::format("{}.layers.{}.bias", prefix, i));
+      if (i + 1 < n) {
+        y = Unary("Relu", y);
+      }
+    }
+    return y;
+  }
+
+  std::string PRelu(const std::string& x, const std::string& slope) {
+    AddWeight(slope);  // [1]
+    std::string y = g.Unique("prelu");
+    g.AddNode("PRelu", {x, slope}, {y});
+    return y;
+  }
+
+  // InverseSigmoid: log(clamp(x,eps,1) / clamp(1-x,eps,1)), x first clamped [0,1].
+  std::string InvSigmoid(const std::string& x) {
+    const std::string c0 = g.Unique("c0"), c1 = g.Unique("c1"), eps = g.Unique("eps"),
+                      one = g.Unique("one");
+    AddFloatConst(c0, {1}, {0.0F});
+    AddFloatConst(c1, {1}, {1.0F});
+    AddFloatConst(eps, {1}, {1e-5F});
+    AddFloatConst(one, {1}, {1.0F});
+    std::string xc = Binary("Min", Binary("Max", x, c0), c1);  // clamp [0,1]
+    std::string num = Binary("Max", xc, eps);
+    std::string den = Binary("Max", Binary("Sub", one, xc), eps);
+    return Unary("Log", Binary("Div", num, den));
+  }
+
+  // DAB's SineEmbed4D(obj[nq,4]) -> [nq,2d]: cat of embed(y),embed(x),embed(w),
+  // embed(h) where embed interleaves sin(even)/cos(odd). |scaledim| = scale/dim_t
+  // (temperature 10000) is a baked constant.
+  std::string SineEmbed4DOps(const std::string& obj, int nq) {
+    const int d = a.hidden_dim;
+    const int half = d / 2;
+    const double scale = 2.0 * std::numbers::pi;
+    std::vector<float> scaledim(static_cast<std::size_t>(half));
+    for (int k = 0; k < half; ++k) {
+      scaledim[static_cast<std::size_t>(k)] = static_cast<float>(
+          scale / std::pow(10000.0, 2.0 * std::floor(k / 2.0) / static_cast<double>(half)));
+    }
+    const std::string sd = g.Unique("scaledim");
+    AddFloatConst(sd, {half}, scaledim);
+    auto embed = [&](std::int64_t coord_idx) {
+      std::string c = Slice(obj, coord_idx, coord_idx + 1, 1);  // [nq,1]
+      std::string p = Binary("Mul", c, sd);                     // [nq,half]
+      std::string s = Unsqueeze(Unary("Sin", Slice(p, 0, half, 1, 2)), 2);  // [nq,half/2,1]
+      std::string co = Unsqueeze(Unary("Cos", Slice(p, 1, half, 1, 2)), 2);
+      return Reshape(Concat({s, co}, 2), {nq, half});  // interleaved [nq,half]
+    };
+    return Concat({embed(1), embed(0), embed(2), embed(3)}, 1);  // [nq,2d]
+  }
+
   // Conditional-DETR's reference is a fixed function of the learned query
   // embeddings, so the per-query sine embedding and inverse-sigmoid reference
   // padding are constants — precompute them exactly (matching SineEmbedForRef).
@@ -350,7 +434,8 @@ struct Emitter {
   // cross-attention (query content + sine concatenated head-wise), FFN.
   std::string CondLayer(const std::string& p, std::string tgt, const std::string& memory,
                         const std::string& pos, const std::string& query_pos,
-                        const std::string& query_sine, bool is_first, int Q, int L) {
+                        const std::string& query_sine, bool is_first, int Q, int L,
+                        bool prelu = false) {
     const int d = a.hidden_dim;
     const int nh = a.nheads;
     const int hd = d / nh;
@@ -382,9 +467,10 @@ struct Emitter {
     std::string ca = Gemm(DecoupledMha(qcat, kcat, vv, Q, L, 2 * d, d), p + ".ca_out_proj.weight",
                           p + ".ca_out_proj.bias");
     tgt = LayerNorm(Binary("Add", tgt, ca), p + ".norm2");
-    // FFN.
+    // FFN (conditional: ReLU; DAB: learnable PReLU).
     std::string h1 = Gemm(tgt, p + ".linear1.weight", p + ".linear1.bias");
-    std::string ff = Gemm(Unary("Relu", h1), p + ".linear2.weight", p + ".linear2.bias");
+    std::string act = prelu ? PRelu(h1, p + ".activation_fn.weight") : Unary("Relu", h1);
+    std::string ff = Gemm(act, p + ".linear2.weight", p + ".linear2.bias");
     return LayerNorm(Binary("Add", tgt, ff), p + ".norm3");
   }
 
@@ -439,14 +525,15 @@ struct Emitter {
   }
 
   // Replicates SinePos -> a constant [L, d] positional encoding (L = h*w).
-  std::vector<float> SinePos(int h, int w) {
+  // |temp| is the frequency base (DETR/conditional 10000; DAB 20).
+  std::vector<float> SinePos(int h, int w, double temp = 10000.0) {
     const int d = a.hidden_dim;
     const int half = d / 2;
     const double scale = 2.0 * std::numbers::pi;
     std::vector<double> dim_t(static_cast<std::size_t>(half));
     for (int k = 0; k < half; ++k) {
       dim_t[static_cast<std::size_t>(k)] =
-          std::pow(10000.0, 2.0 * std::floor(k / 2.0) / static_cast<double>(half));
+          std::pow(temp, 2.0 * std::floor(k / 2.0) / static_cast<double>(half));
     }
     std::vector<float> pos(static_cast<std::size_t>(h) * static_cast<std::size_t>(w) *
                            static_cast<std::size_t>(d));
@@ -622,6 +709,84 @@ core::Result<void> ExportConditional(const DetrArch& arch, const weights::StateD
   std::string boxes = e.Reshape(boxes2d, {1, Q, 4});
   g.AddNode("Identity", {logits}, {"logits"});
   g.AddNode("Identity", {boxes}, {"boxes"});
+  g.AddOutput("logits", {1, Q, C});
+  g.AddOutput("boxes", {1, Q, 4});
+
+  if (e.error) {
+    return tl::make_unexpected(*e.error);
+  }
+  return g.Save(path, /*opset=*/17);
+}
+
+core::Result<void> ExportDab(const DetrArch& arch, const weights::StateDict& weights,
+                             const std::string& path) {
+  GraphBuilder g("dab-detr");
+  Emitter e{g, weights, arch, std::nullopt};
+
+  const int d = arch.hidden_dim;
+  const int half = d / 2;
+  const int feat = arch.imgsz / 32;
+  const int L = feat * feat;
+  const int Q = arch.num_queries;
+  const int C = arch.num_classes;
+
+  g.AddInput("images", {1, 3, arch.imgsz, arch.imgsz});
+
+  std::string x = e.Conv(e.ResNet50Backbone("images"), "input_proj.weight", "input_proj.bias", 1, 1, 0);
+  std::string src = e.Transpose(e.Reshape(x, {d, L}), {1, 0});  // [L, d]
+  e.AddFloatConst("pos", {L, d}, e.SinePos(feat, feat, /*temp=*/20.0));  // DAB temperature 20
+  const std::string pos = "pos";
+
+  // --- encoder (PReLU FFN + per-layer encoder_query_scale modulation) ---
+  std::string memory = src;
+  for (int i = 0; i < arch.enc_layers; ++i) {
+    const std::string p = fmt::format("encoder.{}", i);
+    std::string scaled_pos = e.Binary("Mul", pos, e.MlpN(memory, "encoder_query_scale", 2));
+    std::string q = e.Binary("Add", memory, scaled_pos);
+    std::string attn = e.Mha(q, q, memory, p + ".self_attn", L, L);
+    memory = e.LayerNorm(e.Binary("Add", memory, attn), p + ".norm1");
+    std::string h1 = e.Gemm(memory, p + ".linear1.weight", p + ".linear1.bias");
+    std::string ff =
+        e.Gemm(e.PRelu(h1, p + ".activation_fn.weight"), p + ".linear2.weight", p + ".linear2.bias");
+    memory = e.LayerNorm(e.Binary("Add", memory, ff), p + ".norm2");
+  }
+
+  // --- decoder (4D anchors, iterative refinement) ---
+  e.AddWeight("refpoint_embed.weight");                                  // [Q, 4]
+  std::string reference = e.Unary("Sigmoid", "refpoint_embed.weight");  // [Q, 4]
+  e.AddFloatConst("dec_tgt0", {Q, d},
+                  std::vector<float>(static_cast<std::size_t>(Q) * static_cast<std::size_t>(d), 0.0F));
+  std::string tgt = "dec_tgt0";
+  std::string boxes;
+  for (int i = 0; i < arch.dec_layers; ++i) {
+    const std::string p = fmt::format("decoder.{}", i);
+    std::string obj = reference;  // [Q, 4]
+    std::string sine4 = e.SineEmbed4DOps(obj, Q);
+    std::string query_pos = e.MlpN(sine4, "ref_point_head", 2);  // [Q, d]
+    std::string query_sine = e.Slice(sine4, 0, d, 1);            // [Q, d]
+    if (i > 0) {
+      query_sine = e.Binary("Mul", query_sine, e.MlpN(tgt, "query_scale", 2));
+    }
+    std::string ref_hw = e.Unary("Sigmoid", e.MlpN(tgt, "ref_anchor_head", 2));  // [Q, 2]
+    std::string h_mod = e.Binary("Div", e.Slice(ref_hw, 1, 2, 1), e.Slice(obj, 3, 4, 1));
+    std::string w_mod = e.Binary("Div", e.Slice(ref_hw, 0, 1, 1), e.Slice(obj, 2, 3, 1));
+    query_sine = e.Concat({e.Binary("Mul", e.Slice(query_sine, 0, half, 1), h_mod),
+                           e.Binary("Mul", e.Slice(query_sine, half, d, 1), w_mod)},
+                          1);
+    tgt = e.CondLayer(p, tgt, memory, pos, query_pos, query_sine, /*is_first=*/i == 0, Q, L,
+                      /*prelu=*/true);
+    std::string inv_ref = e.InvSigmoid(reference);
+    std::string normed = e.LayerNorm(tgt, "decoder_norm");
+    boxes = e.Unary("Sigmoid", e.Binary("Add", e.MlpN(normed, "bbox_embed", 3), inv_ref));
+    reference = e.Unary("Sigmoid", e.Binary("Add", e.MlpN(tgt, "bbox_embed", 3), inv_ref));
+  }
+
+  std::string logits2d =
+      e.Gemm(e.LayerNorm(tgt, "decoder_norm"), "class_embed.weight", "class_embed.bias");  // [Q, C]
+  std::string logits = e.Reshape(logits2d, {1, Q, C});
+  std::string boxes_out = e.Reshape(boxes, {1, Q, 4});
+  g.AddNode("Identity", {logits}, {"logits"});
+  g.AddNode("Identity", {boxes_out}, {"boxes"});
   g.AddOutput("logits", {1, Q, C});
   g.AddOutput("boxes", {1, Q, 4});
 

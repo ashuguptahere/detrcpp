@@ -46,4 +46,10 @@ core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& we
 core::Result<void> ExportConditional(const DetrArch& arch, const weights::StateDict& weights,
                                      const std::string& path);
 
+// DAB-DETR (focal): conditional decoder with 4D dynamic anchors, width/height-
+// modulated sine queries, PReLU FFNs, and iterative box refinement. Outputs:
+// "logits" [1,num_queries,num_classes], "boxes" [1,num_queries,4].
+core::Result<void> ExportDab(const DetrArch& arch, const weights::StateDict& weights,
+                             const std::string& path);
+
 }  // namespace detr::onnxexport

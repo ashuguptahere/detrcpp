@@ -17,8 +17,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   reference (precomputed exactly from the learned query embeddings). Verified at
   **max|Δ| ≈ 5e-7 vs LibTorch** via the parity harness (`configs/models/conditional-
   tiny.yaml`). Wired into `detrcpp-export` and `detr-parity`.
+- **ONNX export for dab-detr** (focal). `ExportDab` mirrors the DAB decoder
+  op-for-op including the parts conditional doesn't have: 4D dynamic anchors with
+  iterative box refinement (`bbox_embed` on the LayerNorm'd state for the box, on
+  the raw state for the next reference), the `SineEmbed4D` interleave emitted as
+  dynamic Slice/Sin/Cos ops, width/height-modulated sine queries, PReLU FFNs, the
+  per-layer encoder `query_scale` modulation, and sine temperature 20. Verified at
+  **max|Δ| ≈ 5e-7 vs LibTorch** (`configs/models/dab-tiny.yaml`).
 
 ### Changed
+- ONNX emit: shared weights (per-layer-applied MLPs like `bbox_embed`,
+  `encoder_query_scale`) are added as an initializer once; the parity runner runs
+  the graph with optimizations disabled (purest check + sidesteps an ORT fusion
+  bug on Slice-heavy graphs).
 
 ### Fixed
 

@@ -30,10 +30,10 @@ int GetInt(const YAML::Node& c, const char* key, int def) {
 detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   detr::onnxexport::DetrArch a;
   const std::string model = (c && c["model"]) ? c["model"].as<std::string>() : "detr";
-  a.backbone =
-      (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr")
-          ? detr::onnxexport::Backbone::ResNet50
-          : detr::onnxexport::Backbone::Compact;
+  a.backbone = (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr" ||
+                model == "dab-detr")
+                   ? detr::onnxexport::Backbone::ResNet50
+                   : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
     a.resnet_blocks = {3, 4, 23, 3};
   }
@@ -84,9 +84,10 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::string onnx_path = dir + "/model.onnx";
-  auto export_r = (model == "conditional-detr")
-                      ? detr::onnxexport::ExportConditional(arch, *weights, onnx_path)
-                      : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
+  auto export_r =
+      (model == "conditional-detr") ? detr::onnxexport::ExportConditional(arch, *weights, onnx_path)
+      : (model == "dab-detr")       ? detr::onnxexport::ExportDab(arch, *weights, onnx_path)
+                                    : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
   if (!export_r) {
     std::fprintf(stderr, "export: %s\n", export_r.error().message.c_str());
     return 1;
@@ -109,6 +110,10 @@ int main(int argc, char** argv) {
   Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "detr-parity");
   Ort::SessionOptions so;
   so.SetIntraOpNumThreads(1);
+  // Run the graph exactly as emitted (the purest parity check) and avoid an ORT
+  // graph-fusion bug that duplicates node names on Slice-heavy graphs (DAB's
+  // dynamic 4D sine).
+  so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
   Ort::Session session(env, onnx_path.c_str(), so);
   Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
