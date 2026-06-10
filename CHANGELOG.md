@@ -16,6 +16,13 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.2.4] - 2026-06-10
+
+### Added
+- **`--device` downgrade warning.** An explicit CUDA request that can't be
+  honored (no CUDA), or any device kind this build cannot target (mps/vulkan/
+  coreml/hailo/...), now logs a warning instead of silently using the CPU.
+
 ## [0.2.3] - 2026-06-10
 
 ### Added
