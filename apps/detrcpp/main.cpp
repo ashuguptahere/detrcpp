@@ -16,7 +16,6 @@
 // "not implemented" exit code so the CLI surface stays usable.
 
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 
 #include <CLI/CLI.hpp>
 #include <cstdint>
@@ -201,7 +200,7 @@ torch::Device ToTorchDevice(const detr::core::Device& d) {
 // Logs a weight LoadReport and returns false when nothing matched the model.
 // loaded==0 almost always means a wrong --model or checkpoint; continuing would
 // silently run on randomly-initialized weights, so callers must refuse.
-bool ReportWeightsOk(spdlog::logger& lg, const std::string& weights,
+bool ReportWeightsOk(detr::log::Logger& lg, const std::string& weights,
                      const detr::weights::LoadReport& rep) {
   lg.info("weights '{}': loaded {} tensor(s); {} missing, {} unexpected, {} shape-mismatched",
           weights, rep.loaded, rep.missing.size(), rep.unexpected.size(), rep.mismatched.size());

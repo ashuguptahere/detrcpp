@@ -23,9 +23,9 @@ TEST(Log, DifferentNamesYieldDifferentLoggers) {
 TEST(Log, SetGlobalLevelAffectsExistingLoggers) {
   auto& lg = Get("test.level");
   SetGlobalLevel(Level::Debug);
-  EXPECT_TRUE(lg.should_log(spdlog::level::debug));
+  EXPECT_TRUE(lg.ShouldLog(Level::Debug));
   SetGlobalLevel(Level::Warn);
-  EXPECT_FALSE(lg.should_log(spdlog::level::info));
+  EXPECT_FALSE(lg.ShouldLog(Level::Info));
   SetGlobalLevel(Level::Info);  // restore
 }
 

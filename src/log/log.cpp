@@ -126,9 +126,17 @@ class JsonLineFormatter final : public spdlog::formatter {
   }
 };
 
+// Each named logger: the spdlog logger plus the façade handle handed to callers.
+// Both live in a node-based map, so the façade reference returned by Get() is
+// stable for the process lifetime.
+struct Entry {
+  std::shared_ptr<spdlog::logger> spd;
+  Logger facade;
+};
+
 struct LoggerRegistry {
   std::mutex mu;
-  std::unordered_map<std::string, std::shared_ptr<spdlog::logger>> loggers;
+  std::unordered_map<std::string, Entry> loggers;
   std::vector<spdlog::sink_ptr> shared_sinks;
   spdlog::level::level_enum level{spdlog::level::info};
 
@@ -166,27 +174,44 @@ spdlog::level::level_enum ToSpd(Level l) {
 
 }  // namespace
 
-spdlog::logger& Get(std::string_view name) {
+namespace detail {
+
+void Emit(void* handle, Level level, std::string_view msg) {
+  auto* lg = static_cast<spdlog::logger*>(handle);
+  if (lg != nullptr) {
+    lg->log(ToSpd(level), msg);  // single string_view arg -> logged verbatim
+  }
+}
+
+bool ShouldLog(const void* handle, Level level) {
+  const auto* lg = static_cast<const spdlog::logger*>(handle);
+  return lg != nullptr && lg->should_log(ToSpd(level));
+}
+
+}  // namespace detail
+
+Logger& Get(std::string_view name) {
   auto& r = Registry();
   std::lock_guard<std::mutex> lock(r.mu);
   std::string key{name};
   auto it = r.loggers.find(key);
   if (it != r.loggers.end()) {
-    return *it->second;
+    return it->second.facade;
   }
-  auto lg = std::make_shared<spdlog::logger>(key, r.shared_sinks.begin(), r.shared_sinks.end());
-  lg->set_level(r.level);
-  lg->flush_on(spdlog::level::warn);
-  auto [inserted, _] = r.loggers.emplace(std::move(key), std::move(lg));
-  return *inserted->second;
+  auto spd = std::make_shared<spdlog::logger>(key, r.shared_sinks.begin(), r.shared_sinks.end());
+  spd->set_level(r.level);
+  spd->flush_on(spdlog::level::warn);
+  Logger facade(spd.get());
+  auto [inserted, _] = r.loggers.emplace(std::move(key), Entry{std::move(spd), facade});
+  return inserted->second.facade;
 }
 
 void SetGlobalLevel(Level level) {
   auto& r = Registry();
   std::lock_guard<std::mutex> lock(r.mu);
   r.level = ToSpd(level);
-  for (auto& [_, lg] : r.loggers) {
-    lg->set_level(r.level);  // atomic — safe even concurrently.
+  for (auto& [_, entry] : r.loggers) {
+    entry.spd->set_level(r.level);  // atomic — safe even concurrently.
   }
 }
 
@@ -201,8 +226,8 @@ void EnableJsonSink(const std::string& path) {
   r.shared_sinks.push_back(sink);
   // Attach to already-created loggers. Must run during single-threaded init
   // (see file header) — mutating a live logger's sink list is not concurrent.
-  for (auto& [_, lg] : r.loggers) {
-    lg->sinks().push_back(sink);
+  for (auto& [_, entry] : r.loggers) {
+    entry.spd->sinks().push_back(sink);
   }
 }
 
@@ -214,8 +239,8 @@ void EnableRemoteSink(const std::string& /*url*/) {
 void Shutdown() {
   auto& r = Registry();
   std::lock_guard<std::mutex> lock(r.mu);
-  for (auto& [_, lg] : r.loggers) {
-    lg->flush();
+  for (auto& [_, entry] : r.loggers) {
+    entry.spd->flush();
   }
   // Deliberately do NOT clear the map: references handed out by Get() must stay
   // valid until process exit. No logging may occur after Shutdown().
