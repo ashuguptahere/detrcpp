@@ -47,6 +47,20 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   runs preprocess→Forward→postprocess on the model's device); output is the same
   `DtBox` xywh as the single-pass path, so the predict draw/save tail is reused via
   one `--sahi` branch. Improves small-object recall on high-resolution inputs.
+- **Legacy (pre-1.6) `.pth` unpickler** (`weights::LoadLegacyPth`, pure C++). Old
+  `torch.save` checkpoints are a raw protocol-2 pickle of an `OrderedDict[str ->
+  Tensor]` followed by length-prefixed little-endian storages — a format LibTorch's
+  C++ API cannot read. A minimal pickle VM (~30 opcodes) recognizes only the globals
+  a state_dict emits (`_rebuild_tensor_v2`, `_rebuild_parameter`, `OrderedDict`, the
+  storage classes), never dispatches an unknown global (no code execution; unknown
+  reduces become inert), and walks the storage section to slice each tensor's bytes
+  into a `RawTensor`. It returns **Unsupported on anything exotic** (unknown global,
+  big-endian, non-contiguous stride) rather than a wrong tensor — strictly better
+  than the previous blanket rejection, and the `loaded==0` guard remains the safety
+  net. Wired into the existing `0x80` legacy-magic branch in `LoadPth`, so old `.pth`
+  files now load with no CLI change. Torch-free (`detr_weights`), so it builds in the
+  lightweight config; tested via an in-test legacy writer round-trip + truncation /
+  unknown-global / big-endian adversarial cases.
 
 ### Changed
 

@@ -2,6 +2,8 @@
 
 #include "detr/weights/torch_bridge.hpp"
 
+#include "detr/weights/legacy_pickle.hpp"
+
 #include <caffe2/serialize/inline_container.h>
 #include <fmt/format.h>
 #include <torch/csrc/jit/serialization/import_read.h>
@@ -179,14 +181,11 @@ Result<StateDict> LoadPth(const std::filesystem::path& path) {
     std::ifstream probe(path, std::ios::binary);
     char head[2] = {0, 0};
     probe.read(head, 2);
-    // Modern torch.save is a zip ("PK"). 0x80 is a raw pickle PROTO opcode =
-    // the legacy (pre-torch-1.6) format, which LibTorch C++ cannot load.
+    // Modern torch.save is a zip ("PK"). 0x80 is a raw pickle PROTO opcode = the
+    // legacy (pre-torch-1.6) format, which LibTorch C++ cannot load — use our own
+    // pure-C++ unpickler (which itself returns Unsupported on anything exotic).
     if (static_cast<unsigned char>(head[0]) == 0x80) {
-      return Err(ErrorCode::Unsupported,
-                 fmt::format("'{}' is a legacy (pre-1.6) torch checkpoint; LibTorch "
-                             "exposes no C++ loader for it. Re-save it with a recent "
-                             "PyTorch (zip format) or to .safetensors.",
-                             path.string()));
+      return LoadLegacyPth(path);
     }
   }
   try {

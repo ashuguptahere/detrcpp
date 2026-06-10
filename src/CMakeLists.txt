@@ -34,6 +34,7 @@ add_library(detr_weights STATIC
   weights/tensor.cpp
   weights/state_dict.cpp
   weights/safetensors.cpp
+  weights/legacy_pickle.cpp
   weights/remapper.cpp
 )
 

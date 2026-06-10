@@ -10,6 +10,7 @@ add_executable(detr_unit_tests
   unit/test_assignment.cpp
   unit/test_coco_eval.cpp
   unit/test_bytetrack.cpp
+  unit/test_legacy_pickle.cpp
 )
 
 target_link_libraries(detr_unit_tests
