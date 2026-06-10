@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.13.0] - 2026-06-10
+
+### Added
 - **RT-DETR-CDN training recipe.** A new `rt-detr-cdn` model — RT-DETR (ResNet-VD +
   hybrid AIFI/CCFM encoder + shared deformable head) with contrastive denoising
   training, reusing the shared deform-head CDN entry + the contrastive noise
