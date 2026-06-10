@@ -11,6 +11,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **ONNX export for deformable-detr** — the deformable tier. A hand-written
+  `ExportDeformable` reconstructs **multi-scale deformable attention** in pure ONNX:
+  per-level **GridSample** (bilinear, zeros-pad, align_corners=0) at `2·loc−1`,
+  weighted by the softmaxed attention, in both the 6-layer deformable encoder and
+  decoder. Adds a manual **GroupNorm** (via `InstanceNormalization`, opset-17-safe)
+  for the 4-level input projection, a multi-tap `ResNet50Stages` (C3/C4/C5), and
+  bakes the encoder pos/reference grid + fixed query reference as constants.
+  Verified at **max|Δ| ≈ 8e-7 vs LibTorch** (`configs/models/deformable-tiny.yaml`);
+  the GridSample MSDeformAttn helper is reusable for dino/rt-detr.
 
 ### Changed
 

@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
 
   detr::onnxexport::DetrArch arch;
   arch.backbone = (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr" ||
-                   model == "dab-detr")
+                   model == "dab-detr" || model == "deformable-detr")
                       ? detr::onnxexport::Backbone::ResNet50
                       : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
@@ -70,6 +70,8 @@ int main(int argc, char** argv) {
   arch.num_classes = GetInt(cfg, "num_classes", arch.num_classes);
   arch.imgsz = GetInt(cfg, "imgsz", arch.imgsz);
   arch.backbone_width = GetInt(cfg, "backbone_width", arch.backbone_width);
+  arch.num_levels = GetInt(cfg, "num_levels", arch.num_levels);
+  arch.num_points = GetInt(cfg, "num_points", arch.num_points);
   if (imgsz > 0) {
     arch.imgsz = imgsz;
   }
@@ -82,7 +84,8 @@ int main(int argc, char** argv) {
   auto exported =
       (model == "conditional-detr") ? detr::onnxexport::ExportConditional(arch, *sd, out)
       : (model == "dab-detr")       ? detr::onnxexport::ExportDab(arch, *sd, out)
-                                    : detr::onnxexport::ExportDetr(arch, *sd, out);
+      : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *sd, out)
+                                     : detr::onnxexport::ExportDetr(arch, *sd, out);
   if (!exported) {
     std::fprintf(stderr, "export: %s\n", exported.error().message.c_str());
     return 1;

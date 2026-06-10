@@ -16,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "detr/onnxexport/graph_builder.hpp"
@@ -354,6 +355,205 @@ struct Emitter {
     return Concat({embed(1), embed(0), embed(2), embed(3)}, 1);  // [nq,2d]
   }
 
+  // Bilinear grid sample. x:[N,C,H,W], grid:[N,Hout,Wout,2] in [-1,1] -> [N,C,Hout,Wout].
+  std::string GridSample(const std::string& x, const std::string& grid) {
+    std::string y = g.Unique("gridsample");
+    g.AddNode("GridSample", {x, grid}, {y});
+    g.AttrString("mode", "bilinear");  // opset 16/17 spelling
+    g.AttrString("padding_mode", "zeros");
+    g.AttrInt("align_corners", 0);
+    return y;
+  }
+
+  std::string ReduceSum(const std::string& x, const std::vector<std::int64_t>& axes, bool keepdims) {
+    std::string ax = g.Unique("rsax");
+    AddShape(ax, axes);  // axes is an input initializer at opset 13+
+    std::string y = g.Unique("reducesum");
+    g.AddNode("ReduceSum", {x, ax}, {y});
+    g.AttrInt("keepdims", keepdims ? 1 : 0);
+    return y;
+  }
+
+  // GroupNorm via InstanceNormalization (opset-17 has no GroupNormalization):
+  // normalize per group over (C/groups)*H*W, then the per-channel affine.
+  std::string GroupNorm(const std::string& x, const std::string& prefix, int groups, int C, int H,
+                        int W) {
+    std::string xr = Reshape(x, {1, groups, (C / groups) * H * W});
+    std::string sc = g.Unique("gn_s");
+    AddFloatConst(sc, {groups}, std::vector<float>(static_cast<std::size_t>(groups), 1.0F));
+    std::string bi = g.Unique("gn_b");
+    AddFloatConst(bi, {groups}, std::vector<float>(static_cast<std::size_t>(groups), 0.0F));
+    std::string norm = g.Unique("instnorm");
+    g.AddNode("InstanceNormalization", {xr, sc, bi}, {norm});
+    g.AttrFloat("epsilon", 1e-5F);
+    std::string back = Reshape(norm, {1, C, H, W});
+    AddWeight(prefix + ".weight");
+    AddWeight(prefix + ".bias");
+    std::string wr = Reshape(prefix + ".weight", {1, C, 1, 1});
+    std::string br = Reshape(prefix + ".bias", {1, C, 1, 1});
+    return Binary("Add", Binary("Mul", back, wr), br);
+  }
+
+  // Multi-scale deformable attention (MSDeformAttnImpl::forward + Core), batch 1.
+  // query [Lq,d]; reference [Lq,nl,2] (2D) or [Lq,nl,4] (4D); value_src [Lv,d].
+  std::string MSDeformAttn(const std::string& query, const std::string& reference,
+                           const std::string& value_src,
+                           const std::vector<std::pair<int, int>>& shapes, const std::string& p,
+                           int Lq, bool ref4d) {
+    const int d = a.hidden_dim;
+    const int nh = a.nheads;
+    const int hd = d / nh;
+    const int nl = static_cast<int>(shapes.size());
+    const int np = a.num_points;
+    int Lv = 0;
+    for (const auto& [h, w] : shapes) {
+      Lv += h * w;
+    }
+    // (A) value_proj -> per-level [nh,hd,H,W] maps.
+    std::string value_mh =
+        Reshape(Gemm(value_src, p + ".value_proj.weight", p + ".value_proj.bias"), {Lv, nh, hd});
+    std::vector<std::string> v_levels;
+    int start = 0;
+    for (int l = 0; l < nl; ++l) {
+      const int h = shapes[static_cast<std::size_t>(l)].first;
+      const int w = shapes[static_cast<std::size_t>(l)].second;
+      std::string v_l = Transpose(Slice(value_mh, start, start + h * w, 0), {1, 2, 0});  // [nh,hd,hw]
+      v_levels.push_back(Reshape(v_l, {nh, hd, h, w}));
+      start += h * w;
+    }
+    // (B) sampling offsets + attention weights.
+    std::string off = Reshape(
+        Gemm(query, p + ".sampling_offsets.weight", p + ".sampling_offsets.bias"), {Lq, nh, nl, np, 2});
+    std::string aw = Reshape(
+        Gemm(query, p + ".attention_weights.weight", p + ".attention_weights.bias"), {Lq, nh, nl * np});
+    aw = Reshape(Softmax(aw, -1), {Lq, nh, nl, np});
+    // (C) sampling locations -> grid in [-1,1].
+    std::string loc;
+    if (!ref4d) {
+      std::string ref6 = Reshape(reference, {Lq, 1, nl, 1, 2});
+      std::vector<float> onorm;  // (W,H) per level
+      for (int l = 0; l < nl; ++l) {
+        onorm.push_back(static_cast<float>(shapes[static_cast<std::size_t>(l)].second));
+        onorm.push_back(static_cast<float>(shapes[static_cast<std::size_t>(l)].first));
+      }
+      std::string onorm5 = g.Unique("onorm");
+      AddFloatConst(onorm5, {1, 1, nl, 1, 2}, onorm);
+      loc = Binary("Add", ref6, Binary("Div", off, onorm5));
+    } else {
+      std::string ref6 = Reshape(reference, {Lq, 1, nl, 1, 4});
+      std::string invnp = g.Unique("invnp");
+      AddFloatConst(invnp, {1}, {1.0F / static_cast<float>(np)});
+      std::string half = g.Unique("half");
+      AddFloatConst(half, {1}, {0.5F});
+      loc = Binary("Add", Slice(ref6, 0, 2, -1),
+                   Binary("Mul", Binary("Mul", Binary("Mul", off, invnp), Slice(ref6, 2, 4, -1)), half));
+    }
+    std::string two = g.Unique("two");
+    AddFloatConst(two, {1}, {2.0F});
+    std::string one = g.Unique("one");
+    AddFloatConst(one, {1}, {1.0F});
+    std::string grid_all = Binary("Sub", Binary("Mul", loc, two), one);  // [Lq,nh,nl,np,2]
+    // (D) per-level grid sample.
+    std::vector<std::string> samp;
+    for (int l = 0; l < nl; ++l) {
+      std::string g_l = Reshape(Slice(grid_all, l, l + 1, 2), {Lq, nh, np, 2});
+      samp.push_back(GridSample(v_levels[static_cast<std::size_t>(l)],
+                                Transpose(g_l, {1, 0, 2, 3})));  // [nh,hd,Lq,np]
+    }
+    // (E) weighted sum over levels*points.
+    std::vector<std::string> su;
+    su.reserve(samp.size());
+    for (const auto& s : samp) {
+      su.push_back(Unsqueeze(s, 3));  // [nh,hd,Lq,1,np]
+    }
+    std::string stacked = Reshape(Concat(su, 3), {nh, hd, Lq, nl * np});
+    std::string attn_r = Reshape(Transpose(aw, {1, 0, 2, 3}), {nh, 1, Lq, nl * np});
+    std::string summed = ReduceSum(Binary("Mul", stacked, attn_r), {3}, /*keepdims=*/false);
+    std::string out = Reshape(Transpose(Reshape(summed, {1, nh * hd, Lq}), {0, 2, 1}), {Lq, d});
+    return Gemm(out, p + ".output_proj.weight", p + ".output_proj.bias");
+  }
+
+  // Deformable-DETR baked constants: encoder pos+level_embed, encoder reference
+  // grid, the fixed query reference, and the inverse-sigmoid box padding.
+  struct DeformConsts {
+    std::vector<float> pos_cat;    // [Lv, d]
+    std::vector<float> enc_ref;    // [Lv, nl, 2]
+    std::vector<float> dec_ref;    // [nq, nl, 2]
+    std::vector<float> ref_pad;    // [nq, 4]
+  };
+  DeformConsts DeformPrecompute(const std::vector<std::pair<int, int>>& shapes) {
+    const int d = a.hidden_dim;
+    const int nl = static_cast<int>(shapes.size());
+    const int nq = a.num_queries;
+    DeformConsts c;
+    int Lv = 0;
+    for (const auto& [h, w] : shapes) {
+      Lv += h * w;
+    }
+    const RawTensor* le = Need("level_embed");
+    if (le == nullptr) {
+      return c;
+    }
+    const auto LE = Floats(*le);
+    c.enc_ref.assign(static_cast<std::size_t>(Lv) * nl * 2, 0.0F);
+    c.pos_cat.assign(static_cast<std::size_t>(Lv) * d, 0.0F);
+    int base = 0;
+    for (int l = 0; l < nl; ++l) {
+      const int h = shapes[static_cast<std::size_t>(l)].first;
+      const int w = shapes[static_cast<std::size_t>(l)].second;
+      const auto sine = SinePos(h, w);  // [h*w*d], shared DETR sine (matches deformable)
+      for (int i = 0; i < h; ++i) {
+        for (int j = 0; j < w; ++j) {
+          const int lv = base + i * w + j;
+          const float xx = (static_cast<float>(j) + 0.5F) / static_cast<float>(w);
+          const float yy = (static_cast<float>(i) + 0.5F) / static_cast<float>(h);
+          for (int ll = 0; ll < nl; ++ll) {
+            c.enc_ref[static_cast<std::size_t>((lv * nl + ll) * 2 + 0)] = xx;
+            c.enc_ref[static_cast<std::size_t>((lv * nl + ll) * 2 + 1)] = yy;
+          }
+          for (int cc = 0; cc < d; ++cc) {
+            c.pos_cat[static_cast<std::size_t>(lv * d + cc)] =
+                sine[static_cast<std::size_t>((i * w + j) * d + cc)] +
+                LE[static_cast<std::size_t>(l * d + cc)];
+          }
+        }
+      }
+      base += h * w;
+    }
+    const RawTensor* qe = Need("query_embed.weight");       // [nq, 2d]
+    const RawTensor* rw = Need("reference_points.weight");  // [2, d]
+    const RawTensor* rb = Need("reference_points.bias");    // [2]
+    if (qe == nullptr || rw == nullptr || rb == nullptr) {
+      return c;
+    }
+    const auto QE = Floats(*qe), RW = Floats(*rw), RB = Floats(*rb);
+    c.dec_ref.assign(static_cast<std::size_t>(nq) * nl * 2, 0.0F);
+    c.ref_pad.assign(static_cast<std::size_t>(nq) * 4, 0.0F);
+    auto sig = [](double v) { return 1.0 / (1.0 + std::exp(-v)); };
+    auto inv = [](double s) {
+      const double e = 1e-5;
+      return std::log(std::max(s, e) / std::max(1.0 - s, e));
+    };
+    for (int q = 0; q < nq; ++q) {
+      double r[2];
+      for (int o = 0; o < 2; ++o) {
+        double s = RB[static_cast<std::size_t>(o)];
+        for (int i = 0; i < d; ++i) {
+          s += static_cast<double>(RW[static_cast<std::size_t>(o * d + i)]) *
+               static_cast<double>(QE[static_cast<std::size_t>(q * 2 * d + i)]);
+        }
+        r[o] = sig(s);
+      }
+      for (int ll = 0; ll < nl; ++ll) {
+        c.dec_ref[static_cast<std::size_t>((q * nl + ll) * 2 + 0)] = static_cast<float>(r[0]);
+        c.dec_ref[static_cast<std::size_t>((q * nl + ll) * 2 + 1)] = static_cast<float>(r[1]);
+      }
+      c.ref_pad[static_cast<std::size_t>(q * 4 + 0)] = static_cast<float>(inv(r[0]));
+      c.ref_pad[static_cast<std::size_t>(q * 4 + 1)] = static_cast<float>(inv(r[1]));
+    }
+    return c;
+  }
+
   // Conditional-DETR's reference is a fixed function of the learned query
   // embeddings, so the per-query sine embedding and inverse-sigmoid reference
   // padding are constants — precompute them exactly (matching SineEmbedForRef).
@@ -508,21 +708,28 @@ struct Emitter {
     return Unary("Relu", Binary("Add", c, id));
   }
 
-  std::string ResNet50Backbone(const std::string& input) {
+  // {C3, C4, C5} = layer2/layer3/layer4 outputs (the deformable multi-tap).
+  std::array<std::string, 3> ResNet50Stages(const std::string& input) {
     std::string x =
         Unary("Relu", Bn(Conv(input, "backbone.conv1.weight", "", 7, 2, 3), "backbone.bn1"));
     x = Pool(x, 3, 2, 1);
     const auto& blocks = a.resnet_blocks;
     const int strides[4] = {1, 2, 2, 2};
+    std::array<std::string, 3> outs;
     for (int lyr = 0; lyr < 4; ++lyr) {
       for (int b = 0; b < blocks[static_cast<std::size_t>(lyr)]; ++b) {
         const std::string p = fmt::format("backbone.layer{}.{}", lyr + 1, b);
         const int stride = (b == 0) ? strides[lyr] : 1;
         x = Bottleneck(x, p, stride, /*has_down=*/b == 0);
       }
+      if (lyr >= 1) {
+        outs[static_cast<std::size_t>(lyr - 1)] = x;  // layer2->C3, layer3->C4, layer4->C5
+      }
     }
-    return x;
+    return outs;
   }
+
+  std::string ResNet50Backbone(const std::string& input) { return ResNet50Stages(input)[2]; }
 
   // Replicates SinePos -> a constant [L, d] positional encoding (L = h*w).
   // |temp| is the frequency base (DETR/conditional 10000; DAB 20).
@@ -711,6 +918,104 @@ core::Result<void> ExportConditional(const DetrArch& arch, const weights::StateD
   g.AddNode("Identity", {boxes}, {"boxes"});
   g.AddOutput("logits", {1, Q, C});
   g.AddOutput("boxes", {1, Q, 4});
+
+  if (e.error) {
+    return tl::make_unexpected(*e.error);
+  }
+  return g.Save(path, /*opset=*/17);
+}
+
+core::Result<void> ExportDeformable(const DetrArch& arch, const weights::StateDict& weights,
+                                    const std::string& path) {
+  GraphBuilder g("deformable-detr");
+  Emitter e{g, weights, arch, std::nullopt};
+
+  const int d = arch.hidden_dim;
+  const int C = arch.num_classes;
+  const int nq = arch.num_queries;
+  const int nl = arch.num_levels;
+  g.AddInput("images", {1, 3, arch.imgsz, arch.imgsz});
+
+  // --- backbone + 4-level input_proj (Conv + GroupNorm) ---
+  auto stages = e.ResNet50Stages("images");  // {C3, C4, C5}
+  std::vector<std::string> proj;
+  std::vector<std::pair<int, int>> shapes;
+  const int fs[3] = {arch.imgsz / 8, arch.imgsz / 16, arch.imgsz / 32};
+  for (int i = 0; i < 3; ++i) {
+    std::string c = e.Conv(stages[static_cast<std::size_t>(i)], fmt::format("input_proj.{}.0.weight", i),
+                           fmt::format("input_proj.{}.0.bias", i), 1, 1, 0);
+    proj.push_back(e.GroupNorm(c, fmt::format("input_proj.{}.1", i), 32, d, fs[i], fs[i]));
+    shapes.emplace_back(fs[i], fs[i]);
+  }
+  int prev_sp = fs[2];
+  for (int i = 3; i < nl; ++i) {
+    std::string in = (i == 3) ? stages[2] : proj.back();
+    std::string c = e.Conv(in, fmt::format("input_proj.{}.0.weight", i),
+                           fmt::format("input_proj.{}.0.bias", i), 3, 2, 1);
+    const int sp = (prev_sp - 1) / 2 + 1;
+    proj.push_back(e.GroupNorm(c, fmt::format("input_proj.{}.1", i), 32, d, sp, sp));
+    shapes.emplace_back(sp, sp);
+    prev_sp = sp;
+  }
+
+  // --- flatten levels into one memory; pos (sine + level_embed) and the encoder
+  // reference grid and the fixed query reference are all baked constants ---
+  const Emitter::DeformConsts cc = e.DeformPrecompute(shapes);
+  int Lv = 0;
+  std::vector<std::string> src_flat;
+  for (int l = 0; l < nl; ++l) {
+    const int h = shapes[static_cast<std::size_t>(l)].first;
+    const int w = shapes[static_cast<std::size_t>(l)].second;
+    src_flat.push_back(e.Transpose(e.Reshape(proj[static_cast<std::size_t>(l)], {d, h * w}), {1, 0}));
+    Lv += h * w;
+  }
+  std::string memory = e.Concat(src_flat, 0);  // [Lv, d]
+  e.AddFloatConst("pos_cat", {Lv, d}, cc.pos_cat);
+  e.AddFloatConst("enc_ref", {Lv, nl, 2}, cc.enc_ref);
+  e.AddFloatConst("dec_ref", {nq, nl, 2}, cc.dec_ref);
+  e.AddFloatConst("ref_pad", {nq, 4}, cc.ref_pad);
+
+  // --- deformable encoder ---
+  for (int i = 0; i < arch.enc_layers; ++i) {
+    const std::string p = fmt::format("encoder.{}", i);
+    std::string src2 = e.MSDeformAttn(e.Binary("Add", memory, "pos_cat"), "enc_ref", memory, shapes,
+                                      p + ".self_attn", Lv, /*ref4d=*/false);
+    memory = e.LayerNorm(e.Binary("Add", memory, src2), p + ".norm1");
+    std::string ff = e.Gemm(e.Unary("Relu", e.Gemm(memory, p + ".linear1.weight", p + ".linear1.bias")),
+                            p + ".linear2.weight", p + ".linear2.bias");
+    memory = e.LayerNorm(e.Binary("Add", memory, ff), p + ".norm2");
+  }
+
+  // --- query init + deformable decoder ---
+  e.AddWeight("query_embed.weight");                                // [nq, 2d]
+  std::string query_pos = e.Slice("query_embed.weight", 0, d, 1);   // [nq, d]
+  std::string tgt = e.Slice("query_embed.weight", d, 2 * d, 1);     // [nq, d]
+  for (int i = 0; i < arch.dec_layers; ++i) {
+    const std::string p = fmt::format("decoder.{}", i);
+    std::string q = e.Binary("Add", tgt, query_pos);
+    std::string sa = e.Mha(q, q, tgt, p + ".self_attn", nq, nq);
+    tgt = e.LayerNorm(e.Binary("Add", tgt, sa), p + ".norm1");
+    std::string ca = e.MSDeformAttn(e.Binary("Add", tgt, query_pos), "dec_ref", memory, shapes,
+                                    p + ".cross_attn", nq, /*ref4d=*/false);
+    tgt = e.LayerNorm(e.Binary("Add", tgt, ca), p + ".norm2");
+    std::string ff = e.Gemm(e.Unary("Relu", e.Gemm(tgt, p + ".linear1.weight", p + ".linear1.bias")),
+                            p + ".linear2.weight", p + ".linear2.bias");
+    tgt = e.LayerNorm(e.Binary("Add", tgt, ff), p + ".norm3");
+  }
+
+  // --- heads (focal; box = sigmoid(mlp + ref_pad)) ---
+  std::string logits2d = e.Gemm(tgt, "class_embed.weight", "class_embed.bias");  // [nq, C]
+  std::string b0 = e.Unary("Relu", e.Gemm(tgt, "bbox_embed.0.weight", "bbox_embed.0.bias"));
+  std::string b1 = e.Unary("Relu", e.Gemm(b0, "bbox_embed.2.weight", "bbox_embed.2.bias"));
+  std::string b2 = e.Gemm(b1, "bbox_embed.4.weight", "bbox_embed.4.bias");
+  std::string boxes2d = e.Unary("Sigmoid", e.Binary("Add", b2, "ref_pad"));
+
+  std::string logits = e.Reshape(logits2d, {1, nq, C});
+  std::string boxes = e.Reshape(boxes2d, {1, nq, 4});
+  g.AddNode("Identity", {logits}, {"logits"});
+  g.AddNode("Identity", {boxes}, {"boxes"});
+  g.AddOutput("logits", {1, nq, C});
+  g.AddOutput("boxes", {1, nq, 4});
 
   if (e.error) {
     return tl::make_unexpected(*e.error);

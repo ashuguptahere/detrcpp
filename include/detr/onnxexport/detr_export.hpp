@@ -31,6 +31,8 @@ struct DetrArch {
   int num_classes{91};
   int imgsz{640};
   int backbone_width{64};                        // Compact backbone only
+  int num_levels{4};                             // deformable: feature levels
+  int num_points{4};                             // deformable: sampling points
   std::array<int, 4> resnet_blocks{3, 4, 6, 3};  // ResNet50; {3,4,23,3} = R101
 };
 
@@ -51,5 +53,12 @@ core::Result<void> ExportConditional(const DetrArch& arch, const weights::StateD
 // "logits" [1,num_queries,num_classes], "boxes" [1,num_queries,4].
 core::Result<void> ExportDab(const DetrArch& arch, const weights::StateDict& weights,
                              const std::string& path);
+
+// Deformable-DETR (focal): multi-scale deformable attention (GridSample-based) in
+// both a deformable encoder and decoder, a 4-level GroupNorm input projection, and
+// a fixed query reference. Outputs: "logits" [1,num_queries,num_classes], "boxes"
+// [1,num_queries,4].
+core::Result<void> ExportDeformable(const DetrArch& arch, const weights::StateDict& weights,
+                                    const std::string& path);
 
 }  // namespace detr::onnxexport
