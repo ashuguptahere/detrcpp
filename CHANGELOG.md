@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.12.0] - 2026-06-10
+
+### Added
 - **RT-DETRv3 dense supervision training recipe.** Hierarchical dense positive
   supervision: a new `OneToManyMatch` assigns each ground-truth its top-k
   lowest-cost queries (reusing the Hungarian cost matrix), and the trainer adds
