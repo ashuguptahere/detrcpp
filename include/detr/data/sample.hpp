@@ -26,6 +26,12 @@ struct BBox {
   float w{0};
   float h{0};
   int class_id{0};
+  // COCO segmentation area normalized by image area (0 = unknown -> use w*h).
+  // Used only for the eval small/medium/large bucketing, to match pycocotools.
+  float area{0};
+  // iscrowd ground truth: excluded from training targets, but kept as an eval
+  // ignore region (a detection may overlap it without being a false positive).
+  bool iscrowd{false};
 };
 
 struct Sample {

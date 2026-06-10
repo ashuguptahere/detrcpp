@@ -27,6 +27,19 @@ bool GetInt(simdjson::dom::element e, const char* key, std::int64_t& out) {
   return e[key].get_int64().get(out) == simdjson::SUCCESS;
 }
 
+// Reads a numeric field as double, tolerating both integer and float JSON.
+double GetNum(simdjson::dom::element e, const char* key) {
+  double d = 0;
+  if (e[key].get_double().get(d) == simdjson::SUCCESS) {
+    return d;
+  }
+  std::int64_t i = 0;
+  if (e[key].get_int64().get(i) == simdjson::SUCCESS) {
+    return static_cast<double>(i);
+  }
+  return 0.0;
+}
+
 // Joins an untrusted COCO `file_name` under |images_dir|, rejecting absolute
 // paths and any "../" traversal that would escape the dataset directory.
 Result<std::string> SafeImagePath(const fs::path& images_dir, std::string_view file_name) {
@@ -126,9 +139,8 @@ Result<Dataset> LoadCocoJson(const fs::path& annotations_json, const fs::path& i
     }
     std::int64_t iscrowd = 0;
     GetInt(a, "iscrowd", iscrowd);
-    if (iscrowd == 1) {
-      continue;  // DETR ignores crowd annotations.
-    }
+    // Crowd annotations are kept: they are excluded from training targets (see
+    // the loader) but used as ignore regions in eval, matching pycocotools.
     simdjson::dom::array box;
     if (a["bbox"].get_array().get(box)) {
       continue;
@@ -161,6 +173,9 @@ Result<Dataset> LoadCocoJson(const fs::path& annotations_json, const fs::path& i
     b.w = static_cast<float>(xywh[2]) / fw;
     b.h = static_cast<float>(xywh[3]) / fh;
     b.class_id = raw_category_ids ? static_cast<int>(cat_id) : cls->second;
+    b.iscrowd = (iscrowd == 1);
+    const double area_px = GetNum(a, "area");
+    b.area = area_px > 0.0 ? static_cast<float>(area_px / (static_cast<double>(fw) * fh)) : 0.0F;
     s.boxes.push_back(b);
   }
 

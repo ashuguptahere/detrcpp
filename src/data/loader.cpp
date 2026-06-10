@@ -49,13 +49,21 @@ torch::Tensor DecodeImage(const std::string& path, int imgsz) {
 
 train::Target TargetFromSample(const Sample& s) {
   train::Target t;
-  const auto n = static_cast<std::int64_t>(s.boxes.size());
+  // Crowd boxes are eval-only ignore regions, never training targets.
+  std::vector<const BBox*> objs;
+  objs.reserve(s.boxes.size());
+  for (const auto& b : s.boxes) {
+    if (!b.iscrowd) {
+      objs.push_back(&b);
+    }
+  }
+  const auto n = static_cast<std::int64_t>(objs.size());
   t.labels = torch::empty({n}, torch::kInt64);
   t.boxes = torch::empty({n, 4}, torch::kFloat32);
   auto la = t.labels.accessor<std::int64_t, 1>();
   auto ba = t.boxes.accessor<float, 2>();
   for (std::int64_t i = 0; i < n; ++i) {
-    const auto& b = s.boxes[static_cast<std::size_t>(i)];
+    const auto& b = *objs[static_cast<std::size_t>(i)];
     la[i] = b.class_id;
     ba[i][0] = b.cx;
     ba[i][1] = b.cy;

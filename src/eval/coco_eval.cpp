@@ -108,7 +108,10 @@ ImgEval EvaluateImg(const std::vector<GtBox>& gts, const std::vector<DtBox>& dts
   std::vector<char> gt_ig(static_cast<std::size_t>(g_count));
   for (int g = 0; g < g_count; ++g) {
     const auto& gt = gts[static_cast<std::size_t>(g)];
-    const double a = static_cast<double>(gt.w) * static_cast<double>(gt.h);
+    // pycocotools buckets by the annotation's `area` field; fall back to the
+    // bbox area only when it is unknown.
+    const double a = gt.area > 0.0F ? static_cast<double>(gt.area)
+                                    : static_cast<double>(gt.w) * static_cast<double>(gt.h);
     gt_ig[static_cast<std::size_t>(g)] =
         static_cast<char>(gt.iscrowd || a < area[0] || a > area[1]);
   }

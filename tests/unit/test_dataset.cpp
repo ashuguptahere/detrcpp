@@ -22,12 +22,14 @@ std::filesystem::path WriteTemp(const std::string& name, const std::string& cont
 }
 
 // Minimal but valid COCO: 1 image 100x200, two categories (non-contiguous ids),
-// two annotations (one crowd, which must be dropped).
+// two annotations — one normal, one crowd. Both are kept; the crowd box is
+// flagged iscrowd (an eval-only ignore region, excluded from training targets by
+// the loader). The normal box carries a segmentation `area`.
 constexpr const char* kCocoJson = R"({
   "images": [ {"id": 7, "file_name": "a.jpg", "width": 100, "height": 200} ],
   "categories": [ {"id": 3, "name": "cat"}, {"id": 1, "name": "dog"} ],
   "annotations": [
-    {"image_id": 7, "category_id": 1, "bbox": [10, 20, 30, 40], "iscrowd": 0},
+    {"image_id": 7, "category_id": 1, "bbox": [10, 20, 30, 40], "area": 1000.0, "iscrowd": 0},
     {"image_id": 7, "category_id": 3, "bbox": [0, 0, 50, 50], "iscrowd": 1}
   ]
 })";
@@ -48,14 +50,20 @@ TEST(Coco, ParsesAndNormalizes) {
   EXPECT_EQ(s.width, 100);
   EXPECT_EQ(s.height, 200);
 
-  // Crowd annotation dropped -> only one box.
-  ASSERT_EQ(s.boxes.size(), 1U);
+  // Both annotations are kept; the crowd one is flagged for eval-only ignore.
+  ASSERT_EQ(s.boxes.size(), 2U);
   const BBox& b = s.boxes[0];
   EXPECT_EQ(b.class_id, 0);                         // category_id 1 -> dog -> class 0
+  EXPECT_FALSE(b.iscrowd);
   EXPECT_FLOAT_EQ(b.cx, (10.0F + 15.0F) / 100.0F);  // (x + w/2)/W
   EXPECT_FLOAT_EQ(b.cy, (20.0F + 20.0F) / 200.0F);  // (y + h/2)/H
   EXPECT_FLOAT_EQ(b.w, 30.0F / 100.0F);
   EXPECT_FLOAT_EQ(b.h, 40.0F / 200.0F);
+  EXPECT_FLOAT_EQ(b.area, 1000.0F / (100.0F * 200.0F));  // normalized seg area
+
+  const BBox& crowd = s.boxes[1];
+  EXPECT_EQ(crowd.class_id, 1);  // category_id 3 -> cat -> class 1
+  EXPECT_TRUE(crowd.iscrowd);
 
   std::filesystem::remove(path);
 }

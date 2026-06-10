@@ -29,7 +29,9 @@ EvalImage MakeGt(const data::Sample& s, float w_scale, float h_scale) {
     g.y = (box.cy - box.h / 2.0F) * h_scale;
     g.w = box.w * w_scale;
     g.h = box.h * h_scale;
-    g.iscrowd = false;
+    g.iscrowd = box.iscrowd;
+    // Normalized COCO area -> absolute pixels in the same space as the box.
+    g.area = box.area > 0.0F ? box.area * w_scale * h_scale : g.w * g.h;
     ei.gts.push_back(g);
   }
   return ei;
