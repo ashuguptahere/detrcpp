@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.8.0] - 2026-06-10
+
+### Added
 - **ONNX export for rt-detr** (the real-time model). `ExportRtDetr` reconstructs the
   whole stack in pure ONNX: a **ResNet-D/VD backbone** (deep 3×(3×3) stem + AvgPool
   downsample shortcuts), the **hybrid encoder** (an AIFI transformer on the top level
