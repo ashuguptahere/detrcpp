@@ -16,6 +16,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.2.3] - 2026-06-10
+
+### Added
+- **Inference throughput in `predict` and `val`/`test`.** `predict` logs aggregate
+  latency + FPS (`predicted N image(s) in T ms inference (X img/s, Y ms/img)`),
+  timed around preprocess→forward→postprocess; `EvaluateModel` logs `evaluated N
+  images in Ts (X img/s)`. Both via `detr::log::Stopwatch`.
+
 ## [0.2.2] - 2026-06-10
 
 ### Changed
