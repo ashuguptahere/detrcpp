@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <torch/torch.h>
+#include <torch/types.h>
 
 #include <utility>
 
@@ -26,5 +26,10 @@ std::pair<torch::Tensor, torch::Tensor> BoxIou(const torch::Tensor& a, const tor
 
 // Pairwise generalized IoU between a:[N,4] and b:[M,4] (xyxy) -> [N,M].
 torch::Tensor GeneralizedBoxIou(const torch::Tensor& a, const torch::Tensor& b);
+
+// Generalized IoU of corresponding pairs a[i] vs b[i] (xyxy); a, b both [..., 4]
+// -> [...]. Numerically equal to GeneralizedBoxIou(a, b).diagonal() but O(M)
+// compute/memory instead of O(M^2) — for the loss, which only needs the diagonal.
+torch::Tensor GeneralizedBoxIouPaired(const torch::Tensor& a, const torch::Tensor& b);
 
 }  // namespace detr::train

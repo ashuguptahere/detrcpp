@@ -10,6 +10,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <vector>
@@ -295,8 +296,7 @@ struct Emitter {
   std::vector<float> SinePos(int h, int w) {
     const int d = a.hidden_dim;
     const int half = d / 2;
-    constexpr double kPi = 3.14159265358979323846;
-    const double scale = 2.0 * kPi;
+    const double scale = 2.0 * std::numbers::pi;
     std::vector<double> dim_t(static_cast<std::size_t>(half));
     for (int k = 0; k < half; ++k) {
       dim_t[static_cast<std::size_t>(k)] =

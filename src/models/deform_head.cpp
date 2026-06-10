@@ -136,9 +136,15 @@ Detections RunDeformDetectHead(const DeformDetectHead& head, torch::Tensor memor
   auto tgt = out_mem.gather(1, gi.expand({b, nq, d})).detach();
 
   auto ref = ref_unact.sigmoid();
+  // In training, keep each layer's prediction for deep supervision; the head is
+  // per-layer (iterative refinement), so these are just the intermediates the
+  // loop already computes.
+  const bool collect_aux = enc_output->is_training();
+  const int n = static_cast<int>(decoder->size());
+  Detections det;
   torch::Tensor logits;
   torch::Tensor boxes;
-  for (int i = 0; i < static_cast<int>(decoder->size()); ++i) {
+  for (int i = 0; i < n; ++i) {
     auto ref_input = ref.unsqueeze(2).expand({b, nq, head.num_levels, 4});
     auto query_pos = query_pos_head->forward(ref);
     tgt = decoder[static_cast<std::size_t>(i)]->as<DeformDecoderLayerImpl>()->forward(
@@ -148,10 +154,13 @@ Detections RunDeformDetectHead(const DeformDetectHead& head, torch::Tensor memor
             .sigmoid();
     logits = dec_score[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(tgt);
     boxes = bbox;
+    if (collect_aux && i + 1 < n) {
+      det.aux_logits.push_back(logits);
+      det.aux_boxes.push_back(boxes);
+    }
     ref = bbox.detach();
   }
 
-  Detections det;
   det.logits = logits;
   det.boxes = boxes;
   return det;

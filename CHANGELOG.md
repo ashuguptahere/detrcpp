@@ -10,15 +10,102 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ## [Unreleased]
 
-Phase 1–2 (in progress). Verified against a real toolchain: portable
-cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
-(`-DDETR_ENABLE_TORCH=ON`, 76 tests) passes with zero warnings in project code,
-on both CPU and the Blackwell GPU. **28 models registered; 3 validated against
-official weights with real COCO mAP** (detr-r50 41.5, deformable-detr 43.8,
-conditional-detr 40.3). See [`docs/STATUS.md`](docs/STATUS.md) for done/remaining.
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.2.5] - 2026-06-10
+
+### Changed
+- **Logging façade no longer leaks spdlog.** `detr/log/log.hpp` is spdlog-free
+  (pulls the lighter `<fmt/format.h>`); `Get()` returns a `Logger` handle whose
+  format methods are compile-time-checked and forward to a non-template sink, so
+  spdlog is confined to `src/log/`. No behavior change (human + NDJSON output and
+  escaping unchanged).
+
+## [0.2.4] - 2026-06-10
 
 ### Added
-"- **Deformable-DETR official weights → real COCO mAP.** The HF SenseTime/
+- **`--device` downgrade warning.** An explicit CUDA request that can't be
+  honored (no CUDA), or any device kind this build cannot target (mps/vulkan/
+  coreml/hailo/...), now logs a warning instead of silently using the CPU.
+
+## [0.2.3] - 2026-06-10
+
+### Added
+- **Inference throughput in `predict` and `val`/`test`.** `predict` logs aggregate
+  latency + FPS (`predicted N image(s) in T ms inference (X img/s, Y ms/img)`),
+  timed around preprocess→forward→postprocess; `EvaluateModel` logs `evaluated N
+  images in Ts (X img/s)`. Both via `detr::log::Stopwatch`.
+
+## [0.2.2] - 2026-06-10
+
+### Changed
+- **Loss uses a paired (O(M)) GIoU instead of pairwise-then-diagonal (O(M²)).**
+  `SetCriterion` no longer builds the full `[M,M]` `GeneralizedBoxIou` matrix just
+  to take its diagonal; a new `GeneralizedBoxIouPaired` computes GIoU elementwise
+  over matched pairs. Numerically identical (proven by `test_box_ops`), so the
+  loss and training are unchanged — just less compute/memory. The pairwise
+  `GeneralizedBoxIou` stays for the matcher.
+
+## [0.2.1] - 2026-06-10
+
+### Changed
+- **Build: dropped the `<torch/torch.h>` umbrella from tensor-only headers**
+  (`box_ops` / `target` / `matcher` / `criterion` / `loader` / `pre`+`postprocess`
+  / `evaluator` → `<torch/types.h>`; `model.hpp` → `<torch/nn/module.h>` +
+  `<torch/types.h>`). ~28% (~2.5s) faster front-end per tensor-only translation
+  unit (e.g. `box_ops.cpp` 8.7s→5.6s); no API or behavior change, 79/79 tests pass.
+
+## [0.2.0] - 2026-06-10
+
+Phase 1–2 (in progress). Verified against a real toolchain: portable
+cmake/ninja/vcpkg + LibTorch (2.5.1 CPU and 2.7.1+cu128 GPU). The full build
+(`-DDETR_ENABLE_TORCH=ON`, 79 tests) passes with zero warnings in project code,
+on both CPU and the Blackwell GPU. **28 models registered; 3 validated against
+official weights with real, now pycocotools-faithful COCO mAP** (@imgsz800:
+detr-r50 41.9, deformable-detr 44.3, conditional-detr 40.7). See
+[`docs/STATUS.md`](docs/STATUS.md) for done/remaining.
+
+### Added
+- **DETR deep supervision (auxiliary losses).** Every model emits a per-
+  intermediate-decoder-layer prediction (`Detections::aux_logits/aux_boxes`), and
+  the trainer adds the full set loss — independently Hungarian-matched — on each,
+  across all four decoder heads (`detr_head`, `deform_head`, conditional, dab,
+  deformable). Training-only (empty at inference, so eval is byte-identical — the
+  three validated models reproduce their exact mAP). The largest from-scratch
+  training-quality lever. New `test_aux_loss`.
+- **FrozenBatchNorm2d backbone** (`models/frozen_batchnorm`) — eval-identical to
+  BatchNorm-in-eval (unit-proven), frozen during training to match the DETR
+  recipe; also yields a clean weight load (no `num_batches_tracked` mismatches).
+- **Training throughput & observability.** Two-group AdamW (backbone lr ×0.1) +
+  step `lr_drop`; a parallel batch decoder (was serial single-thread); a
+  `detr::log::Stopwatch` primitive; NDJSON records gained timestamp / run-id /
+  thread; the train loop logs img/s and the data-vs-compute split.
+
+### Changed
+- **COCO eval is now pycocotools-faithful** (`area` field + `iscrowd` ignore).
+  Crowd annotations are kept as eval ignore regions (and excluded from training
+  targets), and small/medium/large bucketing uses the segmentation `area` field
+  instead of the bbox area. Closes the gap to the official metric: detr-r50
+  41.5→41.9, deformable-detr 43.8→44.3, conditional-detr 40.3→40.7, with the
+  per-size breakdown now matching the published numbers.
+- Shared `SinePos` hoisted into `models/pos_embed` (one definition, not five);
+  `kPi`→`std::numbers::pi`; hand-rolled `starts_with`→C++20.
+
+### Fixed
+- **Weight-load safety.** Predict/export inspect the `LoadReport` and refuse to
+  run on 0 matched tensors (a key-mismatched checkpoint previously ran silently
+  on random weights); shape-mismatched tensors are logged.
+- **Hardened untrusted parsing.** safetensors guards the shape-product and
+  byte-size multiplies against integer overflow; the COCO loader rejects
+  `file_name` path traversal (absolute / `..`).
+- Flaky `test_safetensors` parallel temp-file collision (now pid-qualified).
+
+### Added
+- **Deformable-DETR official weights → real COCO mAP.** The HF SenseTime/
   deformable-detr checkpoint loads into our model with **0 unexpected** (a /tmp
   converter renames keys + concatenates the decoder self-attn q/k/v into
   in_proj_weight; the repo is unchanged) and reproduces the published metric:

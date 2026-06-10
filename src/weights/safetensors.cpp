@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -152,17 +153,22 @@ Result<StateDict> LoadSafetensors(const std::filesystem::path& path) {
     }
     RawTensor rt;
     rt.dtype = *dtype;
-    std::int64_t numel = 1;
+    // Element count in unsigned 64-bit with an explicit overflow guard: an
+    // untrusted header could otherwise overflow the product (UB on the signed
+    // form) and slip a tiny byte-span past the span==shape*dtype check below
+    // while the shape still drives a huge allocation downstream.
+    std::uint64_t numel = 1;  // empty shape -> rank-0 scalar (numel == 1)
     for (auto dim : shape_a) {
       std::int64_t d = 0;
       if (dim.get_int64().get(d) || d < 0) {
         return Err(ErrorCode::ParseError, fmt::format("tensor '{}' bad shape dim", key));
       }
       rt.shape.push_back(d);
-      numel *= d;
-    }
-    if (rt.shape.empty()) {
-      numel = 1;  // rank-0 scalar
+      const auto ud = static_cast<std::uint64_t>(d);
+      if (ud != 0 && numel > std::numeric_limits<std::uint64_t>::max() / ud) {
+        return Err(ErrorCode::ParseError, fmt::format("tensor '{}' shape product overflow", key));
+      }
+      numel *= ud;
     }
 
     simdjson::dom::array off_a;
@@ -182,7 +188,11 @@ Result<StateDict> LoadSafetensors(const std::filesystem::path& path) {
     }
 
     const std::uint64_t span = static_cast<std::uint64_t>(offs[1] - offs[0]);
-    const std::uint64_t expected = static_cast<std::uint64_t>(numel) * DTypeSize(*dtype);
+    const auto dtype_size = static_cast<std::uint64_t>(DTypeSize(*dtype));
+    if (dtype_size != 0 && numel > std::numeric_limits<std::uint64_t>::max() / dtype_size) {
+      return Err(ErrorCode::ParseError, fmt::format("tensor '{}' byte size overflow", key));
+    }
+    const std::uint64_t expected = numel * dtype_size;
     if (span != expected) {
       return Err(ErrorCode::ParseError,
                  fmt::format("tensor '{}' byte span {} != shape*dtype {}", key, span, expected));

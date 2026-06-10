@@ -5,8 +5,10 @@
 #include <torch/torch.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -57,9 +59,8 @@ Config ReadConfig(const YAML::Node& c) {
 // PositionEmbeddingSine (Deformable-DETR), no mask: returns [B, d, H, W].
 torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
                       const torch::TensorOptions& opts) {
-  constexpr double kPi = 3.14159265358979323846;
   const std::int64_t half = d / 2;
-  const double scale = 2.0 * kPi;
+  const double scale = 2.0 * std::numbers::pi;
   auto y_embed = torch::arange(1, h + 1, opts).view({h, 1});
   auto x_embed = torch::arange(1, w + 1, opts).view({1, w});
   y_embed = y_embed / (y_embed[h - 1] + 1e-6) * scale;
@@ -251,17 +252,28 @@ class DeformableDetrImpl : public IModel {
     auto dec_ref = reference_points.unsqueeze(2).expand({b, -1, cfg_.num_levels, 2});
 
     auto out = tgt;
+    const bool collect_aux = class_embed_->is_training();
+    std::vector<torch::Tensor> out_layers;
     for (const auto& m : *decoder_) {
       out = m->as<DecoderLayerImpl>()->forward(out, query_pos, dec_ref, memory, shapes);
+      if (collect_aux) {
+        out_layers.push_back(out);
+      }
     }
 
+    // Shared heads + fixed reference, applied per decoder layer for deep
+    // supervision. The final application is numerically identical to before.
+    auto ref_pad = torch::cat({InverseSigmoid(reference_points),
+                               torch::zeros({b, cfg_.num_queries, 2}, memory.options())},
+                              -1);
     Detections det;
     det.logits = class_embed_->forward(out);  // [B, nq, num_classes] (sigmoid/focal)
-    auto box = bbox_embed_->forward(out);     // [B, nq, 4]
-    box = box + torch::cat({InverseSigmoid(reference_points),
-                            torch::zeros({b, cfg_.num_queries, 2}, box.options())},
-                           -1);
-    det.boxes = box.sigmoid();
+    det.boxes = (bbox_embed_->forward(out) + ref_pad).sigmoid();
+    for (std::size_t i = 0; collect_aux && i + 1 < out_layers.size(); ++i) {
+      const auto& o = out_layers[i];
+      det.aux_logits.push_back(class_embed_->forward(o));
+      det.aux_boxes.push_back((bbox_embed_->forward(o) + ref_pad).sigmoid());
+    }
     return det;
   }
 

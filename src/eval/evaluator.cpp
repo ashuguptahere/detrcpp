@@ -13,6 +13,7 @@
 #include "detr/infer/preprocess.hpp"
 #include "detr/io/image.hpp"
 #include "detr/log/log.hpp"
+#include "detr/log/timer.hpp"
 
 namespace detr::eval {
 
@@ -29,7 +30,9 @@ EvalImage MakeGt(const data::Sample& s, float w_scale, float h_scale) {
     g.y = (box.cy - box.h / 2.0F) * h_scale;
     g.w = box.w * w_scale;
     g.h = box.h * h_scale;
-    g.iscrowd = false;
+    g.iscrowd = box.iscrowd;
+    // Normalized COCO area -> absolute pixels in the same space as the box.
+    g.area = box.area > 0.0F ? box.area * w_scale * h_scale : g.w * g.h;
     ei.gts.push_back(g);
   }
   return ei;
@@ -42,6 +45,7 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, d
                           bool aspect_preserve, int max_size) {
   torch::NoGradGuard no_grad;
   model.eval();
+  const detr::log::Stopwatch sw;
   const int num_classes = model.Meta().num_classes;
   const bool focal = model.Meta().focal;
   std::vector<EvalImage> eval_images;
@@ -99,6 +103,11 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, d
       }
     }
   }
+
+  const double secs = sw.ElapsedSec();
+  const double ips = secs > 0.0 ? static_cast<double>(eval_images.size()) / secs : 0.0;
+  detr::log::Get("eval").info("evaluated {} images in {:.1f}s ({:.1f} img/s)", eval_images.size(),
+                              secs, ips);
 
   std::vector<int> cats;
   cats.reserve(static_cast<std::size_t>(num_classes));

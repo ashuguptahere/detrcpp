@@ -31,6 +31,9 @@ set_target_properties(detr_unit_tests PROPERTIES
 if(DETR_ENABLE_TORCH)
   target_sources(detr_unit_tests PRIVATE
     unit/test_torch_bridge.cpp
+    unit/test_frozen_bn.cpp
+    unit/test_aux_loss.cpp
+    unit/test_box_ops.cpp
     unit/test_detr.cpp
     unit/test_detr_r50.cpp
     unit/test_deform_attn.cpp

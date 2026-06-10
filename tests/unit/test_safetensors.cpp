@@ -1,6 +1,7 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 
 #include <cstdint>
 #include <cstring>
@@ -32,9 +33,13 @@ RawTensor MakeF32(std::vector<std::int64_t> shape, std::vector<float> vals) {
 }
 
 std::filesystem::path TempFile() {
+  // gtest_discover_tests runs each test in its own process, so a per-process
+  // counter alone collides across parallel (-j) test processes. Qualify with the
+  // pid so concurrent safetensors tests never share a temp file.
   static int counter = 0;
   return std::filesystem::temp_directory_path() /
-         ("detr_st_" + std::to_string(++counter) + ".safetensors");
+         ("detr_st_" + std::to_string(static_cast<long>(::getpid())) + "_" +
+          std::to_string(++counter) + ".safetensors");
 }
 
 TEST(Safetensors, RoundTripPreservesEverything) {

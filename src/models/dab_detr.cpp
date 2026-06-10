@@ -5,13 +5,16 @@
 #include <torch/torch.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <vector>
 
 #include "detr/models/cond_decoder.hpp"
 #include "detr/models/model.hpp"
+#include "detr/models/pos_embed.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/models/resnet.hpp"
 
@@ -55,32 +58,9 @@ torch::Tensor InverseSigmoid(torch::Tensor x, double eps = 1e-5) {
   return torch::log(x.clamp_min(eps) / (1 - x).clamp_min(eps));
 }
 
-torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
-                      const torch::TensorOptions& opts) {
-  constexpr double kPi = 3.14159265358979323846;
-  const std::int64_t half = d / 2;
-  const double scale = 2.0 * kPi;
-  auto ys = torch::arange(1, h + 1, opts) / (static_cast<double>(h) + 1e-6) * scale;
-  auto xs = torch::arange(1, w + 1, opts) / (static_cast<double>(w) + 1e-6) * scale;
-  auto dim_t = torch::arange(0, half, opts);
-  dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
-  auto px = xs.unsqueeze(1) / dim_t.unsqueeze(0);
-  auto py = ys.unsqueeze(1) / dim_t.unsqueeze(0);
-  auto interleave = [half](torch::Tensor p) {
-    return torch::stack({p.slice(1, 0, half, 2).sin(), p.slice(1, 1, half, 2).cos()}, 2).flatten(1);
-  };
-  px = interleave(px);
-  py = interleave(py);
-  auto pyf = py.unsqueeze(1).expand({h, w, half});
-  auto pxf = px.unsqueeze(0).expand({h, w, half});
-  auto pos = torch::cat({pyf, pxf}, 2);
-  return pos.permute({2, 0, 1}).unsqueeze(0).expand({b, d, h, w}).contiguous();
-}
-
 // Sine embedding of a 4D anchor [..., 4] -> [..., 2d] (concat y, x, w, h parts).
 torch::Tensor SineEmbed4D(torch::Tensor pos, std::int64_t d) {
-  constexpr double kPi = 3.14159265358979323846;
-  const double scale = 2.0 * kPi;
+  const double scale = 2.0 * std::numbers::pi;
   const std::int64_t half = d / 2;
   auto dim_t = torch::arange(half, pos.options());
   dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
@@ -186,6 +166,9 @@ class DabDetrImpl : public IModel {
 
     torch::Tensor boxes;
     int layer_id = 0;
+    const bool collect_aux = class_embed_->is_training();
+    std::vector<torch::Tensor> tgt_layers;
+    std::vector<torch::Tensor> box_layers;
     for (const auto& m : *decoder_) {
       auto obj = reference;                              // [nq, B, 4]
       auto sine4 = SineEmbed4D(obj, d);                  // [nq, B, 2d]
@@ -206,6 +189,10 @@ class DabDetrImpl : public IModel {
       // iterative anchor refinement.
       auto new_ref = (bbox_embed_->forward(tgt) + InverseSigmoid(reference)).sigmoid();
       boxes = new_ref;
+      if (collect_aux) {
+        tgt_layers.push_back(tgt);
+        box_layers.push_back(new_ref);
+      }
       reference = new_ref.detach();
       ++layer_id;
     }
@@ -213,6 +200,11 @@ class DabDetrImpl : public IModel {
     Detections det;
     det.logits = class_embed_->forward(tgt.transpose(0, 1));  // [B, nq, num_classes]
     det.boxes = boxes.transpose(0, 1);                        // [B, nq, 4] cxcywh
+    // Deep supervision: per-layer class head + the layer's refined anchor box.
+    for (std::size_t i = 0; collect_aux && i + 1 < tgt_layers.size(); ++i) {
+      det.aux_logits.push_back(class_embed_->forward(tgt_layers[i].transpose(0, 1)));
+      det.aux_boxes.push_back(box_layers[i].transpose(0, 1));
+    }
     return det;
   }
 

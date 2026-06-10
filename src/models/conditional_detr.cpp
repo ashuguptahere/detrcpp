@@ -5,13 +5,16 @@
 #include <torch/torch.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <vector>
 
 #include "detr/models/cond_decoder.hpp"
 #include "detr/models/model.hpp"
+#include "detr/models/pos_embed.hpp"
 #include "detr/models/registry.hpp"
 #include "detr/models/resnet.hpp"
 
@@ -56,33 +59,9 @@ torch::Tensor InverseSigmoid(torch::Tensor x, double eps = 1e-5) {
   return torch::log(x.clamp_min(eps) / (1 - x).clamp_min(eps));
 }
 
-// 2D image sine positional embedding (DETR), no mask: [B, d, H, W].
-torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
-                      const torch::TensorOptions& opts) {
-  constexpr double kPi = 3.14159265358979323846;
-  const std::int64_t half = d / 2;
-  const double scale = 2.0 * kPi;
-  auto ys = torch::arange(1, h + 1, opts) / (static_cast<double>(h) + 1e-6) * scale;
-  auto xs = torch::arange(1, w + 1, opts) / (static_cast<double>(w) + 1e-6) * scale;
-  auto dim_t = torch::arange(0, half, opts);
-  dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
-  auto px = xs.unsqueeze(1) / dim_t.unsqueeze(0);
-  auto py = ys.unsqueeze(1) / dim_t.unsqueeze(0);
-  auto interleave = [half](torch::Tensor p) {
-    return torch::stack({p.slice(1, 0, half, 2).sin(), p.slice(1, 1, half, 2).cos()}, 2).flatten(1);
-  };
-  px = interleave(px);
-  py = interleave(py);
-  auto pyf = py.unsqueeze(1).expand({h, w, half});
-  auto pxf = px.unsqueeze(0).expand({h, w, half});
-  auto pos = torch::cat({pyf, pxf}, 2);
-  return pos.permute({2, 0, 1}).unsqueeze(0).expand({b, d, h, w}).contiguous();
-}
-
 // Sine embedding of a 2D reference point: [..., 2] -> [..., d].
 torch::Tensor SineEmbedForRef(torch::Tensor pos, std::int64_t d) {
-  constexpr double kPi = 3.14159265358979323846;
-  const double scale = 2.0 * kPi;
+  const double scale = 2.0 * std::numbers::pi;
   const std::int64_t half = d / 2;
   auto dim_t = torch::arange(half, pos.options());
   dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
@@ -185,6 +164,8 @@ class ConditionalDetrImpl : public IModel {
     auto reference = ref_point_head_->forward(query_pos).sigmoid();  // [nq, B, 2]
 
     int layer_id = 0;
+    const bool collect_aux = decoder_norm_->is_training();
+    std::vector<torch::Tensor> tgt_layers;
     for (const auto& m : *decoder_) {
       auto query_sine = SineEmbedForRef(reference, d);  // [nq, B, d]
       if (layer_id > 0) {
@@ -192,18 +173,27 @@ class ConditionalDetrImpl : public IModel {
       }
       tgt = m->as<CondDecoderLayerImpl>()->forward(tgt, memory, pos, query_pos, query_sine,
                                                    layer_id == 0);
+      if (collect_aux) {
+        tgt_layers.push_back(tgt);
+      }
       ++layer_id;
     }
 
-    tgt = decoder_norm_->forward(tgt);                            // final decoder LayerNorm
-    auto hs = tgt.transpose(0, 1);                                // [B, nq, d]
+    // Conditional-DETR uses a fixed reference + shared heads; apply the final
+    // decoder LayerNorm and heads per layer for deep supervision. The final
+    // application below is numerically identical to before.
     auto ref_before = InverseSigmoid(reference).transpose(0, 1);  // [B, nq, 2]
-    auto box = bbox_embed_->forward(hs);                          // [B, nq, 4]
-    box = box + torch::cat({ref_before, torch::zeros_like(ref_before)}, -1);
+    auto ref_pad = torch::cat({ref_before, torch::zeros_like(ref_before)}, -1);
+    auto hs = decoder_norm_->forward(tgt).transpose(0, 1);  // [B, nq, d]
 
     Detections det;
     det.logits = class_embed_->forward(hs);  // [B, nq, num_classes] (sigmoid/focal)
-    det.boxes = box.sigmoid();
+    det.boxes = (bbox_embed_->forward(hs) + ref_pad).sigmoid();
+    for (std::size_t i = 0; collect_aux && i + 1 < tgt_layers.size(); ++i) {
+      auto hs_i = decoder_norm_->forward(tgt_layers[i]).transpose(0, 1);
+      det.aux_logits.push_back(class_embed_->forward(hs_i));
+      det.aux_boxes.push_back((bbox_embed_->forward(hs_i) + ref_pad).sigmoid());
+    }
     return det;
   }
 

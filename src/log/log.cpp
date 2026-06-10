@@ -15,6 +15,8 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -31,6 +33,29 @@ namespace {
 // string_view. This helper makes literal appends readable.
 void Raw(spdlog::memory_buf_t& out, std::string_view s) {
   out.append(s.data(), s.data() + s.size());
+}
+
+// Appends a base-10 integer to |out| without allocating.
+void RawInt(spdlog::memory_buf_t& out, std::int64_t v) {
+  char tmp[24];
+  auto [p, ec] = std::to_chars(tmp, tmp + sizeof(tmp), v);
+  (void)ec;
+  out.append(static_cast<const char*>(tmp), p);
+}
+
+// A process-lifetime run id (hex of the start time) so every NDJSON record can
+// be correlated to a single run when many runs interleave in one log file.
+const std::string& RunId() {
+  static const std::string id = [] {
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
+    char tmp[20];
+    auto [p, ec] = std::to_chars(tmp, tmp + sizeof(tmp), static_cast<std::uint64_t>(ns), 16);
+    (void)ec;
+    return std::string(tmp, p);
+  }();
+  return id;
 }
 
 // Appends |data|..|data+size| to |out| with RFC 8259 JSON string escaping.
@@ -78,7 +103,15 @@ void AppendJsonEscaped(const char* data, std::size_t size, spdlog::memory_buf_t&
 class JsonLineFormatter final : public spdlog::formatter {
  public:
   void format(const spdlog::details::log_msg& msg, spdlog::memory_buf_t& dest) override {
-    Raw(dest, R"({"level":")");
+    const auto ts_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(msg.time.time_since_epoch()).count();
+    Raw(dest, R"({"ts":)");
+    RawInt(dest, static_cast<std::int64_t>(ts_ms));
+    Raw(dest, R"(,"run":")");
+    AppendJsonEscaped(RunId().data(), RunId().size(), dest);
+    Raw(dest, R"(","thread":)");
+    RawInt(dest, static_cast<std::int64_t>(msg.thread_id));
+    Raw(dest, R"(,"level":")");
     const auto level = spdlog::level::to_string_view(msg.level);
     AppendJsonEscaped(level.data(), level.size(), dest);
     Raw(dest, R"(","logger":")");
@@ -93,9 +126,17 @@ class JsonLineFormatter final : public spdlog::formatter {
   }
 };
 
+// Each named logger: the spdlog logger plus the façade handle handed to callers.
+// Both live in a node-based map, so the façade reference returned by Get() is
+// stable for the process lifetime.
+struct Entry {
+  std::shared_ptr<spdlog::logger> spd;
+  Logger facade;
+};
+
 struct LoggerRegistry {
   std::mutex mu;
-  std::unordered_map<std::string, std::shared_ptr<spdlog::logger>> loggers;
+  std::unordered_map<std::string, Entry> loggers;
   std::vector<spdlog::sink_ptr> shared_sinks;
   spdlog::level::level_enum level{spdlog::level::info};
 
@@ -133,27 +174,44 @@ spdlog::level::level_enum ToSpd(Level l) {
 
 }  // namespace
 
-spdlog::logger& Get(std::string_view name) {
+namespace detail {
+
+void Emit(void* handle, Level level, std::string_view msg) {
+  auto* lg = static_cast<spdlog::logger*>(handle);
+  if (lg != nullptr) {
+    lg->log(ToSpd(level), msg);  // single string_view arg -> logged verbatim
+  }
+}
+
+bool ShouldLog(const void* handle, Level level) {
+  const auto* lg = static_cast<const spdlog::logger*>(handle);
+  return lg != nullptr && lg->should_log(ToSpd(level));
+}
+
+}  // namespace detail
+
+Logger& Get(std::string_view name) {
   auto& r = Registry();
   std::lock_guard<std::mutex> lock(r.mu);
   std::string key{name};
   auto it = r.loggers.find(key);
   if (it != r.loggers.end()) {
-    return *it->second;
+    return it->second.facade;
   }
-  auto lg = std::make_shared<spdlog::logger>(key, r.shared_sinks.begin(), r.shared_sinks.end());
-  lg->set_level(r.level);
-  lg->flush_on(spdlog::level::warn);
-  auto [inserted, _] = r.loggers.emplace(std::move(key), std::move(lg));
-  return *inserted->second;
+  auto spd = std::make_shared<spdlog::logger>(key, r.shared_sinks.begin(), r.shared_sinks.end());
+  spd->set_level(r.level);
+  spd->flush_on(spdlog::level::warn);
+  Logger facade(spd.get());
+  auto [inserted, _] = r.loggers.emplace(std::move(key), Entry{std::move(spd), facade});
+  return inserted->second.facade;
 }
 
 void SetGlobalLevel(Level level) {
   auto& r = Registry();
   std::lock_guard<std::mutex> lock(r.mu);
   r.level = ToSpd(level);
-  for (auto& [_, lg] : r.loggers) {
-    lg->set_level(r.level);  // atomic — safe even concurrently.
+  for (auto& [_, entry] : r.loggers) {
+    entry.spd->set_level(r.level);  // atomic — safe even concurrently.
   }
 }
 
@@ -168,8 +226,8 @@ void EnableJsonSink(const std::string& path) {
   r.shared_sinks.push_back(sink);
   // Attach to already-created loggers. Must run during single-threaded init
   // (see file header) — mutating a live logger's sink list is not concurrent.
-  for (auto& [_, lg] : r.loggers) {
-    lg->sinks().push_back(sink);
+  for (auto& [_, entry] : r.loggers) {
+    entry.spd->sinks().push_back(sink);
   }
 }
 
@@ -181,8 +239,8 @@ void EnableRemoteSink(const std::string& /*url*/) {
 void Shutdown() {
   auto& r = Registry();
   std::lock_guard<std::mutex> lock(r.mu);
-  for (auto& [_, lg] : r.loggers) {
-    lg->flush();
+  for (auto& [_, entry] : r.loggers) {
+    entry.spd->flush();
   }
   // Deliberately do NOT clear the map: references handed out by Get() must stay
   // valid until process exit. No logging may occur after Shutdown().

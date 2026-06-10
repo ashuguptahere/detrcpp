@@ -16,7 +16,6 @@
 // "not implemented" exit code so the CLI surface stays usable.
 
 #include <fmt/format.h>
-#include <spdlog/spdlog.h>
 
 #include <CLI/CLI.hpp>
 #include <cstdint>
@@ -43,6 +42,7 @@
 
 #include "detr/data/dataset.hpp"
 #include "detr/data/loader.hpp"
+#include "detr/log/timer.hpp"
 #include "detr/data/sample.hpp"
 #include "detr/eval/coco_eval.hpp"
 #include "detr/eval/evaluator.hpp"
@@ -178,11 +178,47 @@ detr::core::Result<detr::weights::StateDict> LoadWeightsAuto(const std::string& 
 
 torch::Device ToTorchDevice(const detr::core::Device& d) {
   using detr::core::DeviceKind;
-  if ((d.kind == DeviceKind::Cuda || d.kind == DeviceKind::Auto) && torch::cuda::is_available()) {
-    const int index = d.kind == DeviceKind::Cuda ? d.index : 0;
-    return torch::Device(torch::kCUDA, static_cast<torch::DeviceIndex>(index));
+  if (d.kind == DeviceKind::Cuda || d.kind == DeviceKind::Auto) {
+    if (torch::cuda::is_available()) {
+      const int index = d.kind == DeviceKind::Cuda ? d.index : 0;
+      return torch::Device(torch::kCUDA, static_cast<torch::DeviceIndex>(index));
+    }
+    // Auto silently uses CPU; an explicit CUDA request that can't be honored warns.
+    if (d.kind == DeviceKind::Cuda) {
+      detr::log::Get("cli").warn("CUDA requested ('{}') but not available; using CPU",
+                                 detr::core::ToString(d));
+    }
+    return torch::Device(torch::kCPU);
+  }
+  if (d.kind != DeviceKind::Cpu) {
+    detr::log::Get("cli").warn("device '{}' is not supported by this build; using CPU",
+                               detr::core::ToString(d));
   }
   return torch::Device(torch::kCPU);
+}
+
+// Logs a weight LoadReport and returns false when nothing matched the model.
+// loaded==0 almost always means a wrong --model or checkpoint; continuing would
+// silently run on randomly-initialized weights, so callers must refuse.
+bool ReportWeightsOk(detr::log::Logger& lg, const std::string& weights,
+                     const detr::weights::LoadReport& rep) {
+  lg.info("weights '{}': loaded {} tensor(s); {} missing, {} unexpected, {} shape-mismatched",
+          weights, rep.loaded, rep.missing.size(), rep.unexpected.size(), rep.mismatched.size());
+  for (const auto& k : rep.mismatched) {
+    lg.warn("  shape-mismatched, kept initialized: {}", k);
+  }
+  if (rep.loaded == 0) {
+    lg.error("weights '{}': 0 tensors matched the model — wrong --model or checkpoint?", weights);
+    int shown = 0;
+    for (const auto& k : rep.unexpected) {
+      lg.error("  source key with no destination: {}", k);
+      if (++shown == 3) {
+        break;
+      }
+    }
+    return false;
+  }
+  return true;
 }
 
 ExitCode RunTrainTorch(const Options& o, const detr::core::Device& dev) {
@@ -257,18 +293,27 @@ ExitCode RunTrainTorch(const Options& o, const detr::core::Device& dev) {
   }
 
   for (int epoch = start_epoch; epoch < o.epochs; ++epoch) {
+    trainer.OnEpochStart(epoch);
     loader.Reshuffle(seed + static_cast<std::uint64_t>(epoch));
     const std::size_t batches = loader.NumBatches();
     double sum = 0.0;
     std::size_t counted = 0;
+    double data_ms = 0.0;
+    double compute_ms = 0.0;
+    std::size_t imgs = 0;
     for (std::size_t b = 0; b < batches; ++b) {
+      detr::log::Stopwatch sw_data;
       auto batch = loader.At(b);
+      data_ms += sw_data.ElapsedMs();
       if (!batch) {
         lg.warn("{}", batch.error().message);
         continue;
       }
+      detr::log::Stopwatch sw_step;
       auto images = batch->images.to(torch_dev);
       const float loss = trainer.TrainStep(images, batch->targets);
+      compute_ms += sw_step.ElapsedMs();
+      imgs += batch->targets.size();
       sum += static_cast<double>(loss);
       ++counted;
       if (b % 10 == 0) {
@@ -276,7 +321,12 @@ ExitCode RunTrainTorch(const Options& o, const detr::core::Device& dev) {
       }
     }
     const double avg = counted ? sum / static_cast<double>(counted) : 0.0;
-    lg.info("epoch {}/{} done; avg loss {:.4f}", epoch + 1, o.epochs, avg);
+    const double wall_s = (data_ms + compute_ms) / 1000.0;
+    const double ips = wall_s > 0.0 ? static_cast<double>(imgs) / wall_s : 0.0;
+    const double data_pct =
+        (data_ms + compute_ms) > 0.0 ? 100.0 * data_ms / (data_ms + compute_ms) : 0.0;
+    lg.info("epoch {}/{} done; avg loss {:.4f}; {:.1f} img/s ({:.0f}% data, {:.0f}% compute)",
+            epoch + 1, o.epochs, avg, ips, data_pct, 100.0 - data_pct);
 
     detr::train::TrainState st;
     st.epoch = epoch + 1;
@@ -365,8 +415,9 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
     lg.error("load weights: {}", rep.error().message);
     return ExitCode::UsageError;
   }
-  lg.info("loaded {} tensors ({} missing, {} unexpected)", rep->loaded, rep->missing.size(),
-          rep->unexpected.size());
+  if (!ReportWeightsOk(lg, o.weights, *rep)) {
+    return ExitCode::UsageError;
+  }
 
   if (o.data.empty()) {
     lg.error("--data is required for --{}", verb);
@@ -464,9 +515,12 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     lg.error("weights '{}': {}", o.weights, sd.error().message);
     return ExitCode::UsageError;
   }
-  if (auto rep = detr::weights::LoadStateDictInto(*model, *sd, model->UpstreamRemapper(), false);
-      !rep) {
+  auto rep = detr::weights::LoadStateDictInto(*model, *sd, model->UpstreamRemapper(), false);
+  if (!rep) {
     lg.error("load weights: {}", rep.error().message);
+    return ExitCode::UsageError;
+  }
+  if (!ReportWeightsOk(lg, o.weights, *rep)) {
     return ExitCode::UsageError;
   }
 
@@ -495,16 +549,19 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
   }
 
   std::size_t total = 0;
+  double infer_ms = 0.0;
   for (const auto& path : *sources) {
     auto rgb = detr::io::LoadRgb(path);
     if (!rgb) {
       lg.warn("{}", rgb.error().message);
       continue;
     }
+    const detr::log::Stopwatch sw_inf;
     auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
     auto outputs = model->Forward(input);
     auto dets =
         detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
+    infer_ms += sw_inf.ElapsedMs();  // postprocess syncs the device, so this is real latency
     std::sort(dets.begin(), dets.end(),
               [](const auto& a, const auto& b) { return a.score > b.score; });
 
@@ -529,7 +586,10 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     lg.info("{}: {} detection(s) >= {:.2f} -> {}", path, kept, o.conf, save_path.string());
     ++total;
   }
-  lg.info("predicted {} image(s); results in {}", total, out_dir.string());
+  const double fps = infer_ms > 0.0 ? 1000.0 * static_cast<double>(total) / infer_ms : 0.0;
+  lg.info("predicted {} image(s) in {:.0f} ms inference ({:.1f} img/s, {:.1f} ms/img); results in {}",
+          total, infer_ms, fps, total > 0 ? infer_ms / static_cast<double>(total) : 0.0,
+          out_dir.string());
   return ExitCode::Ok;
 }
 #endif  // DETR_ENABLE_TORCH
@@ -589,9 +649,12 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
     lg.error("weights '{}': {}", o.weights, sd_in.error().message);
     return ExitCode::UsageError;
   }
-  if (auto rep = detr::weights::LoadStateDictInto(*model, *sd_in, model->UpstreamRemapper(), false);
-      !rep) {
+  auto rep = detr::weights::LoadStateDictInto(*model, *sd_in, model->UpstreamRemapper(), false);
+  if (!rep) {
     lg.error("load weights: {}", rep.error().message);
+    return ExitCode::UsageError;
+  }
+  if (!ReportWeightsOk(lg, o.weights, *rep)) {
     return ExitCode::UsageError;
   }
 

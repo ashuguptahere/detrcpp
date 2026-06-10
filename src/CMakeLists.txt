@@ -174,6 +174,7 @@ if(DETR_ENABLE_TORCH)
   # detr_models — model registry + DETR variants (torch modules).
   add_library(detr_models STATIC
     models/registry.cpp
+    models/pos_embed.cpp
     models/detr_head.cpp
     models/deform_attn.cpp
     models/deform_head.cpp

@@ -27,6 +27,8 @@ struct TrainConfig {
   double grad_clip{0.1};  // max grad norm; 0 disables.
   std::uint64_t seed{0};
   double ema_decay{0.9999};
+  double backbone_lr_mult{0.1};  // backbone trains at lr * this (DETR uses 0.1).
+  int lr_drop{200};              // epoch at which to decay all LRs 10x; 0 disables.
   MatchWeights match{};
   LossWeights loss{};
 };
@@ -38,6 +40,10 @@ class Trainer {
   // One optimization step on a batch: forward -> match -> loss -> backward ->
   // (clip) -> step -> EMA update. Returns the total loss value.
   float TrainStep(const torch::Tensor& images, const TargetBatch& targets);
+
+  // Call at the start of each epoch: applies the step LR-drop schedule (decays
+  // every parameter group's LR 10x at cfg.lr_drop).
+  void OnEpochStart(int epoch);
 
   models::IModel& Model() { return *model_; }
   ModelEma& Ema() { return ema_; }

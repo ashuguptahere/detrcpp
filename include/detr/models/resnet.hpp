@@ -13,11 +13,13 @@
 #include <array>
 #include <vector>
 
+#include "detr/models/frozen_batchnorm.hpp"
+
 namespace detr::models {
 
 struct ResNetImpl : torch::nn::Module {
   torch::nn::Conv2d conv1{nullptr};
-  torch::nn::BatchNorm2d bn1{nullptr};
+  FrozenBatchNorm2d bn1{nullptr};
   torch::nn::Sequential layer1{nullptr};
   torch::nn::Sequential layer2{nullptr};
   torch::nn::Sequential layer3{nullptr};

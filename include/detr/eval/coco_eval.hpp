@@ -13,13 +13,16 @@
 
 namespace detr::eval {
 
-// All boxes are absolute pixel xywh (COCO convention); area = w * h.
+// All boxes are absolute pixel xywh (COCO convention). |area| is the COCO
+// annotation area (segmentation area) used for the small/medium/large bucketing,
+// matching pycocotools; 0 means "fall back to the bbox area w*h".
 struct GtBox {
   int category_id{0};
   float x{0};
   float y{0};
   float w{0};
   float h{0};
+  float area{0};
   bool iscrowd{false};
 };
 

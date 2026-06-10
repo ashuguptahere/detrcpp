@@ -7,9 +7,11 @@
 
 #pragma once
 
-#include <torch/torch.h>
+#include <torch/nn/module.h>
+#include <torch/types.h>
 
 #include <string>
+#include <vector>
 
 #include "detr/weights/remapper.hpp"
 
@@ -33,6 +35,13 @@ struct ModelMeta {
 struct Detections {
   torch::Tensor logits;
   torch::Tensor boxes;
+
+  // Auxiliary per-decoder-layer predictions for DETR's deep supervision. Each
+  // aux_logits[i]/aux_boxes[i] mirrors logits/boxes for an intermediate decoder
+  // layer. Populated by the heads only in training mode (empty at inference, so
+  // postprocess/eval are unaffected); the trainer adds a set loss per entry.
+  std::vector<torch::Tensor> aux_logits;
+  std::vector<torch::Tensor> aux_boxes;
 };
 
 class IModel : public torch::nn::Module {

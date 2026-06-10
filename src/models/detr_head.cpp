@@ -4,40 +4,18 @@
 
 #include <torch/torch.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <tuple>
 #include <vector>
+
+#include "detr/models/pos_embed.hpp"
 
 namespace detr::models {
 
 namespace {
 
 namespace nn = torch::nn;
-
-// 2D sine positional embedding (DETR's PositionEmbeddingSine, no padding mask).
-// Returns [B, d, h, w]. NOTE: kept identical to the ONNX exporter's constant.
-torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
-                      const torch::TensorOptions& opts) {
-  constexpr double kPi = 3.14159265358979323846;
-  const std::int64_t half = d / 2;
-  const double scale = 2.0 * kPi;
-  auto ys = torch::arange(1, h + 1, opts) / (static_cast<double>(h) + 1e-6) * scale;
-  auto xs = torch::arange(1, w + 1, opts) / (static_cast<double>(w) + 1e-6) * scale;
-  auto dim_t = torch::arange(0, half, opts);
-  dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
-
-  auto px = xs.unsqueeze(1) / dim_t.unsqueeze(0);
-  auto py = ys.unsqueeze(1) / dim_t.unsqueeze(0);
-  auto interleave = [half](torch::Tensor p) {
-    return torch::stack({p.slice(1, 0, half, 2).sin(), p.slice(1, 1, half, 2).cos()}, 2).flatten(1);
-  };
-  px = interleave(px);
-  py = interleave(py);
-  auto pyf = py.unsqueeze(1).expand({h, w, half});
-  auto pxf = px.unsqueeze(0).expand({h, w, half});
-  auto pos = torch::cat({pyf, pxf}, 2);
-  return pos.permute({2, 0, 1}).unsqueeze(0).expand({b, d, h, w}).contiguous();
-}
 
 struct EncoderLayerImpl : nn::Module {
   nn::MultiheadAttention self_attn{nullptr};
@@ -144,20 +122,36 @@ Detections RunDetrHead(const DetrHead& head, torch::Tensor src, const DetrConfig
 
   auto query = head.query_embed->weight.unsqueeze(1).repeat({1, b, 1});  // [Q, B, d]
   auto tgt = torch::zeros_like(query);
-  for (const auto& m : *head.decoder) {
-    tgt = m->as<DecoderLayerImpl>()->forward(tgt, memory, pos_seq, query);
-  }
-  auto decoder_norm = head.decoder_norm;
-  tgt = decoder_norm->forward(tgt);  // DETR's final decoder LayerNorm
-
-  auto hs = tgt.transpose(0, 1);  // [B, Q, d]
   // Copy the holders (cheap shared handles) so forward() isn't called through a
   // const reference.
+  auto decoder_norm = head.decoder_norm;
   auto class_embed = head.class_embed;
   auto bbox_embed = head.bbox_embed;
+
+  // In training, collect every layer's (decoder-normed) output for deep
+  // supervision. Each intermediate goes through DETR's shared decoder LayerNorm,
+  // exactly like return_intermediate=True in the reference.
+  const bool collect_aux = decoder_norm->is_training();
+  std::vector<torch::Tensor> hs_layers;  // normed [B, Q, d] per decoder layer
+  for (const auto& m : *head.decoder) {
+    tgt = m->as<DecoderLayerImpl>()->forward(tgt, memory, pos_seq, query);
+    if (collect_aux) {
+      hs_layers.push_back(decoder_norm->forward(tgt).transpose(0, 1));
+    }
+  }
+
   Detections out;
-  out.logits = class_embed->forward(hs);
-  out.boxes = bbox_embed->forward(hs).sigmoid();
+  // Final output = last decoder layer after the decoder LayerNorm. When not
+  // collecting aux this is the only norm/head application, so the inference path
+  // is numerically identical to before.
+  auto hs_final = collect_aux ? hs_layers.back() : decoder_norm->forward(tgt).transpose(0, 1);
+  out.logits = class_embed->forward(hs_final);
+  out.boxes = bbox_embed->forward(hs_final).sigmoid();
+  // Auxiliary outputs: every layer except the last, through the shared heads.
+  for (std::size_t i = 0; i + 1 < hs_layers.size(); ++i) {
+    out.aux_logits.push_back(class_embed->forward(hs_layers[i]));
+    out.aux_boxes.push_back(bbox_embed->forward(hs_layers[i]).sigmoid());
+  }
   return out;
 }
 

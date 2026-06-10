@@ -2,6 +2,8 @@
 
 #include "detr/train/criterion.hpp"
 
+#include <torch/nn/functional.h>
+
 #include <vector>
 
 #include "detr/train/box_ops.hpp"
@@ -87,8 +89,8 @@ Losses SetCriterion::Compute(const models::Detections& outputs, const TargetBatc
     out.loss_bbox =
         F::l1_loss(src_boxes, tgt_boxes, F::L1LossFuncOptions().reduction(torch::kNone)).sum() /
         norm;
-    auto giou = GeneralizedBoxIou(BoxCxcywhToXyxy(src_boxes), BoxCxcywhToXyxy(tgt_boxes));
-    out.loss_giou = (1.0 - giou.diagonal()).sum() / norm;
+    auto giou = GeneralizedBoxIouPaired(BoxCxcywhToXyxy(src_boxes), BoxCxcywhToXyxy(tgt_boxes));
+    out.loss_giou = (1.0 - giou).sum() / norm;
   }
 
   out.total = w_.cls * out.loss_ce + w_.bbox * out.loss_bbox + w_.giou * out.loss_giou;
