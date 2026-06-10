@@ -16,6 +16,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.2.5] - 2026-06-10
+
+### Changed
+- **Logging façade no longer leaks spdlog.** `detr/log/log.hpp` is spdlog-free
+  (pulls the lighter `<fmt/format.h>`); `Get()` returns a `Logger` handle whose
+  format methods are compile-time-checked and forward to a non-template sink, so
+  spdlog is confined to `src/log/`. No behavior change (human + NDJSON output and
+  escaping unchanged).
+
 ## [0.2.4] - 2026-06-10
 
 ### Added
