@@ -16,6 +16,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ### Fixed
 
+## [0.2.1] - 2026-06-10
+
+### Changed
+- **Build: dropped the `<torch/torch.h>` umbrella from tensor-only headers**
+  (`box_ops` / `target` / `matcher` / `criterion` / `loader` / `pre`+`postprocess`
+  / `evaluator` → `<torch/types.h>`; `model.hpp` → `<torch/nn/module.h>` +
+  `<torch/types.h>`). ~28% (~2.5s) faster front-end per tensor-only translation
+  unit (e.g. `box_ops.cpp` 8.7s→5.6s); no API or behavior change, 79/79 tests pass.
+
 ## [0.2.0] - 2026-06-10
 
 Phase 1–2 (in progress). Verified against a real toolchain: portable
