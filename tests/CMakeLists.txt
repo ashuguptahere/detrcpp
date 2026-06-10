@@ -9,6 +9,7 @@ add_executable(detr_unit_tests
   unit/test_dataset.cpp
   unit/test_assignment.cpp
   unit/test_coco_eval.cpp
+  unit/test_bytetrack.cpp
 )
 
 target_link_libraries(detr_unit_tests
@@ -17,6 +18,7 @@ target_link_libraries(detr_unit_tests
     detr::weights
     detr::data
     detr::eval
+    detr::track
     GTest::gtest
     GTest::gtest_main
     detr_warnings

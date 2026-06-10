@@ -28,6 +28,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   (rt-detr / rt-detrv3 / dino / rf-detr / deformable-detr) stays byte-identical.
   Inference-affecting (it's the op, not a training branch). Verified that v2 differs
   from v1 while v3 matches v1 at equal weights.
+- **ByteTrack multi-object tracker** (`detr::track`, new torch-free `detr_track`
+  lib). An 8-dim constant-velocity Kalman filter (height-scaled noise, a 4×4 SPD
+  Cholesky solve in the update) per track + two-stage IoU association — high-score
+  detections first, then low-score detections against the leftovers — reusing
+  `core::LinearSumAssignment`, with a coast-then-reap lifecycle (lost tracks coast
+  up to `track_buffer` frames, re-associating on reappearance). Boxes are
+  absolute-pixel xyxy; the IoU formula matches `box_ops::BoxIou`. Builds in the
+  lightweight (no-LibTorch) config. Tested: stable id on a moving box, id
+  persistence through an occlusion gap, stage-2 low-score recovery, the spawn gate,
+  buffer expiry, and Kalman convergence.
 
 ### Changed
 

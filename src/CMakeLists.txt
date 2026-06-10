@@ -93,6 +93,34 @@ set_target_properties(detr_data PROPERTIES
 
 add_library(detr::data ALIAS detr_data)
 
+# detr_track — ByteTrack-style multi-object tracker. Torch-free: an 8-dim
+# constant-velocity Kalman filter + two-stage IoU association reusing
+# core::LinearSumAssignment. Builds and tests in every configuration.
+add_library(detr_track STATIC
+  track/bytetrack.cpp
+)
+
+target_include_directories(detr_track
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(detr_track
+  PUBLIC
+    detr_core
+  PRIVATE
+    detr_warnings
+)
+
+set_target_properties(detr_track PROPERTIES
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED ON
+  CXX_EXTENSIONS OFF
+)
+
+add_library(detr::track ALIAS detr_track)
+
 # detr_eval — COCO mAP metric. Pure C++ (no LibTorch), so it builds and tests
 # everywhere; the torch-gated eval runner feeds it model detections.
 add_library(detr_eval STATIC
