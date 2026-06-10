@@ -9,13 +9,13 @@
 namespace detr::models {
 
 torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
-                      const torch::TensorOptions& opts) {
+                      const torch::TensorOptions& opts, double temperature) {
   const std::int64_t half = d / 2;
   const double scale = 2.0 * std::numbers::pi;
   auto ys = torch::arange(1, h + 1, opts) / (static_cast<double>(h) + 1e-6) * scale;
   auto xs = torch::arange(1, w + 1, opts) / (static_cast<double>(w) + 1e-6) * scale;
   auto dim_t = torch::arange(0, half, opts);
-  dim_t = torch::pow(10000.0, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
+  dim_t = torch::pow(temperature, 2 * torch::floor(dim_t / 2) / static_cast<double>(half));
 
   auto px = xs.unsqueeze(1) / dim_t.unsqueeze(0);
   auto py = ys.unsqueeze(1) / dim_t.unsqueeze(0);

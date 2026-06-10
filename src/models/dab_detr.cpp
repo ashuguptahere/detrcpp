@@ -103,6 +103,7 @@ struct EncoderLayerImpl : nn::Module {
   nn::Linear linear2{nullptr};
   nn::LayerNorm norm1{nullptr};
   nn::LayerNorm norm2{nullptr};
+  nn::PReLU activation_fn{nullptr};  // DAB's encoder FFN uses a learnable PReLU
   EncoderLayerImpl(int d, int nhead, int ff) {
     self_attn = register_module(
         "self_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.1)));
@@ -110,12 +111,13 @@ struct EncoderLayerImpl : nn::Module {
     linear2 = register_module("linear2", nn::Linear(ff, d));
     norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
     norm2 = register_module("norm2", nn::LayerNorm(nn::LayerNormOptions({d})));
+    activation_fn = register_module("activation_fn", nn::PReLU());  // num_parameters=1
   }
   torch::Tensor forward(torch::Tensor src, const torch::Tensor& pos) {
     auto q = src + pos;
     auto attn = std::get<0>(self_attn->forward(q, q, src));
     src = norm1->forward(src + attn);
-    auto ff = linear2->forward(torch::relu(linear1->forward(src)));
+    auto ff = linear2->forward(activation_fn->forward(linear1->forward(src)));
     return norm2->forward(src + ff);
   }
 };
@@ -131,6 +133,7 @@ class DabDetrImpl : public IModel {
     refpoint_embed_ = register_module("refpoint_embed", nn::Embedding(cfg.num_queries, 4));
     ref_point_head_ = register_module("ref_point_head", Mlp(2 * d, d, d, 2));
     query_scale_ = register_module("query_scale", Mlp(d, d, d, 2));
+    encoder_query_scale_ = register_module("encoder_query_scale", Mlp(d, d, d, 2));
     ref_anchor_head_ = register_module("ref_anchor_head", Mlp(d, d, 2, 2));
 
     encoder_ = register_module("encoder", nn::ModuleList());
@@ -139,8 +142,9 @@ class DabDetrImpl : public IModel {
     }
     decoder_ = register_module("decoder", nn::ModuleList());
     for (int i = 0; i < cfg.dec_layers; ++i) {
-      decoder_->push_back(CondDecoderLayer(d, cfg.nheads, cfg.dim_feedforward));
+      decoder_->push_back(CondDecoderLayer(d, cfg.nheads, cfg.dim_feedforward, /*use_prelu=*/true));
     }
+    decoder_norm_ = register_module("decoder_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
     class_embed_ = register_module("class_embed", nn::Linear(d, cfg.num_classes));
     bbox_embed_ = register_module("bbox_embed", Mlp(d, d, 4, 3));
   }
@@ -154,10 +158,16 @@ class DabDetrImpl : public IModel {
     const auto h = src.size(2);
     const auto w = src.size(3);
 
-    auto pos = SinePos(b, d, h, w, src.options()).flatten(2).permute({2, 0, 1}).contiguous();
+    // DAB-DETR uses a sine temperature of 20 (vs DETR's 10000) for the image
+    // positional encoding; the query anchor sine (SineEmbed4D) keeps 10000.
+    auto pos =
+        SinePos(b, d, h, w, src.options(), /*temperature=*/20.0).flatten(2).permute({2, 0, 1}).contiguous();
     auto memory = src.flatten(2).permute({2, 0, 1}).contiguous();
     for (const auto& m : *encoder_) {
-      memory = m->as<EncoderLayerImpl>()->forward(memory, pos);
+      // DAB modulates the positional encoding per layer by a learned scale of the
+      // current features (one encoder_query_scale shared across the layers).
+      auto scaled_pos = pos * encoder_query_scale_->forward(memory);
+      memory = m->as<EncoderLayerImpl>()->forward(memory, scaled_pos);
     }
 
     auto anchor = refpoint_embed_->weight.unsqueeze(1).repeat({1, b, 1});  // [nq, B, 4]
@@ -186,21 +196,28 @@ class DabDetrImpl : public IModel {
 
       tgt = m->as<CondDecoderLayerImpl>()->forward(tgt, memory, pos, query_pos, query_sine,
                                                    layer_id == 0);
-      // iterative anchor refinement.
-      auto new_ref = (bbox_embed_->forward(tgt) + InverseSigmoid(reference)).sigmoid();
-      boxes = new_ref;
+      auto normed = decoder_norm_->forward(tgt);
+      // Detection box for this layer = bbox head on the NORMED hidden state + the
+      // (pre-layer) reference. HF's DabDetr applies bbox_predictor to the
+      // layer-normed intermediate states (separate from the reference update).
+      auto out_box = (bbox_embed_->forward(normed) + InverseSigmoid(reference)).sigmoid();
+      boxes = out_box;
       if (collect_aux) {
-        tgt_layers.push_back(tgt);
-        box_layers.push_back(new_ref);
+        tgt_layers.push_back(normed);
+        box_layers.push_back(out_box);
       }
-      reference = new_ref.detach();
+      // Iterative anchor update for the NEXT layer's query: bbox head on the RAW
+      // hidden state (the in-decoder reference refinement).
+      reference = (bbox_embed_->forward(tgt) + InverseSigmoid(reference)).sigmoid().detach();
       ++layer_id;
     }
 
     Detections det;
-    det.logits = class_embed_->forward(tgt.transpose(0, 1));  // [B, nq, num_classes]
-    det.boxes = boxes.transpose(0, 1);                        // [B, nq, 4] cxcywh
-    // Deep supervision: per-layer class head + the layer's refined anchor box.
+    // Class head on the final layer-normed hidden state (tgt_layers stores the
+    // already-normed states, so re-use the last one).
+    det.logits = class_embed_->forward(decoder_norm_->forward(tgt).transpose(0, 1));
+    det.boxes = boxes.transpose(0, 1);  // [B, nq, 4] cxcywh
+    // Deep supervision: per-layer class head (normed) + the layer's box.
     for (std::size_t i = 0; collect_aux && i + 1 < tgt_layers.size(); ++i) {
       det.aux_logits.push_back(class_embed_->forward(tgt_layers[i].transpose(0, 1)));
       det.aux_boxes.push_back(box_layers[i].transpose(0, 1));
@@ -227,9 +244,11 @@ class DabDetrImpl : public IModel {
   nn::Embedding refpoint_embed_{nullptr};
   Mlp ref_point_head_{nullptr};
   Mlp query_scale_{nullptr};
+  Mlp encoder_query_scale_{nullptr};
   Mlp ref_anchor_head_{nullptr};
   nn::ModuleList encoder_{nullptr};
   nn::ModuleList decoder_{nullptr};
+  nn::LayerNorm decoder_norm_{nullptr};
   nn::Linear class_embed_{nullptr};
   Mlp bbox_embed_{nullptr};
 };

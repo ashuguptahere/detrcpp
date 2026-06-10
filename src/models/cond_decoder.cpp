@@ -26,7 +26,8 @@ torch::Tensor DecoupledMultiHeadAttn(torch::Tensor q, torch::Tensor k, torch::Te
   return out.view({b, nhead, lq, v_hd}).permute({2, 0, 1, 3}).reshape({lq, b, nhead * v_hd});
 }
 
-CondDecoderLayerImpl::CondDecoderLayerImpl(int d, int nhead, int ff) : nhead_(nhead), d_(d) {
+CondDecoderLayerImpl::CondDecoderLayerImpl(int d, int nhead, int ff, bool use_prelu)
+    : use_prelu_(use_prelu), nhead_(nhead), d_(d) {
   auto lin = [&](const char* n) { return register_module(n, nn::Linear(d, d)); };
   sa_qcontent = lin("sa_qcontent_proj");
   sa_qpos = lin("sa_qpos_proj");
@@ -46,6 +47,9 @@ CondDecoderLayerImpl::CondDecoderLayerImpl(int d, int nhead, int ff) : nhead_(nh
   norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
   linear1 = register_module("linear1", nn::Linear(d, ff));
   linear2 = register_module("linear2", nn::Linear(ff, d));
+  if (use_prelu_) {
+    activation_fn = register_module("activation_fn", nn::PReLU());  // num_parameters=1
+  }
 }
 
 torch::Tensor CondDecoderLayerImpl::forward(torch::Tensor tgt, const torch::Tensor& memory,
@@ -84,7 +88,9 @@ torch::Tensor CondDecoderLayerImpl::forward(torch::Tensor tgt, const torch::Tens
   auto ca = ca_out->forward(DecoupledMultiHeadAttn(qcat, kcat, v, nhead_));
   tgt = norm2->forward(tgt + ca);
 
-  auto ff = linear2->forward(torch::relu(linear1->forward(tgt)));
+  auto hidden = linear1->forward(tgt);
+  hidden = use_prelu_ ? activation_fn->forward(hidden) : torch::relu(hidden);
+  auto ff = linear2->forward(hidden);
   return norm3->forward(tgt + ff);
 }
 

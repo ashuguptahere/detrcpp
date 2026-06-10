@@ -22,10 +22,14 @@ struct CondDecoderLayerImpl : torch::nn::Module {
       ca_v{nullptr}, ca_qpos_sine{nullptr}, ca_out{nullptr};
   torch::nn::LayerNorm norm1{nullptr}, norm2{nullptr}, norm3{nullptr};
   torch::nn::Linear linear1{nullptr}, linear2{nullptr};
+  // FFN activation: relu by default (Conditional-DETR), or a learnable PReLU
+  // (DAB-DETR, registered as "activation_fn" so the official weight loads 1:1).
+  torch::nn::PReLU activation_fn{nullptr};
+  bool use_prelu_{false};
   int nhead_;
   int d_;
 
-  CondDecoderLayerImpl(int d, int nhead, int ff);
+  CondDecoderLayerImpl(int d, int nhead, int ff, bool use_prelu = false);
 
   // |query_sine| is the (already projected/modulated) spatial query; |is_first|
   // adds the query positional embedding to content on the first layer only.
