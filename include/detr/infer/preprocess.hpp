@@ -6,7 +6,7 @@
 
 #pragma once
 
-#include <torch/torch.h>
+#include <torch/types.h>
 
 #include "detr/io/image.hpp"
 

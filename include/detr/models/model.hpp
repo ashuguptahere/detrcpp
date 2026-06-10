@@ -7,7 +7,8 @@
 
 #pragma once
 
-#include <torch/torch.h>
+#include <torch/nn/module.h>
+#include <torch/types.h>
 
 #include <string>
 #include <vector>

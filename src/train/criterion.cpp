@@ -2,6 +2,8 @@
 
 #include "detr/train/criterion.hpp"
 
+#include <torch/nn/functional.h>
+
 #include <vector>
 
 #include "detr/train/box_ops.hpp"

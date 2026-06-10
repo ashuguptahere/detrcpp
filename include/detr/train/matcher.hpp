@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include <torch/torch.h>
+#include <torch/types.h>
 
 #include <utility>
 #include <vector>
