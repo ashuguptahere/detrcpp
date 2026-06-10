@@ -213,6 +213,7 @@ if(DETR_ENABLE_TORCH)
     train/box_ops.cpp
     train/matcher.cpp
     train/criterion.cpp
+    train/denoising.cpp
     train/ema.cpp
     train/checkpoint.cpp
     train/trainer.cpp

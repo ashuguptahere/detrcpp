@@ -150,6 +150,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("deformable-detr", DeformableDetrMeta({}), &MakeDeformableDetr);
   Registry::Instance().Register("conditional-detr", ConditionalDetrMeta({}), &MakeConditionalDetr);
   Registry::Instance().Register("dab-detr", DabDetrMeta({}), &MakeDabDetr);
+  Registry::Instance().Register("dn-detr", DnDetrMeta({}), &MakeDnDetr);
   Registry::Instance().Register("rf-detr", RfDetrMeta({}), &MakeRfDetr);
   Registry::Instance().Register("dino", DinoMeta({}), &MakeDino);
   RegisterRtDetr();

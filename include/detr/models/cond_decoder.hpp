@@ -13,7 +13,9 @@ namespace detr::models {
 
 // Multi-head attention with externally-projected q/k/v (no in_proj), allowing q/k
 // of one width and v of another. Inputs [L, B, dim]; returns [Lq, B, v_dim].
-torch::Tensor DecoupledMultiHeadAttn(torch::Tensor q, torch::Tensor k, torch::Tensor v, int nhead);
+// |attn_mask| (optional [Lq,Lk] bool, true = block) masks scores before softmax.
+torch::Tensor DecoupledMultiHeadAttn(torch::Tensor q, torch::Tensor k, torch::Tensor v, int nhead,
+                                     const torch::Tensor& attn_mask = {});
 
 struct CondDecoderLayerImpl : torch::nn::Module {
   torch::nn::Linear sa_qcontent{nullptr}, sa_qpos{nullptr}, sa_kcontent{nullptr}, sa_kpos{nullptr},
@@ -33,9 +35,11 @@ struct CondDecoderLayerImpl : torch::nn::Module {
 
   // |query_sine| is the (already projected/modulated) spatial query; |is_first|
   // adds the query positional embedding to content on the first layer only.
+  // |self_attn_mask| (optional [L,L] bool, true = block) masks self-attention only
+  // (DN-DETR group isolation); the cross-attention is always unmasked.
   torch::Tensor forward(torch::Tensor tgt, const torch::Tensor& memory, const torch::Tensor& pos,
                         const torch::Tensor& query_pos, const torch::Tensor& query_sine,
-                        bool is_first);
+                        bool is_first, const torch::Tensor& self_attn_mask = {});
 };
 TORCH_MODULE(CondDecoderLayer);
 

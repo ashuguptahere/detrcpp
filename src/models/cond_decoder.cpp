@@ -4,12 +4,14 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace detr::models {
 
 namespace nn = torch::nn;
 
-torch::Tensor DecoupledMultiHeadAttn(torch::Tensor q, torch::Tensor k, torch::Tensor v, int nhead) {
+torch::Tensor DecoupledMultiHeadAttn(torch::Tensor q, torch::Tensor k, torch::Tensor v, int nhead,
+                                     const torch::Tensor& attn_mask) {
   const auto lq = q.size(0);
   const auto b = q.size(1);
   const auto lk = k.size(0);
@@ -22,6 +24,10 @@ torch::Tensor DecoupledMultiHeadAttn(torch::Tensor q, torch::Tensor k, torch::Te
   auto kh = split(k, lk, qk_hd);
   auto vh = split(v, lk, v_hd);
   auto scores = torch::bmm(qh, kh.transpose(1, 2)) / std::sqrt(static_cast<double>(qk_hd));
+  if (attn_mask.defined()) {  // [lq,lk] bool, true=block; broadcast over b*nhead.
+    scores = scores.masked_fill(attn_mask.unsqueeze(0),
+                                -std::numeric_limits<float>::infinity());
+  }
   auto out = torch::bmm(scores.softmax(-1), vh);  // [b*nh, lq, v_hd]
   return out.view({b, nhead, lq, v_hd}).permute({2, 0, 1, 3}).reshape({lq, b, nhead * v_hd});
 }
@@ -55,7 +61,8 @@ CondDecoderLayerImpl::CondDecoderLayerImpl(int d, int nhead, int ff, bool use_pr
 torch::Tensor CondDecoderLayerImpl::forward(torch::Tensor tgt, const torch::Tensor& memory,
                                             const torch::Tensor& pos,
                                             const torch::Tensor& query_pos,
-                                            const torch::Tensor& query_sine, bool is_first) {
+                                            const torch::Tensor& query_sine, bool is_first,
+                                            const torch::Tensor& self_attn_mask) {
   const auto nq = tgt.size(0);
   const auto b = tgt.size(1);
   const auto hw = memory.size(0);
@@ -64,7 +71,8 @@ torch::Tensor CondDecoderLayerImpl::forward(torch::Tensor tgt, const torch::Tens
   // self-attention (q/k/v projected externally; no in_proj).
   auto q = sa_qcontent->forward(tgt) + sa_qpos->forward(query_pos);
   auto k = sa_kcontent->forward(tgt) + sa_kpos->forward(query_pos);
-  auto sa = sa_out->forward(DecoupledMultiHeadAttn(q, k, sa_v->forward(tgt), nhead_));
+  auto sa =
+      sa_out->forward(DecoupledMultiHeadAttn(q, k, sa_v->forward(tgt), nhead_, self_attn_mask));
   tgt = norm1->forward(tgt + sa);
 
   // conditional cross-attention.

@@ -18,4 +18,9 @@ namespace detr::models {
 std::shared_ptr<IModel> MakeDabDetr(const YAML::Node& cfg);
 ModelMeta DabDetrMeta(const YAML::Node& cfg);
 
+// DN-DETR: the DAB-DETR network plus denoising training (an extra label_enc and a
+// train-only ForwardDenoise); eval/inference is identical to DAB-DETR.
+std::shared_ptr<IModel> MakeDnDetr(const YAML::Node& cfg);
+ModelMeta DnDetrMeta(const YAML::Node& cfg);
+
 }  // namespace detr::models

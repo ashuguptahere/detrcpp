@@ -14,6 +14,7 @@
 
 #include "detr/models/model.hpp"
 #include "detr/train/criterion.hpp"
+#include "detr/train/denoising.hpp"
 #include "detr/train/ema.hpp"
 #include "detr/train/matcher.hpp"
 #include "detr/train/target.hpp"
@@ -31,6 +32,7 @@ struct TrainConfig {
   int lr_drop{200};              // epoch at which to decay all LRs 10x; 0 disables.
   MatchWeights match{};
   LossWeights loss{};
+  DnConfig dn{};  // DN-DETR denoising (used only when the model SupportsDenoising).
 };
 
 class Trainer {

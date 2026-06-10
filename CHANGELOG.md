@@ -11,6 +11,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DN-DETR denoising training.** A new `dn-detr` model (the DAB-DETR network plus
+  a `label_enc`) and a train-only denoising recipe: per image, `dn_number` groups
+  of denoising queries whose anchor is a noised GT box and whose content embeds a
+  noised GT label are run through the decoder alongside the matching queries, with
+  a group-isolation self-attention mask (matching ↛ dn, dn group i ↛ group j ↛
+  matching). The denoising part trains with a **reconstruction loss against the
+  clean GT** (a known assignment, no Hungarian — reuses `SetCriterion`); the
+  matching part is unchanged. New `train/denoising.{hpp,cpp}` (noise + mask +
+  known `MatchIndices`); `IModel` gained tensor-only `DenoisingInput`/
+  `DenoisingOut` + `SupportsDenoising()`/`ForwardDenoise()` (default no-ops);
+  `DecoupledMultiHeadAttn`/`CondDecoderLayer` gained an optional self-attn mask
+  (default none → conditional/dab byte-identical). Inference is the plain DAB
+  forward (denoising is train-only). Verified by an overfit-a-tiny-batch test.
 
 ### Changed
 

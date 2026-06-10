@@ -48,12 +48,49 @@ struct Detections {
   std::vector<torch::Tensor> aux_boxes;
 };
 
+// DN-DETR denoising training input, built by the trainer (which owns the GT) and
+// handed to the model. Tensor-only so models/ keeps no train/ dependency; the
+// model does the label-embedding lookup itself (the table is its parameter).
+// Query-major layout [num_dn, B, *]; num_dn = dn_number * max-objects-padded.
+struct DenoisingInput {
+  bool active{false};
+  torch::Tensor dn_ref;     // [num_dn, B, 4] noised anchor in sigmoid space (0,1)
+  torch::Tensor dn_labels;  // [num_dn, B] int64 noised class ids in [0, num_classes)
+  torch::Tensor attn_mask;  // [L, L] bool, L = num_dn + num_queries; true = BLOCK self-attn
+  int num_dn{0};
+};
+
+// Denoising predictions split out of the joint decoder run (matching-query
+// predictions return through the normal Detections value).
+struct DenoisingOut {
+  bool active{false};
+  torch::Tensor dn_logits;  // [B, num_dn, C]
+  torch::Tensor dn_boxes;   // [B, num_dn, 4]
+  std::vector<torch::Tensor> dn_aux_logits;  // per decoder layer
+  std::vector<torch::Tensor> dn_aux_boxes;
+  int num_dn{0};
+};
+
 class IModel : public torch::nn::Module {
  public:
   ~IModel() override = default;
 
   // images: [B, 3, H, W], normalized. Returns per-query class + box predictions.
   virtual Detections Forward(torch::Tensor images) = 0;
+
+  // DN-DETR denoising training. false (default) => the trainer never builds DN
+  // queries and only calls Forward.
+  virtual bool SupportsDenoising() const { return false; }
+
+  // Train-only joint forward over [denoising ; matching] queries with
+  // dn_in.attn_mask on self-attention. Returns the matching Detections and fills
+  // dn_out with the denoising slice. Default ignores dn_in (== Forward).
+  virtual Detections ForwardDenoise(torch::Tensor images, const DenoisingInput& dn_in,
+                                    DenoisingOut& dn_out) {
+    (void)dn_in;
+    dn_out = DenoisingOut{};
+    return Forward(images);
+  }
 
   virtual ModelMeta Meta() const = 0;
 
