@@ -124,14 +124,14 @@ struct RepVggImpl : nn::Module {
 };
 TORCH_MODULE(RepVgg);
 
-// CSPRepLayer: two 1x1 branches, RepVGG bottlenecks on one, fused by a 1x1.
+// CSPRepLayer: two 1x1 branches, RepVGG bottlenecks on one, summed. RT-DETR's
+// hidden_channels == out_channels, so the optional fuse conv (conv3) is Identity
+// and is omitted — no conv3 weights exist in the official checkpoint.
 struct CSPRepImpl : nn::Module {
   ConvNorm conv1{nullptr};
   ConvNorm conv2{nullptr};
   nn::Sequential bottlenecks{nullptr};
-  ConvNorm conv3{nullptr};
-  bool identity_;
-  CSPRepImpl(int in, int out, int num_blocks) : identity_(in == out) {
+  CSPRepImpl(int in, int out, int num_blocks) {
     conv1 = register_module("conv1", ConvNorm(in, out, 1, 1, true));
     conv2 = register_module("conv2", ConvNorm(in, out, 1, 1, true));
     bottlenecks = nn::Sequential();
@@ -139,15 +139,9 @@ struct CSPRepImpl : nn::Module {
       bottlenecks->push_back(RepVgg(out));
     }
     register_module("bottlenecks", bottlenecks);
-    if (!identity_) {
-      conv3 = register_module("conv3", ConvNorm(out, out, 1, 1, true));
-    }
   }
   torch::Tensor forward(torch::Tensor x) {
-    auto x1 = bottlenecks->forward(conv1->forward(x));
-    auto x2 = conv2->forward(x);
-    auto out = x1 + x2;
-    return identity_ ? out : conv3->forward(out);
+    return bottlenecks->forward(conv1->forward(x)) + conv2->forward(x);
   }
 };
 TORCH_MODULE(CSPRep);
@@ -173,7 +167,7 @@ struct AIFILayerImpl : nn::Module {
     auto v = src.transpose(0, 1);
     auto attn = std::get<0>(self_attn->forward(q, k, v)).transpose(0, 1);
     src = norm1->forward(src + attn);
-    auto ff = linear2->forward(torch::relu(linear1->forward(src)));
+    auto ff = linear2->forward(torch::gelu(linear1->forward(src)));  // RT-DETR AIFI uses GELU
     return norm2->forward(src + ff);
   }
 };
@@ -184,15 +178,24 @@ class RtDetrImpl : public IModel {
   explicit RtDetrImpl(Config cfg) : cfg_(cfg) {
     const int d = cfg.hidden_dim;
     auto spec = BackboneFor(cfg.backbone);
-    backbone_ = register_module("backbone", ResNet(spec.blocks, spec.bottleneck, /*dc5=*/false));
+    // RT-DETR uses a ResNet-D/VD backbone (deep stem + avg-pool downsample).
+    backbone_ = register_module("backbone", ResNet(spec.blocks, spec.bottleneck, /*dc5=*/false,
+                                                   /*deep_stem=*/true, /*avg_down=*/true));
     const auto backbone_ch = backbone_->feature_channels();  // {C3, C4, C5}
 
-    // input_proj: 1x1 conv + BN to hidden, per backbone level (C3,C4,C5).
+    // input_proj (HF encoder_input_proj): 1x1 conv + BN, per backbone level.
     input_proj_ = register_module("input_proj", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels; ++i) {
       input_proj_->push_back(nn::Sequential(
           nn::Conv2d(nn::Conv2dOptions(backbone_ch[static_cast<std::size_t>(i)], d, 1).bias(false)),
           nn::BatchNorm2d(d)));
+    }
+    // decoder_input_proj (HF): 1x1 conv + BN re-projecting each PAN output (d->d)
+    // before they form the deformable decoder's multi-scale memory.
+    decoder_input_proj_ = register_module("decoder_input_proj", nn::ModuleList());
+    for (int i = 0; i < cfg.num_levels; ++i) {
+      decoder_input_proj_->push_back(
+          nn::Sequential(nn::Conv2d(nn::Conv2dOptions(d, d, 1).bias(false)), nn::BatchNorm2d(d)));
     }
 
     // AIFI on the top level.
@@ -270,10 +273,11 @@ class RtDetrImpl : public IModel {
       outs.push_back(pan_blocks_[static_cast<std::size_t>(idx)]->as<CSPRepImpl>()->forward(fused));
     }
 
-    // Flatten the 3 encoder feature maps into a single memory sequence.
+    // decoder_input_proj, then flatten the 3 maps into one memory sequence.
     SpatialShapes shapes;
     std::vector<torch::Tensor> mem;
-    for (const auto& o : outs) {
+    for (std::size_t i = 0; i < outs.size(); ++i) {
+      auto o = decoder_input_proj_[i]->as<nn::SequentialImpl>()->forward(outs[i]);
       shapes.emplace_back(o.size(2), o.size(3));
       mem.push_back(o.flatten(2).transpose(1, 2));  // [B, hw, d]
     }
@@ -287,6 +291,7 @@ class RtDetrImpl : public IModel {
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
     m.focal = true;
+    m.imagenet_norm = false;  // RT-DETR trains on raw [0,1], square resize
     m.license = "Apache-2.0";
     m.upstream = "https://github.com/lyuwenyu/RT-DETR";
     return m;
@@ -296,6 +301,7 @@ class RtDetrImpl : public IModel {
   Config cfg_;
   ResNet backbone_{nullptr};
   nn::ModuleList input_proj_{nullptr};
+  nn::ModuleList decoder_input_proj_{nullptr};
   nn::ModuleList aifi_{nullptr};
   nn::ModuleList lateral_convs_{nullptr};
   nn::ModuleList fpn_blocks_{nullptr};

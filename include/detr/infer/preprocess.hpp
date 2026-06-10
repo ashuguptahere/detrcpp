@@ -12,8 +12,9 @@
 
 namespace detr::infer {
 
-// Square resize to imgsz x imgsz (training-time preprocessing).
-torch::Tensor PreprocessImage(const io::RgbImage& img, int imgsz);
+// Square resize to imgsz x imgsz (training-time preprocessing). |normalize|
+// applies ImageNet mean/std (DETR family); pass false for raw [0,1] (RT-DETR).
+torch::Tensor PreprocessImage(const io::RgbImage& img, int imgsz, bool normalize = true);
 
 // DETR's eval preprocessing: resize so the shortest side is |short_side|,
 // preserving aspect ratio, but never letting the longest side exceed |max_size|.

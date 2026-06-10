@@ -26,6 +26,10 @@ struct ModelMeta {
   // slot). true: sigmoid/focal over num_classes (Deformable-DETR and the modern
   // variants — no no-object slot). Drives the criterion, matcher, and postprocess.
   bool focal{false};
+  // Input normalization. true: scale to [0,1] then ImageNet mean/std (DETR
+  // family). false: scale to [0,1] only, and eval with a square (non-aspect)
+  // resize (RT-DETR). Drives preprocessing in predict/eval.
+  bool imagenet_norm{true};
   std::string license{"Apache-2.0"};
   std::string upstream;  // provenance URL for the architecture / weights
 };

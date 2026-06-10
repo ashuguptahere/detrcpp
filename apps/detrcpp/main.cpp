@@ -557,7 +557,8 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
       continue;
     }
     const detr::log::Stopwatch sw_inf;
-    auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
+    auto input =
+        detr::infer::PreprocessImage(*rgb, imgsz, model->Meta().imagenet_norm).to(torch_dev);
     auto outputs = model->Forward(input);
     auto dets =
         detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);

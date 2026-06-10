@@ -13,11 +13,16 @@ namespace detr::infer {
 
 namespace {
 
-// Resized uint8 HWC -> normalized [1,3,H,W] float tensor.
-torch::Tensor ToInput(const std::vector<unsigned char>& rgb, int h, int w) {
+// Resized uint8 HWC -> [1,3,H,W] float tensor. When |normalize| (default), scales
+// to [0,1] and ImageNet-normalizes (DETR family); otherwise just scales to [0,1]
+// (RT-DETR, which trains on raw [0,1] inputs).
+torch::Tensor ToInput(const std::vector<unsigned char>& rgb, int h, int w, bool normalize) {
   auto hwc =
       torch::from_blob(const_cast<unsigned char*>(rgb.data()), {h, w, 3}, torch::kUInt8).clone();
   auto chw = hwc.to(torch::kFloat32).div_(255.0).permute({2, 0, 1}).contiguous();
+  if (!normalize) {
+    return chw.unsqueeze(0);
+  }
   static const auto mean = torch::tensor({0.485, 0.456, 0.406}).view({3, 1, 1});
   static const auto stddev = torch::tensor({0.229, 0.224, 0.225}).view({3, 1, 1});
   return ((chw - mean) / stddev).unsqueeze(0);
@@ -25,12 +30,12 @@ torch::Tensor ToInput(const std::vector<unsigned char>& rgb, int h, int w) {
 
 }  // namespace
 
-torch::Tensor PreprocessImage(const io::RgbImage& img, int imgsz) {
+torch::Tensor PreprocessImage(const io::RgbImage& img, int imgsz, bool normalize) {
   std::vector<unsigned char> resized(static_cast<std::size_t>(imgsz) *
                                      static_cast<std::size_t>(imgsz) * 3);
   stbir_resize_uint8_linear(img.data.data(), img.width, img.height, 0, resized.data(), imgsz, imgsz,
                             0, STBIR_RGB);
-  return ToInput(resized, imgsz, imgsz);  // [1, 3, imgsz, imgsz]
+  return ToInput(resized, imgsz, imgsz, normalize);  // [1, 3, imgsz, imgsz]
 }
 
 torch::Tensor PreprocessImageAspect(const io::RgbImage& img, int short_side, int max_size) {
@@ -45,7 +50,7 @@ torch::Tensor PreprocessImageAspect(const io::RgbImage& img, int short_side, int
   std::vector<unsigned char> resized(static_cast<std::size_t>(nw) * static_cast<std::size_t>(nh) *
                                      3);
   stbir_resize_uint8_linear(img.data.data(), w, h, 0, resized.data(), nw, nh, 0, STBIR_RGB);
-  return ToInput(resized, nh, nw);  // [1, 3, nh, nw]
+  return ToInput(resized, nh, nw, /*normalize=*/true);  // [1, 3, nh, nw]
 }
 
 }  // namespace detr::infer
