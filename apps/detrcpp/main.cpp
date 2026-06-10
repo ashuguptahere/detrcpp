@@ -179,9 +179,21 @@ detr::core::Result<detr::weights::StateDict> LoadWeightsAuto(const std::string& 
 
 torch::Device ToTorchDevice(const detr::core::Device& d) {
   using detr::core::DeviceKind;
-  if ((d.kind == DeviceKind::Cuda || d.kind == DeviceKind::Auto) && torch::cuda::is_available()) {
-    const int index = d.kind == DeviceKind::Cuda ? d.index : 0;
-    return torch::Device(torch::kCUDA, static_cast<torch::DeviceIndex>(index));
+  if (d.kind == DeviceKind::Cuda || d.kind == DeviceKind::Auto) {
+    if (torch::cuda::is_available()) {
+      const int index = d.kind == DeviceKind::Cuda ? d.index : 0;
+      return torch::Device(torch::kCUDA, static_cast<torch::DeviceIndex>(index));
+    }
+    // Auto silently uses CPU; an explicit CUDA request that can't be honored warns.
+    if (d.kind == DeviceKind::Cuda) {
+      detr::log::Get("cli").warn("CUDA requested ('{}') but not available; using CPU",
+                                 detr::core::ToString(d));
+    }
+    return torch::Device(torch::kCPU);
+  }
+  if (d.kind != DeviceKind::Cpu) {
+    detr::log::Get("cli").warn("device '{}' is not supported by this build; using CPU",
+                               detr::core::ToString(d));
   }
   return torch::Device(torch::kCPU);
 }
