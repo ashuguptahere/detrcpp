@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.7.0] - 2026-06-10
+
+### Added
 - **ONNX export for dino** — completes the deformable query-selection path. Reuses
   the deformable encoder (MSDeformAttn) and adds the shared **deform head**: grid-
   center anchors baked as a constant, **topk query selection** (ReduceMax → TopK →
