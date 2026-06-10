@@ -15,6 +15,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Changed
 
 ### Fixed
+
+## [0.13.1] - 2026-06-10
+
+### Added
+
+### Changed
+
+### Fixed
 - **Legacy `.pth` unpickler now loads real-world checkpoints.** The initial version
   only handled the synthetic round-trip; testing against a real legacy DETR
   checkpoint surfaced constructs torch actually emits, now all supported: Python-2
