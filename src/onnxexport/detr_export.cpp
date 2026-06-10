@@ -429,6 +429,126 @@ struct Emitter {
     return y;
   }
 
+  // --- RT-DETR helpers (ResNet-VD backbone, CCFM, AIFI) ---
+
+  std::string AvgPool(const std::string& x, int k, int stride) {
+    std::string y = g.Unique("avgpool");
+    g.AddNode("AveragePool", {x}, {y});
+    g.AttrInts("kernel_shape", {k, k});
+    g.AttrInts("strides", {stride, stride});
+    g.AttrInt("ceil_mode", 1);
+    return y;
+  }
+
+  std::string Resize2xNearest(const std::string& x) {
+    std::string scales = g.Unique("scales");
+    AddFloatConst(scales, {4}, {1.0F, 1.0F, 2.0F, 2.0F});
+    std::string y = g.Unique("resize");
+    g.AddNode("Resize", {x, "", scales}, {y});  // "" = empty roi
+    g.AttrString("mode", "nearest");
+    g.AttrString("coordinate_transformation_mode", "asymmetric");
+    g.AttrString("nearest_mode", "floor");
+    return y;
+  }
+
+  std::string Silu(const std::string& x) { return Binary("Mul", x, Unary("Sigmoid", x)); }
+
+  // Exact (erf) GELU: 0.5*x*(1+erf(x/sqrt2)).
+  std::string Gelu(const std::string& x) {
+    std::string inv = g.Unique("gelu_inv");
+    AddFloatConst(inv, {1}, {static_cast<float>(1.0 / std::sqrt(2.0))});
+    std::string half = g.Unique("gelu_half");
+    AddFloatConst(half, {1}, {0.5F});
+    std::string one = g.Unique("gelu_one");
+    AddFloatConst(one, {1}, {1.0F});
+    std::string er = Unary("Erf", Binary("Mul", x, inv));
+    return Binary("Mul", Binary("Mul", x, half), Binary("Add", one, er));
+  }
+
+  // Conv(bias=false) + BatchNorm + optional SiLU (RT-DETR ConvNormLayer .conv/.norm).
+  std::string ConvNorm(const std::string& x, const std::string& p, int k, int stride, bool act) {
+    std::string y = Bn(Conv(x, p + ".conv.weight", "", k, stride, (k - 1) / 2), p + ".norm");
+    return act ? Silu(y) : y;
+  }
+
+  std::string RepVgg(const std::string& x, const std::string& p) {
+    return Silu(Binary("Add", ConvNorm(x, p + ".conv1", 3, 1, false), ConvNorm(x, p + ".conv2", 1, 1, false)));
+  }
+
+  std::string CSPRep(const std::string& x, const std::string& p, int num_blocks) {
+    std::string x1 = ConvNorm(x, p + ".conv1", 1, 1, true);
+    for (int i = 0; i < num_blocks; ++i) {
+      x1 = RepVgg(x1, fmt::format("{}.bottlenecks.{}", p, i));
+    }
+    return Binary("Add", x1, ConvNorm(x, p + ".conv2", 1, 1, true));
+  }
+
+  // ResNet-D/VD bottleneck: deep stem upstream; stride-2 blocks use an AvgPool +
+  // 1x1 conv shortcut (downsample.{1,2}); the stage-0 channel-only block a plain
+  // 1x1 conv (downsample.{0,1}).
+  std::string BottleneckVD(const std::string& x, const std::string& p, int stride, bool has_down) {
+    std::string c = Unary("Relu", Bn(Conv(x, p + ".conv1.weight", "", 1, 1, 0), p + ".bn1"));
+    c = Unary("Relu", Bn(Conv(c, p + ".conv2.weight", "", 3, stride, 1), p + ".bn2"));
+    c = Bn(Conv(c, p + ".conv3.weight", "", 1, 1, 0), p + ".bn3");
+    std::string id = x;
+    if (has_down) {
+      if (stride > 1) {
+        id = Bn(Conv(AvgPool(x, 2, 2), p + ".downsample.1.weight", "", 1, 1, 0), p + ".downsample.2");
+      } else {
+        id = Bn(Conv(x, p + ".downsample.0.weight", "", 1, 1, 0), p + ".downsample.1");
+      }
+    }
+    return Unary("Relu", Binary("Add", c, id));
+  }
+
+  std::array<std::string, 3> ResNetVDStages(const std::string& input) {
+    const int stem_stride[3] = {2, 1, 1};
+    std::string x = input;
+    for (int s = 0; s < 3; ++s) {
+      x = Unary("Relu", Bn(Conv(x, fmt::format("backbone.stem.{}.0.weight", s), "", 3, stem_stride[s], 1),
+                           fmt::format("backbone.stem.{}.1", s)));
+    }
+    x = Pool(x, 3, 2, 1);
+    const auto& blocks = a.resnet_blocks;
+    const int strides[4] = {1, 2, 2, 2};
+    std::array<std::string, 3> outs;
+    for (int lyr = 0; lyr < 4; ++lyr) {
+      for (int b = 0; b < blocks[static_cast<std::size_t>(lyr)]; ++b) {
+        const std::string p = fmt::format("backbone.layer{}.{}", lyr + 1, b);
+        const int stride = (b == 0) ? strides[lyr] : 1;
+        x = BottleneckVD(x, p, stride, /*has_down=*/b == 0);
+      }
+      if (lyr >= 1) {
+        outs[static_cast<std::size_t>(lyr - 1)] = x;
+      }
+    }
+    return outs;
+  }
+
+  // RT-DETR AIFI 2D sin-cos position [HW, dim] (temperature 10000), replicating
+  // SinCos2d's meshgrid("ij") flatten exactly (w-major: k = iw*h + jh).
+  std::vector<float> SinCos2d(int h, int w, int dim) {
+    const int pd = dim / 4;
+    std::vector<double> omega(static_cast<std::size_t>(pd));
+    for (int k = 0; k < pd; ++k) {
+      omega[static_cast<std::size_t>(k)] = 1.0 / std::pow(10000.0, static_cast<double>(k) / pd);
+    }
+    std::vector<float> pos(static_cast<std::size_t>(h) * static_cast<std::size_t>(w) *
+                           static_cast<std::size_t>(dim));
+    for (int iw = 0; iw < w; ++iw) {
+      for (int jh = 0; jh < h; ++jh) {
+        const auto base = static_cast<std::size_t>(iw * h + jh) * static_cast<std::size_t>(dim);
+        for (int c = 0; c < pd; ++c) {
+          pos[base + static_cast<std::size_t>(c)] = static_cast<float>(std::sin(iw * omega[static_cast<std::size_t>(c)]));
+          pos[base + static_cast<std::size_t>(pd + c)] = static_cast<float>(std::cos(iw * omega[static_cast<std::size_t>(c)]));
+          pos[base + static_cast<std::size_t>(2 * pd + c)] = static_cast<float>(std::sin(jh * omega[static_cast<std::size_t>(c)]));
+          pos[base + static_cast<std::size_t>(3 * pd + c)] = static_cast<float>(std::cos(jh * omega[static_cast<std::size_t>(c)]));
+        }
+      }
+    }
+    return pos;
+  }
+
   // Multi-scale deformable attention (MSDeformAttnImpl::forward + Core), batch 1.
   // query [Lq,d]; reference [Lq,nl,2] (2D) or [Lq,nl,4] (4D); value_src [Lv,d].
   std::string MSDeformAttn(const std::string& query, const std::string& reference,
@@ -1198,6 +1318,90 @@ core::Result<void> ExportDino(const DetrArch& arch, const weights::StateDict& we
   }
 
   // --- deformable detection head (topk query selection + decoder) ---
+  auto heads = e.DeformHead(memory, shapes);
+  std::string logits = e.Reshape(heads.first, {1, nq, C});
+  std::string boxes = e.Reshape(heads.second, {1, nq, 4});
+  g.AddNode("Identity", {logits}, {"logits"});
+  g.AddNode("Identity", {boxes}, {"boxes"});
+  g.AddOutput("logits", {1, nq, C});
+  g.AddOutput("boxes", {1, nq, 4});
+
+  if (e.error) {
+    return tl::make_unexpected(*e.error);
+  }
+  return g.Save(path, /*opset=*/17);
+}
+
+core::Result<void> ExportRtDetr(const DetrArch& arch, const weights::StateDict& weights,
+                                const std::string& path) {
+  GraphBuilder g("rt-detr");
+  Emitter e{g, weights, arch, std::nullopt};
+
+  const int d = arch.hidden_dim;
+  const int C = arch.num_classes;
+  const int nq = arch.num_queries;
+  const int nl = arch.num_levels;  // 3 backbone levels
+  g.AddInput("images", {1, 3, arch.imgsz, arch.imgsz});
+
+  // --- ResNet-VD backbone + input_proj (1x1 conv + BN, no GroupNorm) ---
+  auto stages = e.ResNetVDStages("images");  // {C3, C4, C5}
+  std::vector<std::string> proj;
+  std::vector<std::pair<int, int>> shapes;
+  const int fs[3] = {arch.imgsz / 8, arch.imgsz / 16, arch.imgsz / 32};
+  for (int i = 0; i < nl; ++i) {
+    std::string c = e.Conv(stages[static_cast<std::size_t>(i)], fmt::format("input_proj.{}.0.weight", i),
+                           "", 1, 1, 0);
+    proj.push_back(e.Bn(c, fmt::format("input_proj.{}.1", i)));
+    shapes.emplace_back(fs[i], fs[i]);
+  }
+
+  // --- AIFI on the top level (GELU FFN, 2D sin-cos pos) ---
+  {
+    const int ht = fs[nl - 1];
+    std::string src = e.Transpose(e.Reshape(proj[static_cast<std::size_t>(nl - 1)], {d, ht * ht}), {1, 0});
+    e.AddFloatConst("aifi_pos", {ht * ht, d}, e.SinCos2d(ht, ht, d));
+    for (int i = 0; i < arch.enc_layers; ++i) {
+      const std::string p = fmt::format("aifi.{}", i);
+      std::string q = e.Binary("Add", src, "aifi_pos");
+      std::string attn = e.Mha(q, q, src, p + ".self_attn", ht * ht, ht * ht);
+      src = e.LayerNorm(e.Binary("Add", src, attn), p + ".norm1");
+      std::string ff = e.Gemm(e.Gelu(e.Gemm(src, p + ".linear1.weight", p + ".linear1.bias")),
+                              p + ".linear2.weight", p + ".linear2.bias");
+      src = e.LayerNorm(e.Binary("Add", src, ff), p + ".norm2");
+    }
+    proj[static_cast<std::size_t>(nl - 1)] = e.Reshape(e.Transpose(src, {1, 0}), {1, d, ht, ht});
+  }
+
+  // --- CCFM: FPN (top-down) then PAN (bottom-up) ---
+  std::vector<std::string> inner = {proj[static_cast<std::size_t>(nl - 1)]};
+  for (int idx = nl - 1; idx > 0; --idx) {
+    const int li = nl - 1 - idx;
+    std::string feat_high = e.ConvNorm(inner.front(), fmt::format("lateral_convs.{}", li), 1, 1, true);
+    inner[0] = feat_high;
+    std::string fused = e.Concat({e.Resize2xNearest(feat_high), proj[static_cast<std::size_t>(idx - 1)]}, 1);
+    inner.insert(inner.begin(), e.CSPRep(fused, fmt::format("fpn_blocks.{}", li), 3));
+  }
+  std::vector<std::string> outs = {inner.front()};
+  for (int idx = 0; idx < nl - 1; ++idx) {
+    std::string down = e.ConvNorm(outs.back(), fmt::format("downsample_convs.{}", idx), 3, 2, true);
+    std::string fused = e.Concat({down, inner[static_cast<std::size_t>(idx + 1)]}, 1);
+    outs.push_back(e.CSPRep(fused, fmt::format("pan_blocks.{}", idx), 3));
+  }
+
+  // --- decoder_input_proj + flatten -> memory ---
+  int Lv = 0;
+  std::vector<std::string> mem_flat;
+  for (int l = 0; l < nl; ++l) {
+    std::string o = e.Bn(e.Conv(outs[static_cast<std::size_t>(l)],
+                                fmt::format("decoder_input_proj.{}.0.weight", l), "", 1, 1, 0),
+                         fmt::format("decoder_input_proj.{}.1", l));
+    const int h = shapes[static_cast<std::size_t>(l)].first;
+    const int w = shapes[static_cast<std::size_t>(l)].second;
+    mem_flat.push_back(e.Transpose(e.Reshape(o, {d, h * w}), {1, 0}));
+    Lv += h * w;
+  }
+  std::string memory = e.Concat(mem_flat, 0);  // [Lv, d]
+
   auto heads = e.DeformHead(memory, shapes);
   std::string logits = e.Reshape(heads.first, {1, nq, C});
   std::string boxes = e.Reshape(heads.second, {1, nq, 4});

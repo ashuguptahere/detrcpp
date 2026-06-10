@@ -67,4 +67,10 @@ core::Result<void> ExportDeformable(const DetrArch& arch, const weights::StateDi
 core::Result<void> ExportDino(const DetrArch& arch, const weights::StateDict& weights,
                               const std::string& path);
 
+// RT-DETR (focal): ResNet-D/VD backbone, a hybrid encoder (AIFI transformer on the
+// top level + a CCFM conv FPN/PAN), and the topk deformable decoder head. Outputs:
+// "logits" [1,num_queries,num_classes], "boxes" [1,num_queries,4].
+core::Result<void> ExportRtDetr(const DetrArch& arch, const weights::StateDict& weights,
+                                const std::string& path);
+
 }  // namespace detr::onnxexport

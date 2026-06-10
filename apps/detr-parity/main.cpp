@@ -91,7 +91,8 @@ int main(int argc, char** argv) {
       : (model == "dab-detr")       ? detr::onnxexport::ExportDab(arch, *weights, onnx_path)
       : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *weights, onnx_path)
       : (model == "dino")            ? detr::onnxexport::ExportDino(arch, *weights, onnx_path)
-                                     : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
+      : (model.rfind("rt-detr", 0) == 0) ? detr::onnxexport::ExportRtDetr(arch, *weights, onnx_path)
+                                         : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
   if (!export_r) {
     std::fprintf(stderr, "export: %s\n", export_r.error().message.c_str());
     return 1;

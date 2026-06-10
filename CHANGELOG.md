@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **ONNX export for rt-detr** (the real-time model). `ExportRtDetr` reconstructs the
+  whole stack in pure ONNX: a **ResNet-D/VD backbone** (deep 3×(3×3) stem + AvgPool
+  downsample shortcuts), the **hybrid encoder** (an AIFI transformer on the top level
+  with a GELU FFN — emitted via `Erf` — and a 2D sin-cos position, then a **CCFM**
+  conv FPN/PAN of ConvNorm/RepVgg/CSPRep with nearest-2× `Resize`), a
+  `decoder_input_proj`, and the shared topk deformable head. New emit helpers:
+  AvgPool, Resize, SiLU, GELU, ConvNorm/RepVgg/CSPRep, ResNet-VD stages, SinCos2d.
+  Verified at **max|Δ| ≈ 7e-7 vs LibTorch** (`configs/models/rt-detr-tiny.yaml`).
 
 ### Changed
 

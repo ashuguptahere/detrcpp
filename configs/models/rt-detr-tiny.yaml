@@ -1,0 +1,14 @@
+# Tiny RT-DETR for fast ONNX parity / CI. ResNet-VD backbone (deep stem +
+# avgpool) + hybrid encoder (1 AIFI layer + CCFM) + 3 levels + topk deform head.
+# imgsz 64 -> levels 8/4/2 (Lv=84); num_queries (20) <= Lv. enc_layers = AIFI layers.
+model: rt-detr-l
+hidden_dim: 64
+nheads: 8
+enc_layers: 1
+dec_layers: 2
+dim_feedforward: 128
+num_queries: 20
+num_classes: 80
+num_levels: 3
+num_points: 4
+imgsz: 64
