@@ -44,10 +44,12 @@ struct DeformDecoderLayerImpl : nn::Module {
   MSDeformAttn cross_attn{nullptr};
   nn::LayerNorm norm1{nullptr}, norm2{nullptr}, norm3{nullptr};
   nn::Linear linear1{nullptr}, linear2{nullptr};
-  DeformDecoderLayerImpl(int d, int levels, int heads, int points, int ff) {
+  DeformDecoderLayerImpl(int d, int levels, int heads, int points, int ff,
+                         bool discrete_sample = false) {
     self_attn = register_module(
         "self_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, heads).dropout(0.0)));
-    cross_attn = register_module("cross_attn", MSDeformAttn(d, levels, heads, points));
+    cross_attn =
+        register_module("cross_attn", MSDeformAttn(d, levels, heads, points, discrete_sample));
     norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
     norm2 = register_module("norm2", nn::LayerNorm(nn::LayerNormOptions({d})));
     norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
@@ -94,7 +96,8 @@ torch::Tensor MlpImpl::forward(torch::Tensor x) {
 }
 
 DeformDetectHead BuildDeformDetectHead(nn::Module& m, int d, int levels, int heads, int points,
-                                       int ff, int dec_layers, int num_classes, int num_queries) {
+                                       int ff, int dec_layers, int num_classes, int num_queries,
+                                       bool discrete_sample) {
   DeformDetectHead h;
   h.num_levels = levels;
   h.num_queries = num_queries;
@@ -108,7 +111,7 @@ DeformDetectHead BuildDeformDetectHead(nn::Module& m, int d, int levels, int hea
   h.dec_score = m.register_module("dec_score_head", nn::ModuleList());
   h.dec_bbox = m.register_module("dec_bbox_head", nn::ModuleList());
   for (int i = 0; i < dec_layers; ++i) {
-    h.decoder->push_back(DeformDecoderLayer(d, levels, heads, points, ff));
+    h.decoder->push_back(DeformDecoderLayer(d, levels, heads, points, ff, discrete_sample));
     h.dec_score->push_back(nn::Linear(d, num_classes));
     h.dec_bbox->push_back(Mlp(d, d, 4, 3));
   }

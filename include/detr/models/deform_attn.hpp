@@ -24,9 +24,11 @@ using SpatialShapes = std::vector<std::pair<std::int64_t, std::int64_t>>;
 //   sampling_locations: [N, Lq, n_heads, n_levels, n_points, 2]
 //   attention_weights:  [N, Lq, n_heads, n_levels, n_points]
 // returns:              [N, Lq, n_heads*head_dim]
+// discrete=true (RT-DETRv2): round the sampling location to the nearest pixel and
+// gather instead of bilinear-interpolating (a deployment-friendly variant).
 torch::Tensor MSDeformAttnCore(const torch::Tensor& value, const SpatialShapes& shapes,
                                const torch::Tensor& sampling_locations,
-                               const torch::Tensor& attention_weights);
+                               const torch::Tensor& attention_weights, bool discrete = false);
 
 // Full MSDeformAttn module: projects value, predicts sampling offsets +
 // attention weights from the query, calls the core, and output-projects.
@@ -35,12 +37,14 @@ struct MSDeformAttnImpl : torch::nn::Module {
   int n_levels_;
   int n_heads_;
   int n_points_;
+  bool discrete_sample_;  // RT-DETRv2 round-to-nearest sampling (default off)
   torch::nn::Linear sampling_offsets{nullptr};
   torch::nn::Linear attention_weights{nullptr};
   torch::nn::Linear value_proj{nullptr};
   torch::nn::Linear output_proj{nullptr};
 
-  MSDeformAttnImpl(int d_model, int n_levels, int n_heads, int n_points);
+  MSDeformAttnImpl(int d_model, int n_levels, int n_heads, int n_points,
+                   bool discrete_sample = false);
 
   // query:            [N, Lq, d_model]
   // reference_points: [N, Lq, n_levels, 2]  (normalized centers per level)

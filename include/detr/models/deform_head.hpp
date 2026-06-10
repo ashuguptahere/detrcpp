@@ -40,7 +40,7 @@ struct DeformDetectHead {
 
 DeformDetectHead BuildDeformDetectHead(torch::nn::Module& model, int d, int levels, int heads,
                                        int points, int ff, int dec_layers, int num_classes,
-                                       int num_queries);
+                                       int num_queries, bool discrete_sample = false);
 
 // Optional contrastive-denoising prefix (DINO-CDN). When active, num_dn denoising
 // queries are PREPENDED to the topk matching queries and the joint decoder runs

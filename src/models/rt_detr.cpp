@@ -36,7 +36,8 @@ struct Config {
   int num_levels{3};
   int num_points{4};
   int imgsz{640};
-  int dense_o2m_k{0};  // RT-DETRv3 hierarchical dense supervision (0 = off)
+  int dense_o2m_k{0};        // RT-DETRv3 hierarchical dense supervision (0 = off)
+  bool discrete_sample{false};  // RT-DETRv2 round-to-nearest deformable sampling
 };
 
 struct BackboneSpec {
@@ -76,6 +77,7 @@ Config ReadConfig(const YAML::Node& c) {
   x.num_points = Get(c, "num_points", x.num_points);
   x.imgsz = Get(c, "imgsz", x.imgsz);
   x.dense_o2m_k = Get(c, "dense_o2m_k", x.dense_o2m_k);
+  x.discrete_sample = Get(c, "discrete_sample", x.discrete_sample);
   return x;
 }
 
@@ -223,7 +225,7 @@ class RtDetrImpl : public IModel {
     // Shared query selection + deformable decoder.
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
-                                  cfg.num_queries);
+                                  cfg.num_queries, cfg.discrete_sample);
     if (denoising_) {
       // RT-DETR-CDN: content embedding for denoising queries (+1 unused row).
       // Registered only for rt-detr-cdn, so plain rt-detr stays byte-identical.
@@ -371,8 +373,10 @@ constexpr SizeSpec kSizes[] = {
 constexpr const char* kVersions[] = {"rt-detr", "rt-detrv2", "rt-detrv3"};
 constexpr int kDenseV3 = 6;  // RT-DETRv3 one-to-many top-k per GT
 
-void RegisterOne(const std::string& name, const std::string& backbone, int hidden, int dense_k) {
-  auto build = [name, backbone, hidden, dense_k](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+void RegisterOne(const std::string& name, const std::string& backbone, int hidden, int dense_k,
+                 bool discrete) {
+  auto build = [name, backbone, hidden, dense_k, discrete](
+                   const YAML::Node& cfg) -> std::shared_ptr<IModel> {
     Config c = ReadConfig(cfg);
     if (!(cfg && cfg["backbone"])) {
       c.backbone = backbone;
@@ -382,6 +386,9 @@ void RegisterOne(const std::string& name, const std::string& backbone, int hidde
     }
     if (!(cfg && cfg["dense_o2m_k"])) {
       c.dense_o2m_k = dense_k;
+    }
+    if (!(cfg && cfg["discrete_sample"])) {
+      c.discrete_sample = discrete;
     }
     c.name = name;
     return std::make_shared<RtDetrImpl>(c);
@@ -401,10 +408,11 @@ void RegisterOne(const std::string& name, const std::string& backbone, int hidde
 void RegisterRtDetr() {
   for (const char* ver : kVersions) {
     const int dense_k = (std::string(ver) == "rt-detrv3") ? kDenseV3 : 0;
+    const bool discrete = (std::string(ver) == "rt-detrv2");  // discrete sampling = v2's
     for (const auto& sz : kSizes) {
-      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden, dense_k);
+      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden, dense_k, discrete);
     }
-    RegisterOne(ver, "r50", 256, dense_k);  // plain version name defaults to the -l config
+    RegisterOne(ver, "r50", 256, dense_k, discrete);  // plain version = the -l config
   }
 
   // RT-DETR-CDN: RT-DETR (the -l config) + contrastive denoising training. Like

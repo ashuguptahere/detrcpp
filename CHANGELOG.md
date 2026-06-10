@@ -19,6 +19,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   training-recipe alias (the -l config), not a size matrix. Inference is plain
   RT-DETR; rt-detr/v2/v3 stay byte-identical. Verified by an overfit test. This
   brings CDN denoising to every deformable family (dino, rf-detr, rt-detr).
+- **RT-DETRv2 discrete sampling.** A round-to-nearest variant of multi-scale
+  deformable attention (`MSDeformAttnCore(..., discrete=true)`): instead of
+  bilinear-interpolating the value at the continuous sampling location, it rounds
+  to the nearest pixel and gathers — a deployment-friendly op. Threaded through
+  `MSDeformAttn` / `BuildDeformDetectHead` as a default-`false` flag and a
+  `discrete_sample` config key, enabled only for the **rt-detrv2** matrix; bilinear
+  (rt-detr / rt-detrv3 / dino / rf-detr / deformable-detr) stays byte-identical.
+  Inference-affecting (it's the op, not a training branch). Verified that v2 differs
+  from v1 while v3 matches v1 at equal weights.
 
 ### Changed
 
