@@ -22,4 +22,7 @@ ModelMeta RfDetrMeta(const YAML::Node& cfg);
 std::shared_ptr<IModel> MakeRfDetrCdn(const YAML::Node& cfg);
 ModelMeta RfDetrCdnMeta(const YAML::Node& cfg);
 
+// Registers rf-detr (base), rf-detr-cdn, and the rf-detr-{n,s,m,l,x} size matrix.
+void RegisterRfDetr();
+
 }  // namespace detr::models

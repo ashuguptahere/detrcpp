@@ -184,4 +184,62 @@ ModelMeta RfDetrCdnMeta(const YAML::Node& cfg) {
   return m;
 }
 
+void RegisterRfDetr() {
+  Registry::Instance().Register("rf-detr", RfDetrMeta({}), &MakeRfDetr);
+  Registry::Instance().Register("rf-detr-cdn", RfDetrCdnMeta({}), &MakeRfDetrCdn);
+
+  // The RF-DETR detection size matrix (paper Table 7, arXiv:2511.09554). n/s/m/l use
+  // a DINOv2-S backbone (embed 384, depth 12, 6 heads); x uses DINOv2-B (embed 768,
+  // 12 heads, patch 20). NOTE: these configs are faithful, but the ViT backbone is
+  // still a structural placeholder (no DINOv2 register tokens / windowed attention),
+  // so the sizes TRAIN but do not yet load official RF-DETR weights — see
+  // VALIDATION.md ("registered-but-not-yet-validated").
+  struct RfSize {
+    const char* tag;
+    int vit_embed;
+    int vit_heads;
+    int patch;
+    int dec_layers;
+    int imgsz;
+  };
+  constexpr RfSize kSizes[] = {
+      {"n", 384, 6, 16, 2, 384}, {"s", 384, 6, 16, 3, 512}, {"m", 384, 6, 16, 4, 576},
+      {"l", 384, 6, 16, 4, 704}, {"x", 768, 12, 20, 5, 700},
+  };
+  for (const RfSize& sz : kSizes) {
+    const std::string name = std::string("rf-detr-") + sz.tag;
+    auto build = [sz, name](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+      Config c = ReadConfig(cfg);
+      if (!(cfg && cfg["vit_embed"])) {
+        c.vit_embed = sz.vit_embed;
+      }
+      if (!(cfg && cfg["vit_heads"])) {
+        c.vit_heads = sz.vit_heads;
+      }
+      if (!(cfg && cfg["vit_depth"])) {
+        c.vit_depth = 12;  // DINOv2-S and -B are both depth-12
+      }
+      if (!(cfg && cfg["patch"])) {
+        c.patch = sz.patch;
+      }
+      if (!(cfg && cfg["dec_layers"])) {
+        c.dec_layers = sz.dec_layers;
+      }
+      if (!(cfg && cfg["imgsz"])) {
+        c.imgsz = sz.imgsz;
+      }
+      return std::make_shared<RfDetrImpl>(c);
+    };
+    ModelMeta meta;
+    meta.name = name;
+    meta.imgsz = sz.imgsz;
+    meta.num_classes = 90;
+    meta.num_queries = 300;
+    meta.focal = true;
+    meta.license = "Apache-2.0";
+    meta.upstream = "https://github.com/roboflow/rf-detr";
+    Registry::Instance().Register(name, meta, std::move(build));
+  }
+}
+
 }  // namespace detr::models

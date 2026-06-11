@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **RF-DETR size matrix** — `rf-detr-{n,s,m,l,x}` registered with the official
+  per-variant configs (paper Table 7, arXiv:2511.09554): n/s/m/l use a DINOv2-S
+  backbone (embed 384, depth 12, 6 heads, patch 16) at resolution 384/512/576/704
+  with 2/3/4/4 decoder layers; x uses DINOv2-B (embed 768, 12 heads, patch 20) at
+  700 with 5 decoder layers; all 300 queries. The configs are faithful and the
+  sizes train, but the ViT backbone remains a structural placeholder (no DINOv2
+  register tokens / windowed attention), so they do **not** yet load official
+  RF-DETR weights — see VALIDATION.md.
 - **`VALIDATION.md`** documenting the official-weight COCO validations: per-model
   measured vs published mAP (`detr-r50` 0.419, `deformable-detr` 0.443,
   `conditional-detr` 0.407, `rt-detr-l` 0.530), the converted-weights paths + the
