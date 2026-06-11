@@ -54,7 +54,8 @@ int main(int argc, char** argv) {
   }
 
   detr::onnxexport::DetrArch arch;
-  arch.backbone = (model == "detr-r50" || model == "detr-r101")
+  arch.backbone = (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr" ||
+                   model == "dab-detr" || model == "deformable-detr" || model == "dino")
                       ? detr::onnxexport::Backbone::ResNet50
                       : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
@@ -69,6 +70,12 @@ int main(int argc, char** argv) {
   arch.num_classes = GetInt(cfg, "num_classes", arch.num_classes);
   arch.imgsz = GetInt(cfg, "imgsz", arch.imgsz);
   arch.backbone_width = GetInt(cfg, "backbone_width", arch.backbone_width);
+  arch.num_levels = GetInt(cfg, "num_levels", arch.num_levels);
+  arch.num_points = GetInt(cfg, "num_points", arch.num_points);
+  arch.vit_embed = GetInt(cfg, "vit_embed", arch.vit_embed);
+  arch.vit_depth = GetInt(cfg, "vit_depth", arch.vit_depth);
+  arch.vit_heads = GetInt(cfg, "vit_heads", arch.vit_heads);
+  arch.patch = GetInt(cfg, "patch", arch.patch);
   if (imgsz > 0) {
     arch.imgsz = imgsz;
   }
@@ -78,8 +85,16 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "weights '%s': %s\n", weights.c_str(), sd.error().message.c_str());
     return 1;
   }
-  if (auto r = detr::onnxexport::ExportDetr(arch, *sd, out); !r) {
-    std::fprintf(stderr, "export: %s\n", r.error().message.c_str());
+  auto exported =
+      (model == "conditional-detr") ? detr::onnxexport::ExportConditional(arch, *sd, out)
+      : (model == "dab-detr")       ? detr::onnxexport::ExportDab(arch, *sd, out)
+      : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *sd, out)
+      : (model == "dino")            ? detr::onnxexport::ExportDino(arch, *sd, out)
+      : (model.rfind("rt-detr", 0) == 0) ? detr::onnxexport::ExportRtDetr(arch, *sd, out)
+      : (model == "rf-detr")             ? detr::onnxexport::ExportRfDetr(arch, *sd, out)
+                                         : detr::onnxexport::ExportDetr(arch, *sd, out);
+  if (!exported) {
+    std::fprintf(stderr, "export: %s\n", exported.error().message.c_str());
     return 1;
   }
   std::printf("exported %s -> %s  (input images[1,3,%d,%d])\n", model.c_str(), out.c_str(),

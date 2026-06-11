@@ -1,0 +1,18 @@
+# Tiny DINO-CDN (DINO + contrastive denoising training) for fast smoke / CI.
+# Eval/inference is identical to dino; the dn_* knobs are train-side (DnConfig,
+# contrastive=true). DINO's defaults: larger box noise + label noise than DAB.
+model: dino-cdn
+hidden_dim: 64
+nheads: 8
+enc_layers: 1
+dec_layers: 2
+dim_feedforward: 128
+num_queries: 30
+num_classes: 3
+num_levels: 4
+num_points: 4
+imgsz: 64
+dn_number: 5
+box_noise_scale: 1.0
+label_noise_ratio: 0.5
+contrastive: true

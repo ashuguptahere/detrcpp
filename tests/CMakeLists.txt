@@ -9,6 +9,8 @@ add_executable(detr_unit_tests
   unit/test_dataset.cpp
   unit/test_assignment.cpp
   unit/test_coco_eval.cpp
+  unit/test_bytetrack.cpp
+  unit/test_legacy_pickle.cpp
 )
 
 target_link_libraries(detr_unit_tests
@@ -17,6 +19,7 @@ target_link_libraries(detr_unit_tests
     detr::weights
     detr::data
     detr::eval
+    detr::track
     GTest::gtest
     GTest::gtest_main
     detr_warnings
@@ -37,15 +40,22 @@ if(DETR_ENABLE_TORCH)
     unit/test_detr.cpp
     unit/test_detr_r50.cpp
     unit/test_deform_attn.cpp
+    unit/test_deform_attn_discrete.cpp
     unit/test_deformable_detr.cpp
     unit/test_rt_detr.cpp
+    unit/test_rt_detr_v3.cpp
+    unit/test_rt_detr_cdn.cpp
     unit/test_conditional_detr.cpp
     unit/test_dab_detr.cpp
+    unit/test_dn_detr.cpp
     unit/test_rf_detr.cpp
+    unit/test_rf_detr_cdn.cpp
     unit/test_dino.cpp
+    unit/test_dino_cdn.cpp
     unit/test_train.cpp
     unit/test_loader.cpp
     unit/test_io.cpp
+    unit/test_sahi.cpp
   )
   target_link_libraries(detr_unit_tests PRIVATE detr::torch detr::models detr::train)
 endif()

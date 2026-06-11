@@ -48,6 +48,7 @@
 #include "detr/eval/evaluator.hpp"
 #include "detr/infer/postprocess.hpp"
 #include "detr/infer/preprocess.hpp"
+#include "detr/infer/sahi.hpp"
 #include "detr/io/image.hpp"
 #include "detr/io/source.hpp"
 #include "detr/models/registry.hpp"
@@ -557,10 +558,16 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
       continue;
     }
     const detr::log::Stopwatch sw_inf;
-    auto input = detr::infer::PreprocessImage(*rgb, imgsz).to(torch_dev);
-    auto outputs = model->Forward(input);
-    auto dets =
-        detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
+    std::vector<detr::eval::DtBox> dets;
+    if (o.sahi) {
+      // Sliced inference: overlapping tiles + cross-tile NMS (small-object recall).
+      dets = detr::infer::SahiDetect(*model, *rgb, detr::infer::SahiConfig{});
+    } else {
+      auto input =
+          detr::infer::PreprocessImage(*rgb, imgsz, model->Meta().imagenet_norm).to(torch_dev);
+      auto outputs = model->Forward(input);
+      dets = detr::infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
+    }
     infer_ms += sw_inf.ElapsedMs();  // postprocess syncs the device, so this is real latency
     std::sort(dets.begin(), dets.end(),
               [](const auto& a, const auto& b) { return a.score > b.score; });

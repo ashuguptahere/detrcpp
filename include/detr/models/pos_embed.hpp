@@ -14,7 +14,8 @@
 namespace detr::models {
 
 // Returns a [B, d, h, w] sine/cosine positional encoding on |opts|'s device.
+// |temperature| is the frequency base (DETR uses 10000; DAB-DETR uses 20).
 torch::Tensor SinePos(std::int64_t b, std::int64_t d, std::int64_t h, std::int64_t w,
-                      const torch::TensorOptions& opts);
+                      const torch::TensorOptions& opts, double temperature = 10000.0);
 
 }  // namespace detr::models

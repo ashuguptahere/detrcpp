@@ -92,7 +92,7 @@ TORCH_MODULE(EncoderLayer);
 
 class DinoImpl : public IModel {
  public:
-  explicit DinoImpl(Config cfg) : cfg_(cfg) {
+  explicit DinoImpl(Config cfg, bool denoising = false) : cfg_(cfg), denoising_(denoising) {
     const int d = cfg.hidden_dim;
     backbone_ = register_module(
         "backbone", ResNet(std::vector<int>{3, 4, 6, 3}, /*bottleneck=*/true, /*dc5=*/false));
@@ -119,47 +119,41 @@ class DinoImpl : public IModel {
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
                                   cfg.num_queries);
+    if (denoising_) {
+      // DINO-CDN: per-class content embedding for denoising queries (+1 unused
+      // "unknown" row). Registered only for dino-cdn, so plain dino stays
+      // byte-identical (module tree / weight-load unchanged).
+      label_enc_ = register_module("label_enc", nn::Embedding(cfg.num_classes + 1, d));
+    }
   }
 
   Detections Forward(torch::Tensor images) override {
-    const int d = cfg_.hidden_dim;
-    const auto b = images.size(0);
-    auto feats = backbone_->forward_features(images);
+    auto enc = Encode(images);
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes);
+  }
 
-    std::vector<torch::Tensor> srcs;
-    for (int i = 0; i < 3; ++i) {
-      srcs.push_back(input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(
-          feats[static_cast<std::size_t>(i)]));
-    }
-    for (int i = 3; i < cfg_.num_levels; ++i) {
-      auto in = (i == 3) ? feats[2] : srcs.back();
-      srcs.push_back(
-          input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(in));
-    }
+  bool SupportsDenoising() const override { return denoising_; }
 
-    SpatialShapes shapes;
-    std::vector<torch::Tensor> src_flat, pos_flat;
-    for (int l = 0; l < cfg_.num_levels; ++l) {
-      auto s = srcs[static_cast<std::size_t>(l)];
-      shapes.emplace_back(s.size(2), s.size(3));
-      auto pos = SinePos(b, d, s.size(2), s.size(3), s.options()).flatten(2).transpose(1, 2);
-      src_flat.push_back(s.flatten(2).transpose(1, 2));
-      pos_flat.push_back(pos + level_embed_[l].view({1, 1, -1}));
+  Detections ForwardDenoise(torch::Tensor images, const DenoisingInput& dn_in,
+                            DenoisingOut& dn_out) override {
+    if (!denoising_ || !dn_in.active || !is_training()) {
+      dn_out = DenoisingOut{};
+      return Forward(images);
     }
-    auto src = torch::cat(src_flat, 1);
-    auto pos = torch::cat(pos_flat, 1);
-    auto enc_ref = EncoderRef(shapes, cfg_.num_levels, images.options()).expand({b, -1, -1, -1});
-
-    auto memory = src;
-    for (const auto& m : *encoder_) {
-      memory = m->as<EncoderLayerImpl>()->forward(memory, pos, enc_ref, shapes);
-    }
-    return RunDeformDetectHead(head_, memory, shapes);
+    auto enc = Encode(images);
+    // The deform head is batch-major [B, L, *]; the DenoisingInput is query-major.
+    DeformCdn cdn;
+    cdn.active = true;
+    cdn.num_dn = dn_in.num_dn;
+    cdn.dn_tgt = label_enc_->forward(dn_in.dn_labels.transpose(0, 1).contiguous());  // [B,num_dn,d]
+    cdn.dn_ref = dn_in.dn_ref.transpose(0, 1).contiguous();                          // [B,num_dn,4]
+    cdn.attn_mask = dn_in.attn_mask;
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes, cdn, dn_out);
   }
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = "dino";
+    m.name = denoising_ ? "dino-cdn" : "dino";
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
@@ -170,12 +164,52 @@ class DinoImpl : public IModel {
   }
 
  private:
+  struct Encoded {
+    torch::Tensor memory;  // [B, Sum(HW), d]
+    SpatialShapes shapes;
+  };
+
+  // Backbone + multi-scale input_proj + the deformable encoder (shared forward).
+  Encoded Encode(torch::Tensor images) {
+    const int d = cfg_.hidden_dim;
+    const auto b = images.size(0);
+    auto feats = backbone_->forward_features(images);
+    std::vector<torch::Tensor> srcs;
+    for (int i = 0; i < 3; ++i) {
+      srcs.push_back(input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(
+          feats[static_cast<std::size_t>(i)]));
+    }
+    for (int i = 3; i < cfg_.num_levels; ++i) {
+      auto in = (i == 3) ? feats[2] : srcs.back();
+      srcs.push_back(
+          input_proj_[static_cast<std::size_t>(i)]->as<nn::SequentialImpl>()->forward(in));
+    }
+    SpatialShapes shapes;
+    std::vector<torch::Tensor> src_flat, pos_flat;
+    for (int l = 0; l < cfg_.num_levels; ++l) {
+      auto s = srcs[static_cast<std::size_t>(l)];
+      shapes.emplace_back(s.size(2), s.size(3));
+      auto pos = SinePos(b, d, s.size(2), s.size(3), s.options()).flatten(2).transpose(1, 2);
+      src_flat.push_back(s.flatten(2).transpose(1, 2));
+      pos_flat.push_back(pos + level_embed_[l].view({1, 1, -1}));
+    }
+    auto memory = torch::cat(src_flat, 1);
+    auto pos = torch::cat(pos_flat, 1);
+    auto enc_ref = EncoderRef(shapes, cfg_.num_levels, images.options()).expand({b, -1, -1, -1});
+    for (const auto& m : *encoder_) {
+      memory = m->as<EncoderLayerImpl>()->forward(memory, pos, enc_ref, shapes);
+    }
+    return {memory, shapes};
+  }
+
   Config cfg_;
+  bool denoising_{false};
   ResNet backbone_{nullptr};
   nn::ModuleList input_proj_{nullptr};
   torch::Tensor level_embed_;
   nn::ModuleList encoder_{nullptr};
   DeformDetectHead head_;
+  nn::Embedding label_enc_{nullptr};
 };
 
 }  // namespace
@@ -194,6 +228,18 @@ ModelMeta DinoMeta(const YAML::Node& cfg) {
   m.focal = true;
   m.license = "Apache-2.0";
   m.upstream = "https://github.com/IDEA-Research/DINO";
+  return m;
+}
+
+// DINO-CDN: DINO + contrastive denoising training (a label_enc + train-only
+// ForwardDenoise); eval/inference is identical to plain DINO.
+std::shared_ptr<IModel> MakeDinoCdn(const YAML::Node& cfg) {
+  return std::make_shared<DinoImpl>(ReadConfig(cfg), /*denoising=*/true);
+}
+
+ModelMeta DinoCdnMeta(const YAML::Node& cfg) {
+  ModelMeta m = DinoMeta(cfg);
+  m.name = "dino-cdn";
   return m;
 }
 

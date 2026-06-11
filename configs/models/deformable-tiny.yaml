@@ -1,0 +1,14 @@
+# Tiny Deformable-DETR for fast ONNX parity / CI. Full ResNet-50 backbone (fixed
+# depth) + 4 deformable levels, but small head dims + imgsz. d=64 keeps GroupNorm
+# (32 groups) and the 8 heads valid; imgsz 64 -> levels 8/4/2/1 (Lv=85).
+model: deformable-detr
+hidden_dim: 64
+nheads: 8
+enc_layers: 2
+dec_layers: 2
+dim_feedforward: 128
+num_queries: 20
+num_classes: 91
+num_levels: 4
+num_points: 4
+imgsz: 64

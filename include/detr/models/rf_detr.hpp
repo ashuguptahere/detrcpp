@@ -18,4 +18,8 @@ namespace detr::models {
 std::shared_ptr<IModel> MakeRfDetr(const YAML::Node& cfg);
 ModelMeta RfDetrMeta(const YAML::Node& cfg);
 
+// RF-DETR + contrastive denoising (CDN) training. Inference is identical to RF-DETR.
+std::shared_ptr<IModel> MakeRfDetrCdn(const YAML::Node& cfg);
+ModelMeta RfDetrCdnMeta(const YAML::Node& cfg);
+
 }  // namespace detr::models

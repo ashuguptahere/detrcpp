@@ -1,0 +1,11 @@
+# Tiny Conditional-DETR for fast ONNX parity / CI. Full ResNet-50 backbone
+# (fixed depth) but small head dims + imgsz so a single forward is cheap.
+model: conditional-detr
+hidden_dim: 64
+nheads: 4
+enc_layers: 2
+dec_layers: 2
+dim_feedforward: 128
+num_queries: 20
+num_classes: 3
+imgsz: 64

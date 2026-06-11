@@ -57,7 +57,27 @@ void Trainer::OnEpochStart(int epoch) {
 float Trainer::TrainStep(const torch::Tensor& images, const TargetBatch& targets) {
   model_->train();
   opt_->zero_grad();
-  auto outputs = model_->Forward(images);
+
+  // DN-DETR: build the denoising group (noised GT queries + group-isolation mask)
+  // and run the joint forward; otherwise the plain forward. The matching path
+  // below is byte-identical to the non-DN case.
+  models::Detections outputs;
+  models::DenoisingOut dn_out;
+  std::vector<MatchIndices> dn_matches;
+  if (model_->SupportsDenoising() && cfg_.dn.dn_number > 0) {
+    auto [dn_in, layout] = MakeDenoising(targets, cfg_.dn, model_->Meta().num_classes,
+                                         model_->Meta().num_queries);
+    if (dn_in.active) {
+      dn_in.dn_ref = dn_in.dn_ref.to(images.device());
+      dn_in.dn_labels = dn_in.dn_labels.to(images.device());
+      dn_in.attn_mask = dn_in.attn_mask.to(images.device());
+      dn_matches = BuildDnMatches(layout);
+    }
+    outputs = model_->ForwardDenoise(images, dn_in, dn_out);
+  } else {
+    outputs = model_->Forward(images);
+  }
+
   auto matches = HungarianMatch(outputs, targets, cfg_.match);
   auto losses = criterion_.Compute(outputs, targets, matches);
   // Deep supervision: the same set loss on every intermediate decoder layer,
@@ -70,6 +90,34 @@ float Trainer::TrainStep(const torch::Tensor& images, const TargetBatch& targets
     aux.boxes = outputs.aux_boxes[i];
     const auto aux_matches = HungarianMatch(aux, targets, cfg_.match);
     losses.total = losses.total + criterion_.Compute(aux, targets, aux_matches).total;
+  }
+  // RT-DETRv3 dense supervision: an extra one-to-many loss (each GT supervises its
+  // top-k queries) on the final + aux outputs, for denser positive gradient.
+  const int o2m_k = model_->DenseSupervisionK();
+  if (o2m_k > 0) {
+    losses.total =
+        losses.total + criterion_.Compute(outputs, targets, OneToManyMatch(outputs, targets, o2m_k,
+                                                                            cfg_.match))
+                           .total;
+    for (std::size_t i = 0; i < outputs.aux_logits.size(); ++i) {
+      const models::Detections aux{outputs.aux_logits[i], outputs.aux_boxes[i], {}, {}};
+      losses.total =
+          losses.total + criterion_.Compute(aux, targets, OneToManyMatch(aux, targets, o2m_k,
+                                                                          cfg_.match))
+                             .total;
+    }
+  }
+
+  // DN reconstruction loss: the assignment is KNOWN (no Hungarian) and the same
+  // for every decoder layer, so reuse the criterion with the prebuilt matches.
+  if (dn_out.active && dn_out.dn_logits.size(1) > 0) {
+    const models::Detections d{dn_out.dn_logits, dn_out.dn_boxes, {}, {}};
+    losses.total = losses.total + cfg_.dn.weight * criterion_.Compute(d, targets, dn_matches).total;
+    for (std::size_t i = 0; i < dn_out.dn_aux_logits.size(); ++i) {
+      const models::Detections da{dn_out.dn_aux_logits[i], dn_out.dn_aux_boxes[i], {}, {}};
+      losses.total =
+          losses.total + cfg_.dn.weight * criterion_.Compute(da, targets, dn_matches).total;
+    }
   }
   losses.total.backward();
   if (cfg_.grad_clip > 0.0) {

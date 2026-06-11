@@ -36,6 +36,8 @@ struct Config {
   int num_levels{3};
   int num_points{4};
   int imgsz{640};
+  int dense_o2m_k{0};        // RT-DETRv3 hierarchical dense supervision (0 = off)
+  bool discrete_sample{false};  // RT-DETRv2 round-to-nearest deformable sampling
 };
 
 struct BackboneSpec {
@@ -74,6 +76,8 @@ Config ReadConfig(const YAML::Node& c) {
   x.num_levels = Get(c, "num_levels", x.num_levels);
   x.num_points = Get(c, "num_points", x.num_points);
   x.imgsz = Get(c, "imgsz", x.imgsz);
+  x.dense_o2m_k = Get(c, "dense_o2m_k", x.dense_o2m_k);
+  x.discrete_sample = Get(c, "discrete_sample", x.discrete_sample);
   return x;
 }
 
@@ -124,14 +128,14 @@ struct RepVggImpl : nn::Module {
 };
 TORCH_MODULE(RepVgg);
 
-// CSPRepLayer: two 1x1 branches, RepVGG bottlenecks on one, fused by a 1x1.
+// CSPRepLayer: two 1x1 branches, RepVGG bottlenecks on one, summed. RT-DETR's
+// hidden_channels == out_channels, so the optional fuse conv (conv3) is Identity
+// and is omitted — no conv3 weights exist in the official checkpoint.
 struct CSPRepImpl : nn::Module {
   ConvNorm conv1{nullptr};
   ConvNorm conv2{nullptr};
   nn::Sequential bottlenecks{nullptr};
-  ConvNorm conv3{nullptr};
-  bool identity_;
-  CSPRepImpl(int in, int out, int num_blocks) : identity_(in == out) {
+  CSPRepImpl(int in, int out, int num_blocks) {
     conv1 = register_module("conv1", ConvNorm(in, out, 1, 1, true));
     conv2 = register_module("conv2", ConvNorm(in, out, 1, 1, true));
     bottlenecks = nn::Sequential();
@@ -139,15 +143,9 @@ struct CSPRepImpl : nn::Module {
       bottlenecks->push_back(RepVgg(out));
     }
     register_module("bottlenecks", bottlenecks);
-    if (!identity_) {
-      conv3 = register_module("conv3", ConvNorm(out, out, 1, 1, true));
-    }
   }
   torch::Tensor forward(torch::Tensor x) {
-    auto x1 = bottlenecks->forward(conv1->forward(x));
-    auto x2 = conv2->forward(x);
-    auto out = x1 + x2;
-    return identity_ ? out : conv3->forward(out);
+    return bottlenecks->forward(conv1->forward(x)) + conv2->forward(x);
   }
 };
 TORCH_MODULE(CSPRep);
@@ -173,7 +171,7 @@ struct AIFILayerImpl : nn::Module {
     auto v = src.transpose(0, 1);
     auto attn = std::get<0>(self_attn->forward(q, k, v)).transpose(0, 1);
     src = norm1->forward(src + attn);
-    auto ff = linear2->forward(torch::relu(linear1->forward(src)));
+    auto ff = linear2->forward(torch::gelu(linear1->forward(src)));  // RT-DETR AIFI uses GELU
     return norm2->forward(src + ff);
   }
 };
@@ -181,18 +179,27 @@ TORCH_MODULE(AIFILayer);
 
 class RtDetrImpl : public IModel {
  public:
-  explicit RtDetrImpl(Config cfg) : cfg_(cfg) {
+  explicit RtDetrImpl(Config cfg, bool denoising = false) : cfg_(cfg), denoising_(denoising) {
     const int d = cfg.hidden_dim;
     auto spec = BackboneFor(cfg.backbone);
-    backbone_ = register_module("backbone", ResNet(spec.blocks, spec.bottleneck, /*dc5=*/false));
+    // RT-DETR uses a ResNet-D/VD backbone (deep stem + avg-pool downsample).
+    backbone_ = register_module("backbone", ResNet(spec.blocks, spec.bottleneck, /*dc5=*/false,
+                                                   /*deep_stem=*/true, /*avg_down=*/true));
     const auto backbone_ch = backbone_->feature_channels();  // {C3, C4, C5}
 
-    // input_proj: 1x1 conv + BN to hidden, per backbone level (C3,C4,C5).
+    // input_proj (HF encoder_input_proj): 1x1 conv + BN, per backbone level.
     input_proj_ = register_module("input_proj", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels; ++i) {
       input_proj_->push_back(nn::Sequential(
           nn::Conv2d(nn::Conv2dOptions(backbone_ch[static_cast<std::size_t>(i)], d, 1).bias(false)),
           nn::BatchNorm2d(d)));
+    }
+    // decoder_input_proj (HF): 1x1 conv + BN re-projecting each PAN output (d->d)
+    // before they form the deformable decoder's multi-scale memory.
+    decoder_input_proj_ = register_module("decoder_input_proj", nn::ModuleList());
+    for (int i = 0; i < cfg.num_levels; ++i) {
+      decoder_input_proj_->push_back(
+          nn::Sequential(nn::Conv2d(nn::Conv2dOptions(d, d, 1).bias(false)), nn::BatchNorm2d(d)));
     }
 
     // AIFI on the top level.
@@ -218,10 +225,46 @@ class RtDetrImpl : public IModel {
     // Shared query selection + deformable decoder.
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
-                                  cfg.num_queries);
+                                  cfg.num_queries, cfg.discrete_sample);
+    if (denoising_) {
+      // RT-DETR-CDN: content embedding for denoising queries (+1 unused row).
+      // Registered only for rt-detr-cdn, so plain rt-detr stays byte-identical.
+      label_enc_ = register_module("label_enc", nn::Embedding(cfg.num_classes + 1, d));
+    }
   }
 
   Detections Forward(torch::Tensor images) override {
+    auto enc = Encode(images);
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes);
+  }
+
+  bool SupportsDenoising() const override { return denoising_; }
+
+  Detections ForwardDenoise(torch::Tensor images, const DenoisingInput& dn_in,
+                            DenoisingOut& dn_out) override {
+    if (!denoising_ || !dn_in.active || !is_training()) {
+      dn_out = DenoisingOut{};
+      return Forward(images);
+    }
+    auto enc = Encode(images);
+    DeformCdn cdn;
+    cdn.active = true;
+    cdn.num_dn = dn_in.num_dn;
+    cdn.dn_tgt = label_enc_->forward(dn_in.dn_labels.transpose(0, 1).contiguous());  // [B,num_dn,d]
+    cdn.dn_ref = dn_in.dn_ref.transpose(0, 1).contiguous();                          // [B,num_dn,4]
+    cdn.attn_mask = dn_in.attn_mask;
+    return RunDeformDetectHead(head_, enc.memory, enc.shapes, cdn, dn_out);
+  }
+
+ private:
+  struct Encoded {
+    torch::Tensor memory;  // [B, Sum(HW), d]
+    SpatialShapes shapes;
+  };
+
+  // Backbone + input_proj + AIFI + CCFM (FPN/PAN) + decoder_input_proj -> the
+  // flattened multi-scale memory the deformable head consumes (shared forward).
+  Encoded Encode(torch::Tensor images) {
     const int d = cfg_.hidden_dim;
     const auto b = images.size(0);
     auto feats = backbone_->forward_features(images);  // {C3, C4, C5}
@@ -270,38 +313,48 @@ class RtDetrImpl : public IModel {
       outs.push_back(pan_blocks_[static_cast<std::size_t>(idx)]->as<CSPRepImpl>()->forward(fused));
     }
 
-    // Flatten the 3 encoder feature maps into a single memory sequence.
+    // decoder_input_proj, then flatten the 3 maps into one memory sequence.
     SpatialShapes shapes;
     std::vector<torch::Tensor> mem;
-    for (const auto& o : outs) {
+    for (std::size_t i = 0; i < outs.size(); ++i) {
+      auto o = decoder_input_proj_[i]->as<nn::SequentialImpl>()->forward(outs[i]);
       shapes.emplace_back(o.size(2), o.size(3));
       mem.push_back(o.flatten(2).transpose(1, 2));  // [B, hw, d]
     }
-    return RunDeformDetectHead(head_, torch::cat(mem, 1), shapes);
+    return {torch::cat(mem, 1), shapes};
   }
+
+ public:
 
   ModelMeta Meta() const override {
     ModelMeta m;
-    m.name = cfg_.name;
+    m.name = denoising_ ? "rt-detr-cdn" : cfg_.name;
     m.imgsz = cfg_.imgsz;
     m.num_classes = cfg_.num_classes;
     m.num_queries = cfg_.num_queries;
     m.focal = true;
+    m.imagenet_norm = false;  // RT-DETR trains on raw [0,1], square resize
     m.license = "Apache-2.0";
     m.upstream = "https://github.com/lyuwenyu/RT-DETR";
     return m;
   }
 
+  // RT-DETRv3: one-to-many dense positive supervision (k>0 only for the v3 matrix).
+  int DenseSupervisionK() const override { return cfg_.dense_o2m_k; }
+
  private:
   Config cfg_;
+  bool denoising_{false};
   ResNet backbone_{nullptr};
   nn::ModuleList input_proj_{nullptr};
+  nn::ModuleList decoder_input_proj_{nullptr};
   nn::ModuleList aifi_{nullptr};
   nn::ModuleList lateral_convs_{nullptr};
   nn::ModuleList fpn_blocks_{nullptr};
   nn::ModuleList downsample_convs_{nullptr};
   nn::ModuleList pan_blocks_{nullptr};
   DeformDetectHead head_;
+  nn::Embedding label_enc_{nullptr};
 };
 
 // Sizes (n/s/m/l/x) = backbone depth + width. RT-DETR officially ships s/m/l/x
@@ -314,18 +367,28 @@ struct SizeSpec {
 constexpr SizeSpec kSizes[] = {
     {"n", "r18", 128}, {"s", "r18", 256}, {"m", "r34", 256}, {"l", "r50", 256}, {"x", "r101", 256},
 };
-// v1/v2/v3 share this inference architecture; v2/v3's published gains are largely
-// training recipes (discrete sampling, dense supervision) — tracked follow-ups.
+// v1/v2/v3 share this inference architecture; v3's published gain is largely a
+// training recipe — hierarchical dense positive supervision (one-to-many matching),
+// enabled here via dense_o2m_k. (v2's discrete sampling is a tracked follow-up.)
 constexpr const char* kVersions[] = {"rt-detr", "rt-detrv2", "rt-detrv3"};
+constexpr int kDenseV3 = 6;  // RT-DETRv3 one-to-many top-k per GT
 
-void RegisterOne(const std::string& name, const std::string& backbone, int hidden) {
-  auto build = [name, backbone, hidden](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+void RegisterOne(const std::string& name, const std::string& backbone, int hidden, int dense_k,
+                 bool discrete) {
+  auto build = [name, backbone, hidden, dense_k, discrete](
+                   const YAML::Node& cfg) -> std::shared_ptr<IModel> {
     Config c = ReadConfig(cfg);
     if (!(cfg && cfg["backbone"])) {
       c.backbone = backbone;
     }
     if (!(cfg && cfg["hidden_dim"])) {
       c.hidden_dim = hidden;
+    }
+    if (!(cfg && cfg["dense_o2m_k"])) {
+      c.dense_o2m_k = dense_k;
+    }
+    if (!(cfg && cfg["discrete_sample"])) {
+      c.discrete_sample = discrete;
     }
     c.name = name;
     return std::make_shared<RtDetrImpl>(c);
@@ -344,11 +407,36 @@ void RegisterOne(const std::string& name, const std::string& backbone, int hidde
 
 void RegisterRtDetr() {
   for (const char* ver : kVersions) {
+    const int dense_k = (std::string(ver) == "rt-detrv3") ? kDenseV3 : 0;
+    const bool discrete = (std::string(ver) == "rt-detrv2");  // discrete sampling = v2's
     for (const auto& sz : kSizes) {
-      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden);
+      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden, dense_k, discrete);
     }
-    RegisterOne(ver, "r50", 256);  // plain version name defaults to the -l config
+    RegisterOne(ver, "r50", 256, dense_k, discrete);  // plain version = the -l config
   }
+
+  // RT-DETR-CDN: RT-DETR (the -l config) + contrastive denoising training. Like
+  // the other -cdn variants, a single training-recipe alias (not a size matrix).
+  auto cdn_build = [](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+    Config c = ReadConfig(cfg);
+    if (!(cfg && cfg["backbone"])) {
+      c.backbone = "r50";
+    }
+    if (!(cfg && cfg["hidden_dim"])) {
+      c.hidden_dim = 256;
+    }
+    c.name = "rt-detr-cdn";
+    return std::make_shared<RtDetrImpl>(c, /*denoising=*/true);
+  };
+  ModelMeta cdn_meta;
+  cdn_meta.name = "rt-detr-cdn";
+  cdn_meta.num_classes = 80;
+  cdn_meta.num_queries = 300;
+  cdn_meta.focal = true;
+  cdn_meta.imagenet_norm = false;
+  cdn_meta.license = "Apache-2.0";
+  cdn_meta.upstream = "https://github.com/lyuwenyu/RT-DETR";
+  Registry::Instance().Register("rt-detr-cdn", cdn_meta, std::move(cdn_build));
 }
 
 }  // namespace detr::models

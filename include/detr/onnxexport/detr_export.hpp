@@ -31,6 +31,12 @@ struct DetrArch {
   int num_classes{91};
   int imgsz{640};
   int backbone_width{64};                        // Compact backbone only
+  int num_levels{4};                             // deformable: feature levels
+  int num_points{4};                             // deformable: sampling points
+  int vit_embed{256};                            // rf-detr: ViT embedding dim
+  int vit_depth{4};                              // rf-detr: ViT transformer blocks
+  int vit_heads{8};                              // rf-detr: ViT attention heads
+  int patch{16};                                 // rf-detr: ViT patch size
   std::array<int, 4> resnet_blocks{3, 4, 6, 3};  // ResNet50; {3,4,23,3} = R101
 };
 
@@ -39,5 +45,42 @@ struct DetrArch {
 // Outputs: "logits" [1,num_queries,num_classes+1], "boxes" [1,num_queries,4].
 core::Result<void> ExportDetr(const DetrArch& arch, const weights::StateDict& weights,
                               const std::string& path);
+
+// Conditional-DETR (focal): decoupled self-attention + conditional cross-
+// attention with a fixed sine reference. Outputs: "logits" [1,num_queries,
+// num_classes] (sigmoid/focal, no no-object slot), "boxes" [1,num_queries,4].
+core::Result<void> ExportConditional(const DetrArch& arch, const weights::StateDict& weights,
+                                     const std::string& path);
+
+// DAB-DETR (focal): conditional decoder with 4D dynamic anchors, width/height-
+// modulated sine queries, PReLU FFNs, and iterative box refinement. Outputs:
+// "logits" [1,num_queries,num_classes], "boxes" [1,num_queries,4].
+core::Result<void> ExportDab(const DetrArch& arch, const weights::StateDict& weights,
+                             const std::string& path);
+
+// Deformable-DETR (focal): multi-scale deformable attention (GridSample-based) in
+// both a deformable encoder and decoder, a 4-level GroupNorm input projection, and
+// a fixed query reference. Outputs: "logits" [1,num_queries,num_classes], "boxes"
+// [1,num_queries,4].
+core::Result<void> ExportDeformable(const DetrArch& arch, const weights::StateDict& weights,
+                                    const std::string& path);
+
+// DINO (focal): deformable encoder + a topk query-selection deformable decoder
+// with iterative refinement (the shared deform head). Outputs: "logits"
+// [1,num_queries,num_classes], "boxes" [1,num_queries,4].
+core::Result<void> ExportDino(const DetrArch& arch, const weights::StateDict& weights,
+                              const std::string& path);
+
+// RT-DETR (focal): ResNet-D/VD backbone, a hybrid encoder (AIFI transformer on the
+// top level + a CCFM conv FPN/PAN), and the topk deformable decoder head. Outputs:
+// "logits" [1,num_queries,num_classes], "boxes" [1,num_queries,4].
+core::Result<void> ExportRtDetr(const DetrArch& arch, const weights::StateDict& weights,
+                                const std::string& path);
+
+// RF-DETR (focal): a ViT (DINOv2-style) backbone + multi-scale projection + the
+// topk deformable decoder head. Outputs: "logits" [1,num_queries,num_classes],
+// "boxes" [1,num_queries,4].
+core::Result<void> ExportRfDetr(const DetrArch& arch, const weights::StateDict& weights,
+                                const std::string& path);
 
 }  // namespace detr::onnxexport

@@ -36,4 +36,11 @@ std::vector<MatchIndices> HungarianMatch(const models::Detections& outputs,
                                          const TargetBatch& targets,
                                          const MatchWeights& weights = {});
 
+// One-to-many assignment for RT-DETRv3 hierarchical dense positive supervision:
+// each ground-truth object keeps its |k| lowest-cost queries (so every GT appears
+// k times in the returned tgt indices). No gradients flow through matching.
+std::vector<MatchIndices> OneToManyMatch(const models::Detections& outputs,
+                                         const TargetBatch& targets, int k,
+                                         const MatchWeights& weights = {});
+
 }  // namespace detr::train

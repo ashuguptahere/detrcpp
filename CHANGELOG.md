@@ -11,10 +11,300 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **`VALIDATION.md`** documenting the official-weight COCO validations: per-model
+  measured vs published mAP (`detr-r50` 0.419, `deformable-detr` 0.443,
+  `conditional-detr` 0.407, `rt-detr-l` 0.530), the converted-weights paths + the
+  Hugging Face sources and `/tmp` converters that produce them, the per-model eval
+  recipes (the DETR family vs RT-DETR flag differences), and which registered
+  variants are not yet validated (`rt-detr-{n,s,m,x}`, the v2/v3 matrices, RF-DETR).
+
+### Changed
+- README validation numbers refreshed to the re-measured figures (was the pre-eval-
+  fidelity 41.5 / 43.8 / 40.3; now 0.419 / 0.443 / 0.407 plus `rt-detr-l` 0.530), and
+  the legacy-`.pth` load path for `detr-r50` is called out. See `VALIDATION.md`.
+
+### Fixed
+
+## [0.13.1] - 2026-06-10
+
+### Added
 
 ### Changed
 
 ### Fixed
+- **Legacy `.pth` unpickler now loads real-world checkpoints.** The initial version
+  only handled the synthetic round-trip; testing against a real legacy DETR
+  checkpoint surfaced constructs torch actually emits, now all supported: Python-2
+  `str` keys (`SHORT_BINSTRING`/`BINSTRING`), integer storage ids (normalized to
+  their decimal string to match the storage-key list), the `_rebuild_tensor` (v1)
+  global, and — for training checkpoints — `BINFLOAT`/`NEWOBJ` (optimizer floats /
+  argparse namespaces, parsed as inert) plus unwrapping a state_dict nested under
+  `model`/`state_dict`. Per-storage dtypes are now recorded at every `persistent_id`
+  (so the storage walk never lacks a size, even for shared/optimizer storages),
+  making an unrecognized file fail cleanly with `Unsupported` instead of erroring
+  mid-walk. **Verified end-to-end:** loading the real legacy `detr-r50` checkpoint
+  reports 458 tensors, 0 missing / 0 unexpected / 0 shape-mismatched, and the model
+  detects correctly (cats @ 0.998). A gated `DETR_LEGACY_PTH` test exercises a real
+  file when present (CI-skipped otherwise).
+
+## [0.13.0] - 2026-06-10
+
+### Added
+- **RT-DETR-CDN training recipe.** A new `rt-detr-cdn` model — RT-DETR (ResNet-VD +
+  hybrid AIFI/CCFM encoder + shared deformable head) with contrastive denoising
+  training, reusing the shared deform-head CDN entry + the contrastive noise
+  generator (a `denoising` flag + `label_enc` + an `Encode`/`Forward` split +
+  `ForwardDenoise`, mirroring dino-cdn/rf-detr-cdn; no new infra). A single
+  training-recipe alias (the -l config), not a size matrix. Inference is plain
+  RT-DETR; rt-detr/v2/v3 stay byte-identical. Verified by an overfit test. This
+  brings CDN denoising to every deformable family (dino, rf-detr, rt-detr).
+- **RT-DETRv2 discrete sampling.** A round-to-nearest variant of multi-scale
+  deformable attention (`MSDeformAttnCore(..., discrete=true)`): instead of
+  bilinear-interpolating the value at the continuous sampling location, it rounds
+  to the nearest pixel and gathers — a deployment-friendly op. Threaded through
+  `MSDeformAttn` / `BuildDeformDetectHead` as a default-`false` flag and a
+  `discrete_sample` config key, enabled only for the **rt-detrv2** matrix; bilinear
+  (rt-detr / rt-detrv3 / dino / rf-detr / deformable-detr) stays byte-identical.
+  Inference-affecting (it's the op, not a training branch). Verified that v2 differs
+  from v1 while v3 matches v1 at equal weights.
+- **ByteTrack multi-object tracker** (`detr::track`, new torch-free `detr_track`
+  lib). An 8-dim constant-velocity Kalman filter (height-scaled noise, a 4×4 SPD
+  Cholesky solve in the update) per track + two-stage IoU association — high-score
+  detections first, then low-score detections against the leftovers — reusing
+  `core::LinearSumAssignment`, with a coast-then-reap lifecycle (lost tracks coast
+  up to `track_buffer` frames, re-associating on reappearance). Boxes are
+  absolute-pixel xyxy; the IoU formula matches `box_ops::BoxIou`. Builds in the
+  lightweight (no-LibTorch) config. Tested: stable id on a moving box, id
+  persistence through an occlusion gap, stage-2 low-score recovery, the spawn gate,
+  buffer expiry, and Kalman convergence.
+- **SAHI sliced inference** (`detr::infer::SahiDetect`, `--sahi`). Slices a large
+  image into overlapping tiles (`ComputeSlices`, last tile flush to the border),
+  detects per tile, shifts each tile's boxes back to full-image coordinates, and
+  merges across tiles with the repo's first NMS (`NmsPerClass`, class-aware, built
+  on `train::BoxIou`; an optional NMM mode folds seam-straddling boxes). A
+  `TileDetector` callback decouples the tiling from the model (a model overload
+  runs preprocess→Forward→postprocess on the model's device); output is the same
+  `DtBox` xywh as the single-pass path, so the predict draw/save tail is reused via
+  one `--sahi` branch. Improves small-object recall on high-resolution inputs.
+- **Legacy (pre-1.6) `.pth` unpickler** (`weights::LoadLegacyPth`, pure C++). Old
+  `torch.save` checkpoints are a raw protocol-2 pickle of an `OrderedDict[str ->
+  Tensor]` followed by length-prefixed little-endian storages — a format LibTorch's
+  C++ API cannot read. A minimal pickle VM (~30 opcodes) recognizes only the globals
+  a state_dict emits (`_rebuild_tensor_v2`, `_rebuild_parameter`, `OrderedDict`, the
+  storage classes), never dispatches an unknown global (no code execution; unknown
+  reduces become inert), and walks the storage section to slice each tensor's bytes
+  into a `RawTensor`. It returns **Unsupported on anything exotic** (unknown global,
+  big-endian, non-contiguous stride) rather than a wrong tensor — strictly better
+  than the previous blanket rejection, and the `loaded==0` guard remains the safety
+  net. Wired into the existing `0x80` legacy-magic branch in `LoadPth`, so old `.pth`
+  files now load with no CLI change. Torch-free (`detr_weights`), so it builds in the
+  lightweight config; tested via an in-test legacy writer round-trip + truncation /
+  unknown-global / big-endian adversarial cases.
+
+### Changed
+
+### Fixed
+
+## [0.12.1] - 2026-06-10
+
+### Added
+
+### Changed
+
+### Fixed
+- **Deterministic overfit tests.** The denoising / dense-supervision overfit-a-tiny-
+  batch tests (dn-detr, dino-cdn, rf-detr-cdn, rt-detrv3) seeded via `tc.seed=0`,
+  which is the "no seed" sentinel — so model init + the random batch were unseeded
+  and the loss-threshold assert was flaky under parallel CI (it tripped once for
+  rt-detrv3, whose larger dense-supervision loss converges slower). They now call
+  `torch::manual_seed(0)` before building the model, making each trajectory
+  reproducible; rt-detrv3's loop is lengthened to 60 steps to clear the threshold
+  with margin.
+
+## [0.12.0] - 2026-06-10
+
+### Added
+- **RT-DETRv3 dense supervision training recipe.** Hierarchical dense positive
+  supervision: a new `OneToManyMatch` assigns each ground-truth its top-k
+  lowest-cost queries (reusing the Hungarian cost matrix), and the trainer adds
+  that one-to-many loss (on the final + aux outputs) for denser positive gradient.
+  Gated by a new `IModel::DenseSupervisionK()` virtual — set to k=6 only for the
+  `rt-detrv3` registry matrix (rt-detr / rt-detrv2 stay at 0, so they're
+  unchanged). Train-only; inference is unaffected. Verified by a one-to-many
+  property test, the per-version gating, a training step, and an overfit test.
+
+### Changed
+
+### Fixed
+
+## [0.11.0] - 2026-06-10
+
+### Added
+- **DINO-CDN (contrastive denoising) training.** A new `dino-cdn` model (the DINO
+  network plus a `label_enc`) that extends the DN-DETR denoising infra with
+  **contrastive** queries: per GT, a *positive* (small box noise) query that
+  reconstructs the GT and a *negative* (large box noise, `rand_part ∈ [1,2)`) query
+  that must predict **no-object** — taught to reject low-quality anchors. The
+  contrastive layout (`DnConfig.contrastive`) packs each group as `[positive_T |
+  negative_T]` with stride `2·T`; `BuildDnMatches` matches only positives, so the
+  criterion gives negatives the background loss (no box loss). The shared deform
+  head gained an optional CDN entry (prepends the denoising queries + an additive
+  self-attention mask, splits the outputs) and the deform decoder layer an optional
+  self-attn mask — both default-off, so rt-detr/rf-detr/dino-plain/deformable-detr
+  stay byte-identical (regression-verified). Inference is plain DINO. Verified by a
+  CDN-layout property test + an overfit-a-tiny-batch test.
+- **RF-DETR-CDN training recipe.** A new `rf-detr-cdn` model — RF-DETR (ViT backbone)
+  with contrastive denoising training, reusing the shared deformable head's CDN entry
+  and the contrastive noise generator wholesale (just a `denoising` flag + `label_enc`
+  + `ForwardDenoise`, mirroring dino-cdn; no new infra). Inference is plain RF-DETR;
+  plain rf-detr byte-identical. Completes the denoising-training trilogy
+  (DN-DETR → DINO-CDN → RF-DETR-CDN). Verified by an overfit-a-tiny-batch test.
+
+### Changed
+
+### Fixed
+
+## [0.10.0] - 2026-06-10
+
+### Added
+- **DN-DETR denoising training.** A new `dn-detr` model (the DAB-DETR network plus
+  a `label_enc`) and a train-only denoising recipe: per image, `dn_number` groups
+  of denoising queries whose anchor is a noised GT box and whose content embeds a
+  noised GT label are run through the decoder alongside the matching queries, with
+  a group-isolation self-attention mask (matching ↛ dn, dn group i ↛ group j ↛
+  matching). The denoising part trains with a **reconstruction loss against the
+  clean GT** (a known assignment, no Hungarian — reuses `SetCriterion`); the
+  matching part is unchanged. New `train/denoising.{hpp,cpp}` (noise + mask +
+  known `MatchIndices`); `IModel` gained tensor-only `DenoisingInput`/
+  `DenoisingOut` + `SupportsDenoising()`/`ForwardDenoise()` (default no-ops);
+  `DecoupledMultiHeadAttn`/`CondDecoderLayer` gained an optional self-attn mask
+  (default none → conditional/dab byte-identical). Inference is the plain DAB
+  forward (denoising is train-only). Verified by an overfit-a-tiny-batch test.
+
+### Changed
+
+### Fixed
+
+## [0.9.0] - 2026-06-10
+
+### Added
+- **ONNX export for rf-detr** — completes ONNX export for the whole model zoo.
+  `ExportRfDetr` reconstructs the **ViT backbone** in pure ONNX (patch-embed conv +
+  a 2D sin-cos position + pre-norm transformer blocks with a GELU FFN + a final
+  LayerNorm), then a multi-scale GroupNorm projection and the shared topk deform
+  head. The decomposed `Mha` gained dim/head overrides so the ViT can run at
+  `vit_embed`/`vit_heads` independent of the head dim. Verified at **max|Δ| ≈ 2e-6
+  vs LibTorch** (`configs/models/rf-detr-tiny.yaml`, with vit_embed≠hidden_dim).
+  All nine model families now export to ONNX (~5e-7–4e-6 parity).
+
+### Changed
+
+### Fixed
+
+## [0.8.0] - 2026-06-10
+
+### Added
+- **ONNX export for rt-detr** (the real-time model). `ExportRtDetr` reconstructs the
+  whole stack in pure ONNX: a **ResNet-D/VD backbone** (deep 3×(3×3) stem + AvgPool
+  downsample shortcuts), the **hybrid encoder** (an AIFI transformer on the top level
+  with a GELU FFN — emitted via `Erf` — and a 2D sin-cos position, then a **CCFM**
+  conv FPN/PAN of ConvNorm/RepVgg/CSPRep with nearest-2× `Resize`), a
+  `decoder_input_proj`, and the shared topk deformable head. New emit helpers:
+  AvgPool, Resize, SiLU, GELU, ConvNorm/RepVgg/CSPRep, ResNet-VD stages, SinCos2d.
+  Verified at **max|Δ| ≈ 7e-7 vs LibTorch** (`configs/models/rt-detr-tiny.yaml`).
+
+### Changed
+
+### Fixed
+
+## [0.7.0] - 2026-06-10
+
+### Added
+- **ONNX export for dino** — completes the deformable query-selection path. Reuses
+  the deformable encoder (MSDeformAttn) and adds the shared **deform head**: grid-
+  center anchors baked as a constant, **topk query selection** (ReduceMax → TopK →
+  Gather over the encoder classification), and a 4D-reference deformable decoder
+  with iterative box refinement. New emit helpers: ReduceMax, TopK, Gather, Expand.
+  Verified at **max|Δ| ≈ 4e-6 vs LibTorch** (`configs/models/dino-tiny.yaml`). Six
+  deformable models now share the GridSample MSDeformAttn + topk head (rt-detr/rf
+  remain, needing ResNet-VD+CCFM / ViT backbone emit).
+
+### Changed
+
+### Fixed
+
+## [0.6.0] - 2026-06-10
+
+### Added
+- **ONNX export for deformable-detr** — the deformable tier. A hand-written
+  `ExportDeformable` reconstructs **multi-scale deformable attention** in pure ONNX:
+  per-level **GridSample** (bilinear, zeros-pad, align_corners=0) at `2·loc−1`,
+  weighted by the softmaxed attention, in both the 6-layer deformable encoder and
+  decoder. Adds a manual **GroupNorm** (via `InstanceNormalization`, opset-17-safe)
+  for the 4-level input projection, a multi-tap `ResNet50Stages` (C3/C4/C5), and
+  bakes the encoder pos/reference grid + fixed query reference as constants.
+  Verified at **max|Δ| ≈ 8e-7 vs LibTorch** (`configs/models/deformable-tiny.yaml`);
+  the GridSample MSDeformAttn helper is reusable for dino/rt-detr.
+
+### Changed
+
+### Fixed
+
+## [0.5.0] - 2026-06-10
+
+### Added
+- **ONNX export for conditional-detr** (focal). A new hand-written `ExportConditional`
+  mirrors the conditional decoder op-for-op: decoupled self-attention, conditional
+  cross-attention (query content + sine concatenated head-wise), and the fixed sine
+  reference (precomputed exactly from the learned query embeddings). Verified at
+  **max|Δ| ≈ 5e-7 vs LibTorch** via the parity harness (`configs/models/conditional-
+  tiny.yaml`). Wired into `detrcpp-export` and `detr-parity`.
+- **ONNX export for dab-detr** (focal). `ExportDab` mirrors the DAB decoder
+  op-for-op including the parts conditional doesn't have: 4D dynamic anchors with
+  iterative box refinement (`bbox_embed` on the LayerNorm'd state for the box, on
+  the raw state for the next reference), the `SineEmbed4D` interleave emitted as
+  dynamic Slice/Sin/Cos ops, width/height-modulated sine queries, PReLU FFNs, the
+  per-layer encoder `query_scale` modulation, and sine temperature 20. Verified at
+  **max|Δ| ≈ 5e-7 vs LibTorch** (`configs/models/dab-tiny.yaml`).
+
+### Changed
+- ONNX emit: shared weights (per-layer-applied MLPs like `bbox_embed`,
+  `encoder_query_scale`) are added as an initializer once; the parity runner runs
+  the graph with optimizations disabled (purest check + sidesteps an ORT fusion
+  bug on Slice-heavy graphs).
+
+### Fixed
+
+## [0.4.0] - 2026-06-10
+
+### Added
+- **rt-detr validated against official weights** — the HF PekingU/rtdetr_r50vd
+  checkpoint loads 0-missing/0-unexpected and reproduces real COCO mAP
+  (**mAP50-95 0.530** on full val; official 0.534), the 5th model validated and
+  the first with no debug iterations. Adds a **ResNet-D/VD backbone** (gated
+  `deep_stem` + `avg_down` on `ResNetImpl`, default off so every other model is
+  byte-identical), drops CSPRep's `conv3` (HF's is Identity), switches the AIFI
+  FFN to GELU, and adds `decoder_input_proj`.
+- `ModelMeta::imagenet_norm` (default true) + a `normalize` flag on
+  `PreprocessImage`: RT-DETR runs on raw [0,1] inputs with a square (non-aspect)
+  eval resize. DETR-family preprocessing is unchanged.
+
+### Changed
+
+### Fixed
+
+## [0.3.0] - 2026-06-10
+
+### Added
+- **dab-detr validated against official weights** — the HF
+  IDEA-Research/dab-detr-resnet-50 checkpoint loads 0-missing/0-unexpected and
+  reproduces real COCO mAP (**mAP50-95 0.419** on full val; official 0.409), the
+  4th model validated end-to-end. Aligned the architecture with official DAB:
+  PReLU FFN (encoder + decoder), an encoder `query_scale`, a decoder LayerNorm,
+  the bbox-head-on-normed-state split, and **sine temperature 20** (DAB's
+  signature, vs DETR's 10000). `SinePos` gained a `temperature` param (default
+  10000), so detr/r50/r101/dc5/dino are byte-identical; conditional-detr's
+  shared decoder layer stays relu by default (regression-verified).
 
 ## [0.2.5] - 2026-06-10
 

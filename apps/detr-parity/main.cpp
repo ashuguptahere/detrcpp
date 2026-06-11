@@ -30,8 +30,10 @@ int GetInt(const YAML::Node& c, const char* key, int def) {
 detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   detr::onnxexport::DetrArch a;
   const std::string model = (c && c["model"]) ? c["model"].as<std::string>() : "detr";
-  a.backbone = (model == "detr-r50" || model == "detr-r101") ? detr::onnxexport::Backbone::ResNet50
-                                                             : detr::onnxexport::Backbone::Compact;
+  a.backbone = (model == "detr-r50" || model == "detr-r101" || model == "conditional-detr" ||
+                model == "dab-detr" || model == "deformable-detr" || model == "dino")
+                   ? detr::onnxexport::Backbone::ResNet50
+                   : detr::onnxexport::Backbone::Compact;
   if (model == "detr-r101") {
     a.resnet_blocks = {3, 4, 23, 3};
   }
@@ -44,6 +46,12 @@ detr::onnxexport::DetrArch ArchFromYaml(const YAML::Node& c) {
   a.num_classes = GetInt(c, "num_classes", a.num_classes);
   a.imgsz = GetInt(c, "imgsz", a.imgsz);
   a.backbone_width = GetInt(c, "backbone_width", a.backbone_width);
+  a.num_levels = GetInt(c, "num_levels", a.num_levels);
+  a.num_points = GetInt(c, "num_points", a.num_points);
+  a.vit_embed = GetInt(c, "vit_embed", a.vit_embed);
+  a.vit_depth = GetInt(c, "vit_depth", a.vit_depth);
+  a.vit_heads = GetInt(c, "vit_heads", a.vit_heads);
+  a.patch = GetInt(c, "patch", a.patch);
   return a;
 }
 
@@ -74,6 +82,7 @@ int main(int argc, char** argv) {
 
   const YAML::Node cfg = YAML::LoadFile(config);
   const auto arch = ArchFromYaml(cfg);
+  const std::string model = (cfg && cfg["model"]) ? cfg["model"].as<std::string>() : "detr";
 
   auto weights = detr::weights::LoadSafetensors(dir + "/weights.safetensors");
   if (!weights) {
@@ -81,8 +90,16 @@ int main(int argc, char** argv) {
     return 1;
   }
   const std::string onnx_path = dir + "/model.onnx";
-  if (auto r = detr::onnxexport::ExportDetr(arch, *weights, onnx_path); !r) {
-    std::fprintf(stderr, "export: %s\n", r.error().message.c_str());
+  auto export_r =
+      (model == "conditional-detr") ? detr::onnxexport::ExportConditional(arch, *weights, onnx_path)
+      : (model == "dab-detr")       ? detr::onnxexport::ExportDab(arch, *weights, onnx_path)
+      : (model == "deformable-detr") ? detr::onnxexport::ExportDeformable(arch, *weights, onnx_path)
+      : (model == "dino")            ? detr::onnxexport::ExportDino(arch, *weights, onnx_path)
+      : (model.rfind("rt-detr", 0) == 0) ? detr::onnxexport::ExportRtDetr(arch, *weights, onnx_path)
+      : (model == "rf-detr")             ? detr::onnxexport::ExportRfDetr(arch, *weights, onnx_path)
+                                         : detr::onnxexport::ExportDetr(arch, *weights, onnx_path);
+  if (!export_r) {
+    std::fprintf(stderr, "export: %s\n", export_r.error().message.c_str());
     return 1;
   }
 
@@ -103,6 +120,10 @@ int main(int argc, char** argv) {
   Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "detr-parity");
   Ort::SessionOptions so;
   so.SetIntraOpNumThreads(1);
+  // Run the graph exactly as emitted (the purest parity check) and avoid an ORT
+  // graph-fusion bug that duplicates node names on Slice-heavy graphs (DAB's
+  // dynamic 4D sine).
+  so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
   Ort::Session session(env, onnx_path.c_str(), so);
   Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 

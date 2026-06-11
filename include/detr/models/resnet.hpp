@@ -3,7 +3,9 @@
 // torchvision-style ResNet backbone (FrozenBN-compatible naming: conv1/bn1/
 // layer1..4). |bottleneck| picks the block: BasicBlock (R18/R34) or Bottleneck
 // (R50/R101+). Block counts pick the depth: {2,2,2,2}=R18, {3,4,6,3}=R34/R50,
-// {3,4,23,3}=R101. |dc5| dilates C5 (output stride 16). Compiled with
+// {3,4,23,3}=R101. |dc5| dilates C5 (output stride 16). |deep_stem| + |avg_down|
+// select the ResNet-D/VD variant (RT-DETR): a 3x(3x3) stem instead of one 7x7,
+// and AvgPool+1x1 downsample shortcuts instead of a strided 1x1. Compiled with
 // DETR_ENABLE_TORCH.
 
 #pragma once
@@ -20,14 +22,18 @@ namespace detr::models {
 struct ResNetImpl : torch::nn::Module {
   torch::nn::Conv2d conv1{nullptr};
   FrozenBatchNorm2d bn1{nullptr};
+  torch::nn::ModuleList stem_{nullptr};  // deep stem: 3x Sequential(Conv2d, FrozenBN)
   torch::nn::Sequential layer1{nullptr};
   torch::nn::Sequential layer2{nullptr};
   torch::nn::Sequential layer3{nullptr};
   torch::nn::Sequential layer4{nullptr};
   bool bottleneck_;
+  bool deep_stem_;
 
-  ResNetImpl(const std::vector<int>& blocks, bool bottleneck, bool dc5);
+  ResNetImpl(const std::vector<int>& blocks, bool bottleneck, bool dc5, bool deep_stem = false,
+             bool avg_down = false);
 
+  torch::Tensor Stem(torch::Tensor x);     // stem (7x7 or deep) + maxpool
   torch::Tensor forward(torch::Tensor x);  // C5 only
   // {C3, C4, C5} = layer2/layer3/layer4 outputs.
   std::vector<torch::Tensor> forward_features(torch::Tensor x);

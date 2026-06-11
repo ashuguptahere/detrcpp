@@ -14,7 +14,7 @@ namespace F = torch::nn::functional;
 
 torch::Tensor MSDeformAttnCore(const torch::Tensor& value, const SpatialShapes& shapes,
                                const torch::Tensor& sampling_locations,
-                               const torch::Tensor& attention_weights) {
+                               const torch::Tensor& attention_weights, bool discrete) {
   const auto n = value.size(0);
   const auto heads = value.size(2);
   const auto dim = value.size(3);
@@ -44,8 +44,23 @@ torch::Tensor MSDeformAttnCore(const torch::Tensor& value, const SpatialShapes& 
     // [N, Lq, M, P, 2] for this level -> [N, M, Lq, P, 2] -> [N*M, Lq, P, 2]
     auto grid_l =
         sampling_grids.select(3, static_cast<std::int64_t>(lid)).transpose(1, 2).flatten(0, 1);
-    // -> [N*M, D, Lq, P]
-    sampling_value_list.push_back(F::grid_sample(value_l, grid_l, sample_opts));
+    if (discrete) {
+      // RT-DETRv2 discrete sampling: round each normalized location to the nearest
+      // integer pixel and gather (no bilinear interp -> deployment-friendly). With
+      // align_corners=false, pixel i maps to grid (2i+1)/size-1; invert + round.
+      auto wh = torch::tensor({w, h}, value_l.options().dtype(torch::kLong)).to(value_l.dtype());
+      auto px = ((grid_l + 1) * 0.5 * wh - 0.5).round();  // [N*M, Lq, P, 2] (x,y) float px
+      auto ix = px.select(-1, 0).clamp(0, static_cast<double>(w - 1)).to(torch::kLong);  // clamp OOB
+      auto iy = px.select(-1, 1).clamp(0, static_cast<double>(h - 1)).to(torch::kLong);
+      auto flat_idx = iy * w + ix;                              // [N*M, Lq, P] linear HxW index
+      auto vflat = value_l.reshape({n * heads, dim, h * w});    // [N*M, D, HW]
+      auto idx = flat_idx.reshape({n * heads, 1, lq * points}).expand({n * heads, dim, lq * points});
+      // -> [N*M, D, Lq, P]
+      sampling_value_list.push_back(vflat.gather(2, idx).reshape({n * heads, dim, lq, points}));
+    } else {
+      // -> [N*M, D, Lq, P]
+      sampling_value_list.push_back(F::grid_sample(value_l, grid_l, sample_opts));
+    }
   }
 
   // [N, Lq, M, L, P] -> [N, M, Lq, L, P] -> [N*M, 1, Lq, L*P]
@@ -56,8 +71,13 @@ torch::Tensor MSDeformAttnCore(const torch::Tensor& value, const SpatialShapes& 
   return output.transpose(1, 2).contiguous();  // [N, Lq, M*D]
 }
 
-MSDeformAttnImpl::MSDeformAttnImpl(int d_model, int n_levels, int n_heads, int n_points)
-    : d_model_(d_model), n_levels_(n_levels), n_heads_(n_heads), n_points_(n_points) {
+MSDeformAttnImpl::MSDeformAttnImpl(int d_model, int n_levels, int n_heads, int n_points,
+                                   bool discrete_sample)
+    : d_model_(d_model),
+      n_levels_(n_levels),
+      n_heads_(n_heads),
+      n_points_(n_points),
+      discrete_sample_(discrete_sample) {
   sampling_offsets =
       register_module("sampling_offsets", nn::Linear(d_model, n_heads * n_levels * n_points * 2));
   attention_weights =
@@ -103,7 +123,7 @@ torch::Tensor MSDeformAttnImpl::forward(const torch::Tensor& query,
         ref.slice(-1, 0, 2) + offsets / static_cast<double>(n_points_) * ref.slice(-1, 2, 4) * 0.5;
   }
 
-  auto out = MSDeformAttnCore(value, shapes, sampling_locations, attn);
+  auto out = MSDeformAttnCore(value, shapes, sampling_locations, attn, discrete_sample_);
   return output_proj->forward(out);
 }
 

@@ -48,11 +48,14 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, d
   const detr::log::Stopwatch sw;
   const int num_classes = model.Meta().num_classes;
   const bool focal = model.Meta().focal;
+  // RT-DETR (imagenet_norm=false) evals one image at a time with a square [0,1]
+  // resize; DETR-family uses aspect-preserving + ImageNet norm when --aspect.
+  const bool norm = model.Meta().imagenet_norm;
   std::vector<EvalImage> eval_images;
 
-  if (aspect_preserve) {
-    // DETR's eval: aspect-preserving resize, one image at a time (no padding/mask
-    // needed at batch 1, so this matches the reference exactly).
+  if (aspect_preserve || !norm) {
+    // Single-image path (no padding/mask needed at batch 1): aspect-preserving for
+    // DETR, or square [0,1] for RT-DETR.
     const auto indices = dataset.IndicesOf(split);
     const std::size_t limit = max_images > 0
                                   ? std::min(static_cast<std::size_t>(max_images), indices.size())
@@ -65,7 +68,9 @@ CocoMetrics EvaluateModel(models::IModel& model, const data::Dataset& dataset, d
         detr::log::Get("eval").warn("{}", rgb.error().message);
         continue;
       }
-      auto input = infer::PreprocessImageAspect(*rgb, imgsz, max_size).to(device);
+      auto input = (norm ? infer::PreprocessImageAspect(*rgb, imgsz, max_size)
+                         : infer::PreprocessImage(*rgb, imgsz, /*normalize=*/false))
+                       .to(device);
       auto outputs = model.Forward(input);
       EvalImage ei = MakeGt(s, static_cast<float>(rgb->width), static_cast<float>(rgb->height));
       ei.dts = infer::PostprocessImage(outputs, 0, rgb->width, rgb->height, num_classes, focal);
