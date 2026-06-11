@@ -150,11 +150,12 @@ Detections RfDetrRealImpl::Forward(torch::Tensor images) {
 
 ModelMeta RfDetrRealImpl::Meta() const {
   ModelMeta m;
-  m.name = "rf-detr";
+  m.name = "rf-detr-nano";
   m.imgsz = imgsz_;
   m.num_classes = num_classes_;
   m.num_queries = num_queries_;
-  m.focal = true;
+  m.focal = true;            // sigmoid/focal head, no no-object slot
+  m.imagenet_norm = true;    // [0,1] then ImageNet mean/std, square resize at imgsz
   m.license = "Apache-2.0";
   m.upstream = "https://github.com/roboflow/rf-detr";
   return m;

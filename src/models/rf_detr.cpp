@@ -12,6 +12,7 @@
 #include "detr/models/deform_head.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
+#include "detr/models/rf_detr_real.hpp"
 #include "detr/models/vit.hpp"
 
 namespace detr::models {
@@ -187,6 +188,19 @@ ModelMeta RfDetrCdnMeta(const YAML::Node& cfg) {
 void RegisterRfDetr() {
   Registry::Instance().Register("rf-detr", RfDetrMeta({}), &MakeRfDetr);
   Registry::Instance().Register("rf-detr-cdn", RfDetrCdnMeta({}), &MakeRfDetrCdn);
+
+  // Faithful RF-DETR-Nano (roboflow/rf-detr): the real DINOv2-windowed backbone +
+  // C2f projector + two-stage deformable decoder, so the official weights load and
+  // validate 1:1 (unlike the placeholder-ViT rf-detr-{n..x} matrix below). Inference
+  // is square-384 + ImageNet norm + the 91-class (coco91) head. The other sizes share
+  // this code but need their own published weights, so only nano is registered here.
+  {
+    ModelMeta meta = RfDetrRealImpl{}.Meta();
+    Registry::Instance().Register("rf-detr-nano", meta,
+                                  [](const YAML::Node&) -> std::shared_ptr<IModel> {
+                                    return std::make_shared<RfDetrRealImpl>();
+                                  });
+  }
 
   // The RF-DETR detection size matrix (paper Table 7, arXiv:2511.09554). n/s/m/l use
   // a DINOv2-S backbone (embed 384, depth 12, 6 heads); x uses DINOv2-B (embed 768,

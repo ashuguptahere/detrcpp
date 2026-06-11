@@ -26,8 +26,10 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   1.6e-3; the only tail is an irreducible `torch.topk` tie-break on the random-noise
   parity input, which a couple of slots and its self-attention ripple inherit).
   New gated parity tests (`Dinov2WindowedParity.*`) cover backbone, projector, and
-  the end-to-end model. Not yet wired into the registry (the `rf-detr-{n..x}` matrix
-  still uses the placeholder ViT).
+  the end-to-end model. Registered as **`rf-detr-nano`** and validated end-to-end on
+  full COCO `val2017`: **mAP50-95 0.482 / mAP50 0.672** vs the official 0.484 / 0.676
+  (`--coco91 --imgsz 384`, ImageNet-norm square resize, no `--aspect`). The
+  placeholder-ViT `rf-detr-{n..x}` matrix is unchanged (kept for the training recipes).
 - **RF-DETR size matrix** — `rf-detr-{n,s,m,l,x}` registered with the official
   per-variant configs (paper Table 7, arXiv:2511.09554): n/s/m/l use a DINOv2-S
   backbone (embed 384, depth 12, 6 heads, patch 16) at resolution 384/512/576/704
