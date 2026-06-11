@@ -11,6 +11,23 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **Faithful RF-DETR (`RfDetrReal`)** reproducing the upstream `roboflow/rf-detr`
+  architecture end-to-end, so the official weights load and validate: the
+  DINOv2-with-windowed-attention backbone (conv patch-embed + cls token + bicubic
+  pos-embed; windowed blocks `[0,1,2,4,5,7,8,10,11]`, global blocks `[3,6,9]`;
+  per-stage final-norm at out-indices `[3,6,9,12]`), the YOLOv8 **C2f** scale
+  projector, and a two-stage single-scale **deformable decoder** (grid-anchor
+  proposals → query selection → per-slot `reference_point_embed` refinement;
+  8-head self-attn + 16-head / 1-level / 2-point MSDeformAttn cross-attn + ReLU
+  FFN; fixed reference points; sinusoidal query positions). Loads official
+  RF-DETR-Nano weights 1:1 and is validated against the Hugging Face reference:
+  backbone and projector match to ~1e-4, and — aligned by selected encoder token —
+  the full model reproduces logits/boxes to fp32 noise (median box 1.2e-4, logit
+  1.6e-3; the only tail is an irreducible `torch.topk` tie-break on the random-noise
+  parity input, which a couple of slots and its self-attention ripple inherit).
+  New gated parity tests (`Dinov2WindowedParity.*`) cover backbone, projector, and
+  the end-to-end model. Not yet wired into the registry (the `rf-detr-{n..x}` matrix
+  still uses the placeholder ViT).
 - **RF-DETR size matrix** — `rf-detr-{n,s,m,l,x}` registered with the official
   per-variant configs (paper Table 7, arXiv:2511.09554): n/s/m/l use a DINOv2-S
   backbone (embed 384, depth 12, 6 heads, patch 16) at resolution 384/512/576/704
