@@ -14,10 +14,12 @@ hood.
 
 ## Highlights
 
-- **Three models reproduce official COCO mAP from real weights** (full 5000-image
-  val, within ~0.7 AP of published): `detr-r50` **41.5** (42.0), `deformable-detr`
-  **43.8** (44.5), `conditional-detr` **40.3** (40.9) — across both the softmax and
-  sigmoid/focal heads. Each loads with **0 unexpected** tensors.
+- **Four models reproduce official COCO mAP from real weights** (full 5000-image
+  val, within ~0.4 AP of published): `detr-r50` **0.419** (0.420), `deformable-detr`
+  **0.443** (0.445), `conditional-detr` **0.407** (0.409), `rt-detr-l` **0.530**
+  (0.534) — across the softmax and sigmoid/focal heads. `detr-r50` loads its
+  **legacy pre-1.6 `.pth`** through a pure-C++ unpickler (no Python). See
+  [VALIDATION.md](VALIDATION.md) for the per-model weights, converters, and recipes.
 - **Python-free ONNX export with numeric parity** — a hand-written C++ ONNX
   emitter matches LibTorch to `max|Δ| ~1e-6` (verified in onnxruntime).
 - **GPU (CUDA) on NVIDIA Blackwell** — `--device cuda:0`, ~17× faster than CPU.
@@ -43,12 +45,12 @@ The size suffix is the convention going forward:
 | family | variants | classifier | status |
 |--------|----------|-----------|--------|
 | **DETR** | `detr` (compact), `detr-r50`, `detr-r101`, `detr-r50-dc5`, `detr-r101-dc5` | softmax + no-object | trains, predicts, evals; **official weights load + real mAP**; ONNX parity |
-| **Deformable-DETR** | `deformable-detr` | sigmoid/focal | **official weights load (0 unexpected) → real COCO mAP 43.8** (official 44.5); GPU-validated |
-| **Conditional-DETR** | `conditional-detr` | sigmoid/focal | **official weights load (0 unexpected) → real COCO mAP 40.3** (official 40.9); GPU-validated |
+| **Deformable-DETR** | `deformable-detr` | sigmoid/focal | **official weights load (0 missing) → real COCO mAP 0.443** (official 0.445); GPU-validated |
+| **Conditional-DETR** | `conditional-detr` | sigmoid/focal | **official weights load → real COCO mAP 0.407** (official 0.409); GPU-validated |
 | **DAB-DETR** | `dab-detr` | sigmoid/focal | trains (GPU-validated); 4D anchor queries + HW-modulated attn + iterative refinement |
 | **DINO** | `dino` | sigmoid/focal | trains (GPU-validated); deformable encoder + query selection + iterative decoder (CDN training tracked) |
 | **RF-DETR** | `rf-detr` | sigmoid/focal | trains (GPU-validated); **ViT backbone** + multi-scale projection + deformable decoder |
-| **RT-DETR** | `rt-detr[v2,v3]-{n,s,m,l,x}` (+ plain `rt-detr[v2,v3]` = `-l`) | sigmoid/focal | trains (GPU-validated). v2/v3 share v1's inference arch today (their gains are training recipes — tracked) |
+| **RT-DETR** | `rt-detr[v2,v3]-{n,s,m,l,x}` (+ plain `rt-detr[v2,v3]` = `-l`) | sigmoid/focal | **`rt-detr-l` official weights load (0 missing) → real COCO mAP 0.530** (official 0.534); GPU-validated. v2 adds discrete sampling, v3 adds dense supervision (training recipes) |
 
 **DN-DETR** is DAB-DETR + a *denoising training* recipe (noised GT queries + an
 attention mask) — its inference net == DAB-DETR, so it's a training mode, not a

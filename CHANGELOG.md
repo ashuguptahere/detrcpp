@@ -11,8 +11,17 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **`VALIDATION.md`** documenting the official-weight COCO validations: per-model
+  measured vs published mAP (`detr-r50` 0.419, `deformable-detr` 0.443,
+  `conditional-detr` 0.407, `rt-detr-l` 0.530), the converted-weights paths + the
+  Hugging Face sources and `/tmp` converters that produce them, the per-model eval
+  recipes (the DETR family vs RT-DETR flag differences), and which registered
+  variants are not yet validated (`rt-detr-{n,s,m,x}`, the v2/v3 matrices, RF-DETR).
 
 ### Changed
+- README validation numbers refreshed to the re-measured figures (was the pre-eval-
+  fidelity 41.5 / 43.8 / 40.3; now 0.419 / 0.443 / 0.407 plus `rt-detr-l` 0.530), and
+  the legacy-`.pth` load path for `detr-r50` is called out. See `VALIDATION.md`.
 
 ### Fixed
 
