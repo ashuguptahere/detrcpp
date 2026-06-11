@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "detr/models/dinov2_windowed.hpp"
+#include "detr/models/rf_detr_projector.hpp"
 #include "detr/weights/safetensors.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
@@ -57,6 +58,37 @@ TEST(Dinov2WindowedParity, MatchesRfDetrNanoBackbone) {
     std::cout << "feat" << i << " max|diff| = " << d << "\n";
     EXPECT_LT(d, 5e-3F) << "feat" << i;
   }
+}
+
+TEST(Dinov2WindowedParity, ProjectorMatchesReference) {
+  const std::string wpath = "/tmp/rfdetr_projector.safetensors";
+  const std::string ppath = "/tmp/rfdetr_parity/parity.safetensors";
+  if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
+    GTEST_SKIP() << "parity fixtures absent";
+  }
+  auto proj = RfDetrProjector(4, 384, 256, 3);  // 4 features x 384 -> C2f -> 256, n=3
+  auto wsd = weights::LoadSafetensors(wpath);
+  ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
+  auto rep = weights::LoadStateDictInto(*proj, *wsd);
+  ASSERT_TRUE(rep.has_value()) << rep.error().message;
+  std::cout << "projector loaded " << rep->loaded << " missing " << rep->missing.size()
+            << " unexpected " << rep->unexpected.size() << "\n";
+  EXPECT_EQ(rep->missing.size(), 0U);
+  EXPECT_EQ(rep->unexpected.size(), 0U);
+
+  auto psd = *weights::LoadSafetensors(ppath);
+  std::vector<torch::Tensor> feats;
+  for (int i = 0; i < 4; ++i) {
+    feats.push_back(RawToTorch(psd.Find("feat" + std::to_string(i))));
+  }
+  proj->eval();
+  torch::NoGradGuard ng;
+  auto out = proj->forward(feats);
+  auto ref = RawToTorch(psd.Find("proj0"));
+  ASSERT_EQ(out.sizes(), ref.sizes());
+  const float d = (out - ref).abs().max().item<float>();
+  std::cout << "proj max|diff| = " << d << "\n";
+  EXPECT_LT(d, 5e-3F);
 }
 
 }  // namespace

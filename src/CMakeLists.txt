@@ -211,6 +211,7 @@ if(DETR_ENABLE_TORCH)
     models/resnet.cpp
     models/vit.cpp
     models/dinov2_windowed.cpp
+    models/rf_detr_projector.cpp
     models/detr.cpp
     models/detr_r50.cpp
     models/deformable_detr.cpp
