@@ -11,6 +11,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **RT-DETRv2 validated against the original-repo native weights** — `rt-detrv2-{s,m,l,x}`
+  load the **native `lyuwenyu/RT-DETR` PyTorch `.pth`** checkpoints (not the HF mirror;
+  0 missing/unexpected/mismatched) and reproduce the published COCO `val2017` mAP within
+  ~0.4 AP: `rt-detrv2-s` **0.477** (official 0.481), `rt-detrv2-m` **0.497** (0.499),
+  `rt-detrv2-l` **0.532** (0.534), `rt-detrv2-x` **0.542** (0.543). The headline RT-DETRv2
+  models use the **default (grid) cross-attention** (`cross_attn_method: default`), so the
+  registered `rt-detrv2-*` now default to grid sampling and equal the v1 inference graph
+  (v2's gain is the training recipe); discrete sampling is opt-in via `discrete_sample: true`
+  for the optional `_dsp` deployment checkpoints. Native converter `convert_rtdetr_native.py`
+  maps the original PResNet + HybridEncoder + RTDETRTransformerv2 naming (dropping the
+  `num_points_scale` buffer, which detrcpp folds into its deformable formula). See
+  `VALIDATION.md`. (RT-DETRv3 stays unvalidated — upstream publishes no trained detector
+  weights, only ImageNet backbone pretrains; its inference graph equals v1/v2.)
 - **RT-DETR size matrix validated against official weights** — `rt-detr-{s,m,x}`
   (R18/R34/R101-vd) now load the PekingU checkpoints 1:1 (0 missing/unexpected/
   mismatched) and reproduce the published COCO `val2017` mAP within ~0.2 AP:

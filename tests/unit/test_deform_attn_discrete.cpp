@@ -1,8 +1,10 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 //
-// RT-DETRv2 discrete-sampling variant of multi-scale deformable attention: rounds
-// each sampling location to the nearest pixel and gathers (vs bilinear interp).
-// Default-off, so dino/rf-detr/deformable + rt-detr/rt-detrv3 stay bilinear.
+// RT-DETRv2's optional discrete-sampling deformable attention: rounds each sampling
+// location to the nearest pixel and gathers (vs bilinear interp). It is the `_dsp`
+// deployment mode — opt-in via `discrete_sample: true` — so every registered model
+// (including the headline rt-detrv2, whose official config is `cross_attn_method:
+// default`) stays bilinear/grid by default.
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
@@ -50,28 +52,36 @@ TEST(DeformAttnDiscrete, CoreDiscreteVsBilinear) {
   EXPECT_TRUE(torch::allclose(deflt, bilinear));
 }
 
-// Gating end-to-end: rt-detrv2 (discrete) differs from rt-detr (bilinear) at the
-// SAME weights, while rt-detrv3 (also bilinear) is identical to rt-detr.
+// Gating end-to-end: every RT-DETR variant defaults to grid sampling (the official
+// headline configs), so v1/v2/v3 share one inference graph at the same init; opting
+// into discrete sampling (the `_dsp` mode) changes the output.
 class RtDetrDiscreteTest : public ::testing::Test {
  protected:
   void SetUp() override { RegisterBuiltins(); }
 };
 
-TEST_F(RtDetrDiscreteTest, V2DiscreteDiffersV1V3Identical) {
+TEST_F(RtDetrDiscreteTest, GridDefaultDiscreteOptIn) {
   auto images = torch::randn({1, 3, 64, 64});
-  auto run = [&](const char* name) {
+  auto run = [&](const char* name, bool discrete) {
     torch::manual_seed(42);  // same init for each (same module tree)
-    auto m = *Registry::Instance().Build(name, Tiny());
+    auto cfg = Tiny();
+    if (discrete) {
+      cfg["discrete_sample"] = true;
+    }
+    auto m = *Registry::Instance().Build(name, cfg);
     m->eval();
     torch::NoGradGuard ng;
     return m->Forward(images).boxes;
   };
-  auto v1 = run("rt-detr-l");
-  auto v2 = run("rt-detrv2-l");
-  auto v3 = run("rt-detrv3-l");
-  EXPECT_TRUE(torch::isfinite(v2).all().item<bool>());
-  EXPECT_TRUE(torch::allclose(v1, v3));                      // both bilinear -> identical
-  EXPECT_GT((v2 - v1).abs().max().item<float>(), 1e-5F);     // v2 discrete -> differs
+  auto v1 = run("rt-detr-l", false);
+  auto v2 = run("rt-detrv2-l", false);
+  auto v3 = run("rt-detrv3-l", false);
+  EXPECT_TRUE(torch::allclose(v1, v2));  // all grid by default -> identical graph
+  EXPECT_TRUE(torch::allclose(v1, v3));
+  // Discrete sampling is opt-in (v2's `_dsp` deployment mode) and changes the output.
+  auto v2_dsp = run("rt-detrv2-l", true);
+  EXPECT_TRUE(torch::isfinite(v2_dsp).all().item<bool>());
+  EXPECT_GT((v2_dsp - v1).abs().max().item<float>(), 1e-5F);
 }
 
 }  // namespace

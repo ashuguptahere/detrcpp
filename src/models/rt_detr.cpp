@@ -444,7 +444,12 @@ void RegisterOne(const std::string& name, const SizeSpec& sz, int dense_k, bool 
 void RegisterRtDetr() {
   for (const char* ver : kVersions) {
     const int dense_k = (std::string(ver) == "rt-detrv3") ? kDenseV3 : 0;
-    const bool discrete = (std::string(ver) == "rt-detrv2");  // discrete sampling = v2's
+    // The headline RT-DETRv2 checkpoints use the DEFAULT (grid) cross-attention
+    // sampling — `cross_attn_method: default` in the official configs — so all
+    // registered variants use grid sampling. Discrete sampling is v2's optional
+    // deployment mode (the lower-mAP `_dsp` checkpoints); enable it per-run with
+    // `discrete_sample: true` in the model config when loading a `_dsp` weight.
+    const bool discrete = false;
     for (const auto& sz : kSizes) {
       RegisterOne(std::string(ver) + "-" + sz.tag, sz, dense_k, discrete);
     }

@@ -17,6 +17,10 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `rt-detr-m`        | **0.487** | 0.665 | 0.526 | ~0.489 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detr-l`        | **0.530** | 0.710 | 0.576 | ~0.534 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detr-x`        | **0.542** | 0.725 | 0.585 | ~0.543 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `rt-detrv2-s`      | **0.477** | 0.646 | 0.517 | ~0.481 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `rt-detrv2-m`      | **0.497** | 0.671 | 0.538 | ~0.499 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `rt-detrv2-l`      | **0.532** | 0.712 | 0.573 | ~0.534 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `rt-detrv2-x`      | **0.542** | 0.725 | 0.585 | ~0.543 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rf-detr-nano`     | **0.482** | 0.672 | 0.516 | 0.484 (AP50 67.6) | `--coco91 --imgsz 384` (no `--aspect`) |
 
 `detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
@@ -43,7 +47,15 @@ are scratch — regenerate them from the Hugging Face source with the listed con
 | `rt-detr-m`        | `PekingU/rtdetr_r34vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r34vd.safetensors` (619 tensors) |
 | `rt-detr-l`        | `PekingU/rtdetr_r50vd`                        | `/tmp/convert_rtdetr.py` (in: `/tmp/hf_rtdetr.safetensors`) | `/tmp/rtdetr_official.safetensors` |
 | `rt-detr-x`        | `PekingU/rtdetr_r101vd`                       | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r101vd.safetensors` (990 tensors) |
+| `rt-detrv2-{s,m,l,x}` | **native** `lyuwenyu/RT-DETR` `.pth` (GitHub releases — see `rtdetrv2_pytorch/README.md`) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/rtdetrv2_{s,m,l,x}_detr.safetensors` (509/619/735/990) |
 | `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.safetensors` (328 tensors) |
+
+The `rt-detrv2-*` weights are the **native PyTorch checkpoints from the original
+`lyuwenyu/RT-DETR` repo** (`rtdetrv2_r{18,34,50,101}vd_*.pth`, the headline grid-sampling
+models). `convert_rtdetr_native.py` maps the original PResNet + HybridEncoder +
+RTDETRTransformerv2 naming (e.g. `backbone.res_layers.*`, `decoder.decoder.layers.*`)
+onto detrcpp's; it drops the `num_points_scale` buffer (detrcpp folds `1/n_points` into
+its deformable formula — numerically identical for the default `num_points=[4,4,4]`).
 
 The `rt-detr-{s,m,x}` checkpoints share one I/O-parameterized converter
 (`convert_rtdetr_size.py`); it is backbone-agnostic (BasicBlock R18/R34 vs Bottleneck
@@ -70,11 +82,15 @@ projector + two-stage deformable decoder), not the placeholder-ViT `rf-detr-{n..
 
 ## Registered-but-not-yet-validated variants
 
-- **`rt-detr-{s,m,l,x}`** are all **validated** above (R18/R34/R50/R101-vd). `rt-detr-n`
-  is detrcpp's own nano (R18 @ width 128) with no published weights. The
-  **`rt-detrv2-*` / `rt-detrv3-*`** matrices share v1's inference graph (their gains
-  are training recipes — discrete sampling / dense supervision), so v1's validated
-  weights load into them; PekingU's separate v2 checkpoints are a tracked follow-up.
+- **`rt-detr-{s,m,l,x}`** (v1) and **`rt-detrv2-{s,m,l,x}`** are all **validated** above
+  (R18/R34/R50/R101-vd). `rt-detr-n` / `rt-detrv2-n` are detrcpp's own nano (R18 @ width
+  128) with no published weights.
+- **`rt-detrv3-*`** is **blocked on weights**: the upstream `clxia12/RT-DETRv3` is a
+  PaddleDetection repo whose configs reference only ImageNet backbone pretrains (the
+  `weights:` field is a local `output/...` path), and the README's
+  `rtdetrv3_*_6x_coco.pdparams` URL 404s — no trained detector checkpoint is published.
+  Its inference graph equals v1/v2 anyway (v3's gain is the dense-supervision training
+  recipe), so `rt-detrv3-*` reproduces v1/v2 results given v1/v2 weights.
 - **`rf-detr-nano`** (the faithful model) is **validated** above. The other faithful
   sizes (small/medium/large/xlarge) share its code but need their own published
   Roboflow weights to validate, so they are not registered yet. The placeholder-ViT
