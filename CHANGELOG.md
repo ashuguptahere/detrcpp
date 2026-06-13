@@ -11,6 +11,24 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **RT-DETR size matrix validated against official weights** — `rt-detr-{s,m,x}`
+  (R18/R34/R101-vd) now load the PekingU checkpoints 1:1 (0 missing/unexpected/
+  mismatched) and reproduce the published COCO `val2017` mAP within ~0.2 AP:
+  `rt-detr-s` **0.463** (official 0.465), `rt-detr-m` **0.487** (0.489), `rt-detr-x`
+  **0.542** (0.543), alongside the already-validated `rt-detr-l` 0.530. Three real
+  per-size faithfulness gaps were closed (the R50 path is byte-unchanged): the
+  decoder depth now scales per size (R18=3, R34=4, R50/R101=6 layers); the
+  HybridEncoder/CCFM is parameterized by `encoder_hidden_dim`/`enc_ffn` (R101 widens
+  to 384 / FFN 2048, with `decoder_input_proj` projecting 384→256) and CSPRepLayer
+  `hidden_expansion` (R18/R34 use 0.5 — half-width RepVGG bottlenecks plus a `conv3`
+  fuse). Eval: `--imgsz 640` (no `--coco91`, no `--aspect`). See `VALIDATION.md`.
+- **ResNet-vd BasicBlock support** (`models::ResNet`) for the R18/R34 backbones: the
+  D/VD avg-pool downsample is now applied to basic blocks too, and — matching
+  upstream RT-DETR — a shortcut is forced on the first block of every stage (a plain
+  1×1 projection at res2, where in==out and stride==1).
+- **`DETR_DEBUG_WEIGHTS`** env flag: when set, the CLI weight loader logs the full
+  unexpected-source and missing-param key lists (not just the count + mismatched
+  list), to diagnose checkpoint/architecture key gaps.
 - **Faithful RF-DETR (`RfDetrReal`)** reproducing the upstream `roboflow/rf-detr`
   architecture end-to-end, so the official weights load and validate: the
   DINOv2-with-windowed-attention backbone (conv patch-embed + cls token + bicubic

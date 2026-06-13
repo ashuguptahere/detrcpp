@@ -19,6 +19,7 @@
 
 #include <CLI/CLI.hpp>
 #include <cstdint>
+#include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <optional>
@@ -207,6 +208,14 @@ bool ReportWeightsOk(detr::log::Logger& lg, const std::string& weights,
           weights, rep.loaded, rep.missing.size(), rep.unexpected.size(), rep.mismatched.size());
   for (const auto& k : rep.mismatched) {
     lg.warn("  shape-mismatched, kept initialized: {}", k);
+  }
+  if (std::getenv("DETR_DEBUG_WEIGHTS") != nullptr) {
+    for (const auto& k : rep.unexpected) {
+      lg.warn("  unexpected source key (unused): {}", k);
+    }
+    for (const auto& k : rep.missing) {
+      lg.warn("  missing model param (kept init): {}", k);
+    }
   }
   if (rep.loaded == 0) {
     lg.error("weights '{}': 0 tensors matched the model — wrong --model or checkpoint?", weights);

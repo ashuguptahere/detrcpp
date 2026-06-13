@@ -26,11 +26,14 @@ namespace F = torch::nn::functional;
 struct Config {
   std::string backbone{"r50"};  // r18 / r34 / r50 / r101
   std::string name{"rt-detr"};  // registry name (rt-detr[vN]-{size})
-  int hidden_dim{256};
+  int hidden_dim{256};          // decoder d_model
+  int enc_dim{0};               // HybridEncoder/CCFM width (0 => hidden_dim; 384 for r101)
+  int enc_ffn{0};               // AIFI feed-forward (0 => dim_feedforward; 2048 for r101)
+  double hidden_expansion{1.0};  // CSPRepLayer hidden = out * expansion (0.5 for r18/r34)
   int nheads{8};
   int enc_layers{1};  // AIFI layers (on the top level only)
   int dec_layers{6};
-  int dim_feedforward{1024};
+  int dim_feedforward{1024};  // decoder FFN
   int num_queries{300};
   int num_classes{80};
   int num_levels{3};
@@ -67,6 +70,9 @@ Config ReadConfig(const YAML::Node& c) {
   Config x;
   x.backbone = Get<std::string>(c, "backbone", x.backbone);
   x.hidden_dim = Get(c, "hidden_dim", x.hidden_dim);
+  x.enc_dim = Get(c, "enc_dim", x.enc_dim);
+  x.enc_ffn = Get(c, "enc_ffn", x.enc_ffn);
+  x.hidden_expansion = Get(c, "hidden_expansion", x.hidden_expansion);
   x.nheads = Get(c, "nheads", x.nheads);
   x.enc_layers = Get(c, "enc_layers", x.enc_layers);
   x.dec_layers = Get(c, "dec_layers", x.dec_layers);
@@ -128,24 +134,31 @@ struct RepVggImpl : nn::Module {
 };
 TORCH_MODULE(RepVgg);
 
-// CSPRepLayer: two 1x1 branches, RepVGG bottlenecks on one, summed. RT-DETR's
-// hidden_channels == out_channels, so the optional fuse conv (conv3) is Identity
-// and is omitted — no conv3 weights exist in the official checkpoint.
+// CSPRepLayer: two 1x1 branches to a hidden width (= out * hidden_expansion), RepVGG
+// bottlenecks on one, summed, then a fuse conv (conv3) back to out_channels. When
+// hidden == out (expansion 1.0, RT-DETR R50/R101) conv3 is Identity and omitted — no
+// conv3 weights exist in those checkpoints; R18/R34 use expansion 0.5 with a conv3.
 struct CSPRepImpl : nn::Module {
   ConvNorm conv1{nullptr};
   ConvNorm conv2{nullptr};
   nn::Sequential bottlenecks{nullptr};
-  CSPRepImpl(int in, int out, int num_blocks) {
-    conv1 = register_module("conv1", ConvNorm(in, out, 1, 1, true));
-    conv2 = register_module("conv2", ConvNorm(in, out, 1, 1, true));
+  ConvNorm conv3{nullptr};  // only when hidden != out
+  CSPRepImpl(int in, int out, int num_blocks, double expansion) {
+    const int hidden = static_cast<int>(static_cast<double>(out) * expansion);
+    conv1 = register_module("conv1", ConvNorm(in, hidden, 1, 1, true));
+    conv2 = register_module("conv2", ConvNorm(in, hidden, 1, 1, true));
     bottlenecks = nn::Sequential();
     for (int i = 0; i < num_blocks; ++i) {
-      bottlenecks->push_back(RepVgg(out));
+      bottlenecks->push_back(RepVgg(hidden));
     }
     register_module("bottlenecks", bottlenecks);
+    if (hidden != out) {
+      conv3 = register_module("conv3", ConvNorm(hidden, out, 1, 1, true));
+    }
   }
   torch::Tensor forward(torch::Tensor x) {
-    return bottlenecks->forward(conv1->forward(x)) + conv2->forward(x);
+    auto y = bottlenecks->forward(conv1->forward(x)) + conv2->forward(x);
+    return conv3.is_empty() ? y : conv3->forward(y);
   }
 };
 TORCH_MODULE(CSPRep);
@@ -180,46 +193,49 @@ TORCH_MODULE(AIFILayer);
 class RtDetrImpl : public IModel {
  public:
   explicit RtDetrImpl(Config cfg, bool denoising = false) : cfg_(cfg), denoising_(denoising) {
-    const int d = cfg.hidden_dim;
+    const int d = cfg.hidden_dim;                                   // decoder d_model
+    const int ed = cfg.enc_dim > 0 ? cfg.enc_dim : cfg.hidden_dim;  // HybridEncoder width
+    const int eff = cfg.enc_ffn > 0 ? cfg.enc_ffn : cfg.dim_feedforward;  // AIFI FFN
+    const double cspx = cfg.hidden_expansion;
     auto spec = BackboneFor(cfg.backbone);
     // RT-DETR uses a ResNet-D/VD backbone (deep stem + avg-pool downsample).
     backbone_ = register_module("backbone", ResNet(spec.blocks, spec.bottleneck, /*dc5=*/false,
                                                    /*deep_stem=*/true, /*avg_down=*/true));
     const auto backbone_ch = backbone_->feature_channels();  // {C3, C4, C5}
 
-    // input_proj (HF encoder_input_proj): 1x1 conv + BN, per backbone level.
+    // input_proj (HF encoder_input_proj): 1x1 conv + BN, per backbone level -> enc dim.
     input_proj_ = register_module("input_proj", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels; ++i) {
       input_proj_->push_back(nn::Sequential(
-          nn::Conv2d(nn::Conv2dOptions(backbone_ch[static_cast<std::size_t>(i)], d, 1).bias(false)),
-          nn::BatchNorm2d(d)));
+          nn::Conv2d(nn::Conv2dOptions(backbone_ch[static_cast<std::size_t>(i)], ed, 1).bias(false)),
+          nn::BatchNorm2d(ed)));
     }
-    // decoder_input_proj (HF): 1x1 conv + BN re-projecting each PAN output (d->d)
-    // before they form the deformable decoder's multi-scale memory.
+    // decoder_input_proj (HF): 1x1 conv + BN re-projecting each PAN output (enc dim ->
+    // decoder d) before they form the deformable decoder's multi-scale memory.
     decoder_input_proj_ = register_module("decoder_input_proj", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels; ++i) {
       decoder_input_proj_->push_back(
-          nn::Sequential(nn::Conv2d(nn::Conv2dOptions(d, d, 1).bias(false)), nn::BatchNorm2d(d)));
+          nn::Sequential(nn::Conv2d(nn::Conv2dOptions(ed, d, 1).bias(false)), nn::BatchNorm2d(d)));
     }
 
-    // AIFI on the top level.
+    // AIFI on the top level (at the encoder width / FFN).
     aifi_ = register_module("aifi", nn::ModuleList());
     for (int i = 0; i < cfg.enc_layers; ++i) {
-      aifi_->push_back(AIFILayer(d, cfg.nheads, cfg.dim_feedforward));
+      aifi_->push_back(AIFILayer(ed, cfg.nheads, eff));
     }
 
-    // CCFM top-down (FPN) + bottom-up (PAN).
+    // CCFM top-down (FPN) + bottom-up (PAN), all at the encoder width.
     lateral_convs_ = register_module("lateral_convs", nn::ModuleList());
     fpn_blocks_ = register_module("fpn_blocks", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels - 1; ++i) {
-      lateral_convs_->push_back(ConvNorm(d, d, 1, 1, true));
-      fpn_blocks_->push_back(CSPRep(d * 2, d, 3));
+      lateral_convs_->push_back(ConvNorm(ed, ed, 1, 1, true));
+      fpn_blocks_->push_back(CSPRep(ed * 2, ed, 3, cspx));
     }
     downsample_convs_ = register_module("downsample_convs", nn::ModuleList());
     pan_blocks_ = register_module("pan_blocks", nn::ModuleList());
     for (int i = 0; i < cfg.num_levels - 1; ++i) {
-      downsample_convs_->push_back(ConvNorm(d, d, 3, 2, true));
-      pan_blocks_->push_back(CSPRep(d * 2, d, 3));
+      downsample_convs_->push_back(ConvNorm(ed, ed, 3, 2, true));
+      pan_blocks_->push_back(CSPRep(ed * 2, ed, 3, cspx));
     }
 
     // Shared query selection + deformable decoder.
@@ -265,7 +281,7 @@ class RtDetrImpl : public IModel {
   // Backbone + input_proj + AIFI + CCFM (FPN/PAN) + decoder_input_proj -> the
   // flattened multi-scale memory the deformable head consumes (shared forward).
   Encoded Encode(torch::Tensor images) {
-    const int d = cfg_.hidden_dim;
+    const int ed = cfg_.enc_dim > 0 ? cfg_.enc_dim : cfg_.hidden_dim;  // HybridEncoder width
     const auto b = images.size(0);
     auto feats = backbone_->forward_features(images);  // {C3, C4, C5}
 
@@ -281,12 +297,12 @@ class RtDetrImpl : public IModel {
       auto top = proj.back();
       const auto h = top.size(2);
       const auto w = top.size(3);
-      auto src = top.flatten(2).transpose(1, 2);  // [B, HW, d]
-      auto pos = SinCos2d(h, w, d, top.options());
+      auto src = top.flatten(2).transpose(1, 2);  // [B, HW, ed]
+      auto pos = SinCos2d(h, w, ed, top.options());
       for (const auto& m : *aifi_) {
         src = m->as<AIFILayerImpl>()->forward(src, pos);
       }
-      proj.back() = src.transpose(1, 2).reshape({b, d, h, w});
+      proj.back() = src.transpose(1, 2).reshape({b, ed, h, w});
     }
 
     // CCFM top-down (FPN).
@@ -357,15 +373,25 @@ class RtDetrImpl : public IModel {
   nn::Embedding label_enc_{nullptr};
 };
 
-// Sizes (n/s/m/l/x) = backbone depth + width. RT-DETR officially ships s/m/l/x
-// (R18/R34/R50/R101); n is our smaller nano (R18 @ width 128).
+// Sizes (n/s/m/l/x) scale the whole stack to match the official RT-DETR checkpoints
+// (R18/R34/R50/R101): backbone depth + decoder depth + HybridEncoder width/FFN +
+// CCFM CSPRepLayer expansion. R18/R34 run a 256-wide encoder with a 0.5 CSP expansion
+// (half-width RepVGG bottlenecks + a conv3 fuse) and 3/4 decoder layers; R50 is the
+// reference 256/1.0/6; R101 widens the encoder to 384 (FFN 2048). n is our smaller
+// nano (R18 @ width 128, no official weights).
 struct SizeSpec {
   const char* tag;
   const char* backbone;
-  int hidden;
+  int hidden;        // decoder d_model
+  int dec_layers;
+  int enc_dim;       // HybridEncoder/CCFM width
+  int enc_ffn;       // AIFI feed-forward
+  double expansion;  // CSPRepLayer hidden_expansion
 };
 constexpr SizeSpec kSizes[] = {
-    {"n", "r18", 128}, {"s", "r18", 256}, {"m", "r34", 256}, {"l", "r50", 256}, {"x", "r101", 256},
+    {"n", "r18", 128, 3, 128, 512, 0.5},  {"s", "r18", 256, 3, 256, 1024, 0.5},
+    {"m", "r34", 256, 4, 256, 1024, 0.5}, {"l", "r50", 256, 6, 256, 1024, 1.0},
+    {"x", "r101", 256, 6, 384, 2048, 1.0},
 };
 // v1/v2/v3 share this inference architecture; v3's published gain is largely a
 // training recipe — hierarchical dense positive supervision (one-to-many matching),
@@ -373,16 +399,26 @@ constexpr SizeSpec kSizes[] = {
 constexpr const char* kVersions[] = {"rt-detr", "rt-detrv2", "rt-detrv3"};
 constexpr int kDenseV3 = 6;  // RT-DETRv3 one-to-many top-k per GT
 
-void RegisterOne(const std::string& name, const std::string& backbone, int hidden, int dense_k,
-                 bool discrete) {
-  auto build = [name, backbone, hidden, dense_k, discrete](
-                   const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+void RegisterOne(const std::string& name, const SizeSpec& sz, int dense_k, bool discrete) {
+  auto build = [name, sz, dense_k, discrete](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
     Config c = ReadConfig(cfg);
     if (!(cfg && cfg["backbone"])) {
-      c.backbone = backbone;
+      c.backbone = sz.backbone;
     }
     if (!(cfg && cfg["hidden_dim"])) {
-      c.hidden_dim = hidden;
+      c.hidden_dim = sz.hidden;
+    }
+    if (!(cfg && cfg["dec_layers"])) {
+      c.dec_layers = sz.dec_layers;
+    }
+    if (!(cfg && cfg["enc_dim"])) {
+      c.enc_dim = sz.enc_dim;
+    }
+    if (!(cfg && cfg["enc_ffn"])) {
+      c.enc_ffn = sz.enc_ffn;
+    }
+    if (!(cfg && cfg["hidden_expansion"])) {
+      c.hidden_expansion = sz.expansion;
     }
     if (!(cfg && cfg["dense_o2m_k"])) {
       c.dense_o2m_k = dense_k;
@@ -410,9 +446,10 @@ void RegisterRtDetr() {
     const int dense_k = (std::string(ver) == "rt-detrv3") ? kDenseV3 : 0;
     const bool discrete = (std::string(ver) == "rt-detrv2");  // discrete sampling = v2's
     for (const auto& sz : kSizes) {
-      RegisterOne(std::string(ver) + "-" + sz.tag, sz.backbone, sz.hidden, dense_k, discrete);
+      RegisterOne(std::string(ver) + "-" + sz.tag, sz, dense_k, discrete);
     }
-    RegisterOne(ver, "r50", 256, dense_k, discrete);  // plain version = the -l config
+    // Plain version = the -l (R50) config.
+    RegisterOne(ver, {"", "r50", 256, 6, 256, 1024, 1.0}, dense_k, discrete);
   }
 
   // RT-DETR-CDN: RT-DETR (the -l config) + contrastive denoising training. Like
