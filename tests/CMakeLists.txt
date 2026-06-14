@@ -52,6 +52,7 @@ if(DETR_ENABLE_TORCH)
     unit/test_rf_detr.cpp
     unit/test_rf_detr_cdn.cpp
     unit/test_dinov2_windowed.cpp
+    unit/test_lw_detr_vit.cpp
     unit/test_dino.cpp
     unit/test_dino_cdn.cpp
     unit/test_train.cpp

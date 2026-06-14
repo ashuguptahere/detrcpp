@@ -11,6 +11,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **LW-DETR ViT backbone (`models::LwDetrViT`)** — first stage of the faithful
+  LW-DETR port (Atten4Vis/LW-DETR). A plain windowed ViT (CAEv2-style): conv
+  patch-embed + bicubic absolute pos-embed (no cls token), interleaved
+  windowed/global attention over `num_windows_side²` windows with LayerScale
+  (`gamma_1/2`), separate q/k/v/o projections (bias-free `k`), and no final norm on
+  the emitted feature maps. Verified against the HF `LwDetrForObjectDetection`
+  (medium / ViT-S) reference: the 4 backbone feature maps match to ~1e-3
+  (`LwDetrViTParity` gated test). The projector (C2f) and two-stage deformable
+  decoder are shared with RF-DETR; registry + COCO validation land next.
 
 ### Changed
 
