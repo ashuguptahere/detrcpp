@@ -144,6 +144,11 @@ ordered for shippability; items inside a phase can parallelize.
 Each variant = a `models::IModel` module + a `WeightRemapper` validated against the
 official checkpoint. Drop any that fail the license check.
 
+**▶ Up next (implementing soon): LW-DETR and D-FINE** — both Apache-2.0, both with
+official weights + a `WeightRemapper`, validated against COCO like the other real-time
+variants. LW-DETR shares most of RF-DETR's decoder (already built); D-FINE adds its
+fine-grained distribution-refinement box head (FDR) + GO-LSD — a new head module.
+
 Classic line:
 - [ ] DETR ResNet-50/101 (Apache-2.0 ✓) — swap our compact backbone for ResNet
 - [ ] Deformable-DETR (Apache-2.0 ✓)
@@ -160,8 +165,10 @@ Real-time line:
 - [ ] RT-DETR / RT-DETRv2 (Apache-2.0 ✓)
 - [ ] RT-DETRv3/v4 (? verify)
 - [ ] RF-DETR (Roboflow, Apache-2.0 ✓)
-- [ ] LW-DETR (Apache-2.0 ?)
-- [ ] D-FINE (Apache-2.0 ?)
+- [ ] **LW-DETR (Apache-2.0 ✓) ← up next** — Atten4Vis/LW-DETR; ViT encoder + LW-DETR
+      decoder (RF-DETR is built on this, so much is in place)
+- [ ] **D-FINE (Apache-2.0 ✓) ← up next** — Peterande/D-FINE; HGNetv2/ResNet backbone +
+      fine-grained distribution-refinement (FDR) box head + GO-LSD self-distillation
 - [ ] DEIM / DEIMv2 (Apache-2.0 ?)
 
 Stronger-matching / research line:
@@ -169,8 +176,8 @@ Stronger-matching / research line:
 - [ ] Salience-DETR, Relation-DETR (Apache-2.0 ?)
 - [ ] YOLOS (Apache-2.0 ✓)
 
-Priority: DETR → RT-DETR(v2) → RF-DETR → Deformable/DAB/DN/DINO →
-D-FINE/DEIM/LW-DETR → Co-DETR/Grounding-DINO/Mask-DINO.
+Priority: DETR → RT-DETR(v2) → RF-DETR → Deformable/DAB/DN/DINO [all DONE] →
+**LW-DETR / D-FINE [next]** → DEIM → Co-DETR/Grounding-DINO/Mask-DINO.
 
 ### TensorRT
 - [ ] `infer::TrtBackend` (`.engine`)
