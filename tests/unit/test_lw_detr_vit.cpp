@@ -7,12 +7,17 @@
 #include <gtest/gtest.h>
 #include <torch/torch.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "detr/models/lw_detr_vit.hpp"
+#include "detr/models/rf_detr_real.hpp"
 #include "detr/weights/safetensors.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
@@ -56,6 +61,93 @@ TEST(LwDetrViTParity, MatchesMediumBackbone) {
     std::cout << "feat" << i << " max|diff| = " << d << "\n";
     EXPECT_LT(d, 5e-3F) << "feat" << i;
   }
+}
+
+// LW-DETR-medium config for the shared RfDetrReal family model.
+RfDetrRealConfig LwDetrMediumConfig() {
+  RfDetrRealConfig c;
+  c.name = "lw-detr-medium";
+  c.upstream = "https://github.com/Atten4Vis/LW-DETR";
+  c.imgsz = 640;
+  c.num_classes = 91;
+  c.dec_layers = 3;
+  c.backbone = RfDetrRealConfig::kLwDetrViT;
+  c.vit_embed = 384;
+  c.vit_depth = 10;
+  c.vit_heads = 12;
+  c.patch = 16;
+  c.num_windows = 4;  // windows per side
+  c.pe_grid = 14;     // pretrain 224/16
+  c.projector_batchnorm = true;
+  c.out_indices = {2, 4, 5, 9};
+  c.window_blocks = {0, 1, 3, 6, 7, 9};
+  return c;
+}
+
+TEST(LwDetrViTParity, FullMediumEndToEnd) {
+  const std::string wpath = "/tmp/lwdetr_full.safetensors";
+  const std::string ppath = "/tmp/lwdetr_parity/parity.safetensors";
+  if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
+    GTEST_SKIP() << "parity fixtures absent";
+  }
+  auto model = std::make_shared<RfDetrRealImpl>(LwDetrMediumConfig());
+  auto wsd = weights::LoadSafetensors(wpath);
+  ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
+  auto rep = weights::LoadStateDictInto(*model, *wsd);
+  ASSERT_TRUE(rep.has_value()) << rep.error().message;
+  std::cout << "full loaded " << rep->loaded << " missing " << rep->missing.size() << " unexpected "
+            << rep->unexpected.size() << "\n";
+  for (const auto& mk : rep->missing) {
+    std::cout << "  MISSING " << mk << "\n";
+  }
+  EXPECT_EQ(rep->missing.size(), 0U);
+  EXPECT_EQ(rep->unexpected.size(), 0U);
+
+  auto psd = *weights::LoadSafetensors(ppath);
+  auto input = RawToTorch(psd.Find("input"));
+  model->eval();
+  torch::NoGradGuard ng;
+  auto det = model->Forward(input);
+  auto rl = RawToTorch(psd.Find("logits")).squeeze(0);
+  auto rb = RawToTorch(psd.Find("pred_boxes")).squeeze(0);
+  auto cl = det.logits.squeeze(0);
+  auto cb = det.boxes.squeeze(0);
+  ASSERT_EQ(det.logits.sizes(), RawToTorch(psd.Find("logits")).sizes());
+
+  // Token-aligned parity (random input -> torch.topk tie-break reorders a few of the
+  // 300 query slots between backends; align by the encoder token each slot selected).
+  const int Q = static_cast<int>(cb.size(0));
+  auto cpp_tok = model->LastTopkIndices().squeeze(0).to(torch::kLong).contiguous();
+  auto hf_tok = RawToTorch(psd.Find("topk_idx")).squeeze(0).to(torch::kLong).contiguous();
+  auto ca = cpp_tok.accessor<std::int64_t, 1>();
+  auto ha = hf_tok.accessor<std::int64_t, 1>();
+  std::unordered_map<std::int64_t, int> hf_slot;
+  for (int j = 0; j < Q; ++j) {
+    hf_slot[ha[j]] = j;
+  }
+  std::vector<float> boxd, logd;
+  int unmatched = 0;
+  for (int i = 0; i < Q; ++i) {
+    auto it = hf_slot.find(ca[i]);
+    if (it == hf_slot.end()) {
+      ++unmatched;
+      continue;
+    }
+    boxd.push_back((cb[i] - rb[it->second]).abs().max().item<float>());
+    logd.push_back((cl[i] - rl[it->second]).abs().max().item<float>());
+  }
+  std::sort(boxd.begin(), boxd.end());
+  std::sort(logd.begin(), logd.end());
+  const auto mid = boxd.size() / 2;
+  const auto p90 = boxd.size() * 9 / 10;
+  std::cout << "token-aligned " << boxd.size() << "/" << Q << " (set diff " << unmatched
+            << ")\nbox p50=" << boxd[mid] << " p90=" << boxd[p90] << " max=" << boxd.back()
+            << "\nlogit p50=" << logd[mid] << " p90=" << logd[p90] << " max=" << logd.back() << "\n";
+  EXPECT_LE(unmatched, 2);
+  EXPECT_LT(boxd[mid], 1e-3F);
+  EXPECT_LT(logd[mid], 1e-2F);
+  EXPECT_LT(boxd[p90], 3e-3F);
+  EXPECT_LT(logd[p90], 1.5e-2F);
 }
 
 }  // namespace

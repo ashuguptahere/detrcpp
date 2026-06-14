@@ -25,19 +25,21 @@ struct ChannelLayerNormImpl : nn::Module {
 };
 TORCH_MODULE(ChannelLayerNorm);
 
-// Conv(no bias) + channel LayerNorm + SiLU.
+// Conv(no bias) + norm + SiLU. The conv norm is a channel LayerNorm (RF-DETR) or a
+// BatchNorm2d (LW-DETR) — `batch_norm` selects; both register as "bn".
 struct ConvXImpl : nn::Module {
-  ConvXImpl(int in_ch, int out_ch, int kernel, int stride);
+  ConvXImpl(int in_ch, int out_ch, int kernel, int stride, bool batch_norm = false);
   torch::Tensor forward(torch::Tensor x);
   nn::Conv2d conv{nullptr};
-  ChannelLayerNorm bn{nullptr};
+  ChannelLayerNorm bn{nullptr};   // RF-DETR
+  nn::BatchNorm2d bn2d{nullptr};  // LW-DETR
 };
 TORCH_MODULE(ConvX);
 
 // C2f (YOLOv8): cv1 splits into two, n bottlenecks chain off the second half,
 // everything concatenated and fused by cv2. Bottlenecks here have no shortcut.
 struct C2fImpl : nn::Module {
-  C2fImpl(int c1, int c2, int n);
+  C2fImpl(int c1, int c2, int n, bool batch_norm = false);
   torch::Tensor forward(torch::Tensor x);
   int c_;
   ConvX cv1{nullptr}, cv2{nullptr};
@@ -47,8 +49,10 @@ TORCH_MODULE(C2f);
 
 // Single-scale projector: concat |num_features| backbone features (each in_ch) ->
 // C2f(sum, out_ch, num_blocks) -> channel LayerNorm. Returns one [B, out_ch, H, W].
+// `batch_norm` switches the C2f conv norm (RF-DETR LayerNorm vs LW-DETR BatchNorm).
 struct RfDetrProjectorImpl : nn::Module {
-  RfDetrProjectorImpl(int num_features, int in_ch, int out_ch, int num_blocks);
+  RfDetrProjectorImpl(int num_features, int in_ch, int out_ch, int num_blocks,
+                      bool batch_norm = false);
   torch::Tensor forward(const std::vector<torch::Tensor>& feats);
   C2f stage{nullptr};
   ChannelLayerNorm norm{nullptr};

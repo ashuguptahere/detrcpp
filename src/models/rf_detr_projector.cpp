@@ -17,22 +17,28 @@ torch::Tensor ChannelLayerNormImpl::forward(torch::Tensor x) {
   return weight.view({1, -1, 1, 1}) * x + bias.view({1, -1, 1, 1});
 }
 
-ConvXImpl::ConvXImpl(int in_ch, int out_ch, int kernel, int stride) {
+ConvXImpl::ConvXImpl(int in_ch, int out_ch, int kernel, int stride, bool batch_norm) {
   conv = register_module(
       "conv", nn::Conv2d(nn::Conv2dOptions(in_ch, out_ch, kernel).stride(stride).padding(kernel / 2).bias(false)));
-  bn = register_module("bn", ChannelLayerNorm(out_ch));
+  if (batch_norm) {
+    bn2d = register_module("bn", nn::BatchNorm2d(nn::BatchNorm2dOptions(out_ch).eps(1e-5)));
+  } else {
+    bn = register_module("bn", ChannelLayerNorm(out_ch));
+  }
 }
 
 torch::Tensor ConvXImpl::forward(torch::Tensor x) {
-  return torch::silu(bn->forward(conv->forward(x.contiguous())));
+  auto c = conv->forward(x.contiguous());
+  auto n = bn2d ? bn2d->forward(c) : bn->forward(c);
+  return torch::silu(n);
 }
 
 namespace {
 // A C2f bottleneck: two 3x3 ConvX, no residual (C2f's default shortcut=false).
 struct BottleneckImpl : nn::Module {
-  BottleneckImpl(int c) {
-    cv1 = register_module("cv1", ConvX(c, c, 3, 1));
-    cv2 = register_module("cv2", ConvX(c, c, 3, 1));
+  BottleneckImpl(int c, bool batch_norm) {
+    cv1 = register_module("cv1", ConvX(c, c, 3, 1, batch_norm));
+    cv2 = register_module("cv2", ConvX(c, c, 3, 1, batch_norm));
   }
   torch::Tensor forward(torch::Tensor x) { return cv2->forward(cv1->forward(x)); }
   ConvX cv1{nullptr}, cv2{nullptr};
@@ -40,12 +46,12 @@ struct BottleneckImpl : nn::Module {
 TORCH_MODULE(Bottleneck);
 }  // namespace
 
-C2fImpl::C2fImpl(int c1, int c2, int n) : c_(c2 / 2) {
-  cv1 = register_module("cv1", ConvX(c1, 2 * c_, 1, 1));
-  cv2 = register_module("cv2", ConvX((2 + n) * c_, c2, 1, 1));
+C2fImpl::C2fImpl(int c1, int c2, int n, bool batch_norm) : c_(c2 / 2) {
+  cv1 = register_module("cv1", ConvX(c1, 2 * c_, 1, 1, batch_norm));
+  cv2 = register_module("cv2", ConvX((2 + n) * c_, c2, 1, 1, batch_norm));
   m = register_module("m", nn::ModuleList());
   for (int i = 0; i < n; ++i) {
-    m->push_back(Bottleneck(c_));
+    m->push_back(Bottleneck(c_, batch_norm));
   }
 }
 
@@ -58,8 +64,9 @@ torch::Tensor C2fImpl::forward(torch::Tensor x) {
   return cv2->forward(torch::cat(ys, 1));
 }
 
-RfDetrProjectorImpl::RfDetrProjectorImpl(int num_features, int in_ch, int out_ch, int num_blocks) {
-  stage = register_module("stage", C2f(num_features * in_ch, out_ch, num_blocks));
+RfDetrProjectorImpl::RfDetrProjectorImpl(int num_features, int in_ch, int out_ch, int num_blocks,
+                                         bool batch_norm) {
+  stage = register_module("stage", C2f(num_features * in_ch, out_ch, num_blocks, batch_norm));
   norm = register_module("norm", ChannelLayerNorm(out_ch));
 }
 

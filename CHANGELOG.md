@@ -18,8 +18,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   (`gamma_1/2`), separate q/k/v/o projections (bias-free `k`), and no final norm on
   the emitted feature maps. Verified against the HF `LwDetrForObjectDetection`
   (medium / ViT-S) reference: the 4 backbone feature maps match to ~1e-3
-  (`LwDetrViTParity` gated test). The projector (C2f) and two-stage deformable
-  decoder are shared with RF-DETR; registry + COCO validation land next.
+  (`LwDetrViTParity` gated test).
+- **LW-DETR-medium full model — end-to-end parity.** Since RF-DETR is built on
+  LW-DETR, the faithful model is now backbone-agnostic: `RfDetrRealImpl` takes a
+  `RfDetrRealConfig` selecting the backbone (DINOv2-windowed for RF-DETR, `LwDetrViT`
+  for LW-DETR) and reuses the same C2f projector + two-stage single-scale deformable
+  decoder + heads. The C2f projector's conv norm is now switchable (channel-LayerNorm
+  for RF-DETR, BatchNorm for LW-DETR). The whole LW-DETR-medium model loads the
+  official weights 1:1 (329/329, 0 missing/unexpected) and reproduces the HF reference
+  to fp32 noise — token-aligned 300/300, box/logit p90 2.4e-5 / 1.0e-4, max 1.4e-3
+  (`LwDetrViTParity.FullMediumEndToEnd`). Registry + COCO validation next.
 
 ### Changed
 

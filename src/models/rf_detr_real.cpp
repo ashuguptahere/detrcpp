@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace detr::models {
@@ -86,34 +87,41 @@ torch::Tensor RfDecoderLayerImpl::forward(torch::Tensor tgt, const torch::Tensor
   return layer_norm->forward(m);
 }
 
-RfDetrRealImpl::RfDetrRealImpl(int num_classes, int num_queries, int imgsz, int vit_embed,
-                               int vit_heads, int patch, int num_windows, int dec_layers)
-    : num_classes_(num_classes), num_queries_(num_queries), imgsz_(imgsz) {
+RfDetrRealImpl::RfDetrRealImpl(RfDetrRealConfig cfg) : cfg_(std::move(cfg)) {
   const int d = d_model_;
-  const int pe = imgsz / patch;  // native pos-embed grid
-  backbone_ = register_module(
-      "backbone", Dinov2Windowed(vit_embed, 12, vit_heads, patch, num_windows, pe, 0,
-                                 std::vector<int>{3, 6, 9, 12},
-                                 std::vector<int>{0, 1, 2, 4, 5, 7, 8, 10, 11}));
-  projector_ = register_module("projector", RfDetrProjector(4, vit_embed, d, 3));
+  const int c = cfg_.num_classes;
+  const int pe = cfg_.pe_grid > 0 ? cfg_.pe_grid : cfg_.imgsz / cfg_.patch;
+  if (cfg_.backbone == RfDetrRealConfig::kLwDetrViT) {
+    backbone_lw_ = register_module(
+        "backbone", LwDetrViT(cfg_.vit_embed, cfg_.vit_depth, cfg_.vit_heads, cfg_.patch,
+                              cfg_.num_windows, pe, cfg_.out_indices, cfg_.window_blocks));
+  } else {
+    backbone_dino_ = register_module(
+        "backbone", Dinov2Windowed(cfg_.vit_embed, cfg_.vit_depth, cfg_.vit_heads, cfg_.patch,
+                                   cfg_.num_windows, pe, 0, cfg_.out_indices, cfg_.window_blocks));
+  }
+  projector_ =
+      register_module("projector", RfDetrProjector(4, cfg_.vit_embed, d, 3, cfg_.projector_batchnorm));
   enc_output_ = register_module("enc_output", nn::Linear(d, d));
   enc_output_norm_ = register_module("enc_output_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
-  enc_out_class_ = register_module("enc_out_class", nn::Linear(d, num_classes));
+  enc_out_class_ = register_module("enc_out_class", nn::Linear(d, c));
   enc_out_bbox_ = register_module("enc_out_bbox", Mlp(d, d, 4, 3));
-  reference_point_embed_ = register_parameter("reference_point_embed", torch::zeros({num_queries, 4}));
-  query_feat_ = register_parameter("query_feat", torch::zeros({num_queries, d}));
+  reference_point_embed_ =
+      register_parameter("reference_point_embed", torch::zeros({cfg_.num_queries, 4}));
+  query_feat_ = register_parameter("query_feat", torch::zeros({cfg_.num_queries, d}));
   ref_point_head_ = register_module("ref_point_head", Mlp(2 * d, d, d, 2));
   decoder_ = register_module("decoder", nn::ModuleList());
-  for (int i = 0; i < dec_layers; ++i) {
+  for (int i = 0; i < cfg_.dec_layers; ++i) {
     decoder_->push_back(RfDecoderLayer(d, /*sa=*/8, /*ca=*/16, /*levels=*/1, /*points=*/2, 2048));
   }
   dec_layernorm_ = register_module("dec_layernorm", nn::LayerNorm(nn::LayerNormOptions({d})));
-  class_embed_ = register_module("class_embed", nn::Linear(d, num_classes));
+  class_embed_ = register_module("class_embed", nn::Linear(d, c));
   bbox_embed_ = register_module("bbox_embed", Mlp(d, d, 4, 3));
 }
 
 Detections RfDetrRealImpl::Forward(torch::Tensor images) {
-  auto feats = backbone_->forward(images);              // 4 x [B, vit_embed, h, w]
+  auto feats = backbone_lw_ ? backbone_lw_->forward(images)   // 4 x [B, vit_embed, h, w]
+                            : backbone_dino_->forward(images);
   auto mem_feat = projector_->forward(feats);           // [B, d, h, w]
   const auto b = mem_feat.size(0);
   const auto h = mem_feat.size(2);
@@ -126,10 +134,11 @@ Detections RfDetrRealImpl::Forward(torch::Tensor images) {
   auto oq = enc_output_norm_->forward(enc_output_->forward(memory));           // [B,hw,d]
   auto enc_class = enc_out_class_->forward(oq);                                // [B,hw,C]
   auto enc_coord = RefineBboxes(proposals, enc_out_bbox_->forward(oq));        // [B,hw,4]
-  auto topk = std::get<1>(std::get<0>(enc_class.max(-1)).topk(num_queries_, 1));  // [B,nq]
+  auto topk =
+      std::get<1>(std::get<0>(enc_class.max(-1)).topk(cfg_.num_queries, 1));   // [B,nq]
   topk_idx_ = topk;
   auto gi = topk.unsqueeze(-1);
-  auto topk_coords = enc_coord.gather(1, gi.expand({b, num_queries_, 4}));     // [B,nq,4]
+  auto topk_coords = enc_coord.gather(1, gi.expand({b, cfg_.num_queries, 4})); // [B,nq,4]
   auto rpe = reference_point_embed_.unsqueeze(0).expand({b, -1, -1});
   auto reference_points = RefineBboxes(topk_coords, rpe);                      // [B,nq,4]
   auto tgt = query_feat_.unsqueeze(0).expand({b, -1, -1}).contiguous();        // [B,nq,d]
@@ -150,14 +159,14 @@ Detections RfDetrRealImpl::Forward(torch::Tensor images) {
 
 ModelMeta RfDetrRealImpl::Meta() const {
   ModelMeta m;
-  m.name = "rf-detr-nano";
-  m.imgsz = imgsz_;
-  m.num_classes = num_classes_;
-  m.num_queries = num_queries_;
-  m.focal = true;            // sigmoid/focal head, no no-object slot
-  m.imagenet_norm = true;    // [0,1] then ImageNet mean/std, square resize at imgsz
+  m.name = cfg_.name;
+  m.imgsz = cfg_.imgsz;
+  m.num_classes = cfg_.num_classes;
+  m.num_queries = cfg_.num_queries;
+  m.focal = true;                       // sigmoid/focal head, no no-object slot
+  m.imagenet_norm = cfg_.imagenet_norm;  // [0,1] then ImageNet mean/std, square resize
   m.license = "Apache-2.0";
-  m.upstream = "https://github.com/roboflow/rf-detr";
+  m.upstream = cfg_.upstream;
   return m;
 }
 
