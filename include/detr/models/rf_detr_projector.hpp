@@ -25,11 +25,16 @@ struct ChannelLayerNormImpl : nn::Module {
 };
 TORCH_MODULE(ChannelLayerNorm);
 
-// Conv(no bias) + norm + SiLU. The conv norm is a channel LayerNorm (RF-DETR) or a
-// BatchNorm2d (LW-DETR) — `batch_norm` selects; both register as "bn".
+// Conv activation: SiLU (C2f convs), ReLU (LW-DETR sampling convs), or none.
+enum class ConvAct { kSiLU, kReLU, kNone };
+
+// Conv(no bias) + norm + activation. The conv norm is a channel LayerNorm (RF-DETR)
+// or a BatchNorm2d (LW-DETR) — `batch_norm` selects; both register as "bn".
 struct ConvXImpl : nn::Module {
-  ConvXImpl(int in_ch, int out_ch, int kernel, int stride, bool batch_norm = false);
+  ConvXImpl(int in_ch, int out_ch, int kernel, int stride, bool batch_norm = false,
+            ConvAct act = ConvAct::kSiLU);
   torch::Tensor forward(torch::Tensor x);
+  ConvAct act_;
   nn::Conv2d conv{nullptr};
   ChannelLayerNorm bn{nullptr};   // RF-DETR
   nn::BatchNorm2d bn2d{nullptr};  // LW-DETR
@@ -58,5 +63,18 @@ struct RfDetrProjectorImpl : nn::Module {
   ChannelLayerNorm norm{nullptr};
 };
 TORCH_MODULE(RfDetrProjector);
+
+// LW-DETR multi-scale projector (LwDetrMultiScaleProjector): for each output scale
+// (e.g. P3 via 2x upsample, P5 via 0.5x downsample), each of |num_features| backbone
+// features (each in_ch) is resampled to that scale, concatenated, run through a C2f
+// (BatchNorm) + channel LayerNorm. Returns one [B, out_ch, H_s, W_s] per scale.
+struct LwDetrMultiScaleProjectorImpl : nn::Module {
+  LwDetrMultiScaleProjectorImpl(int num_features, int in_ch, int out_ch, int num_blocks,
+                                std::vector<double> scale_factors);
+  std::vector<torch::Tensor> forward(const std::vector<torch::Tensor>& feats);
+  std::vector<double> scales_;
+  nn::ModuleList scale_layers{nullptr};  // one ScaleProjector per scale
+};
+TORCH_MODULE(LwDetrMultiScaleProjector);
 
 }  // namespace detr::models

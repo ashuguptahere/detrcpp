@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -36,13 +37,15 @@ torch::Tensor RefineBboxes(const torch::Tensor& ref, const torch::Tensor& delta)
   return torch::cat({cxcy, wh}, -1);
 }
 
-// Grid-anchor proposals for one level: [1, H*W, 4] cxcywh, centers (i+.5)/size, wh 0.05.
-torch::Tensor GridProposals(std::int64_t h, std::int64_t w, const torch::TensorOptions& opts) {
+// Grid-anchor proposals for one level: [1, H*W, 4] cxcywh, centers (i+.5)/size,
+// wh = 0.05 * 2^level (coarser levels get larger anchors).
+torch::Tensor GridProposals(std::int64_t h, std::int64_t w, int level,
+                            const torch::TensorOptions& opts) {
   auto gy = torch::arange(h, opts).unsqueeze(1).expand({h, w});
   auto gx = torch::arange(w, opts).unsqueeze(0).expand({h, w});
   auto grid = torch::stack({gx, gy}, -1);  // [h,w,2] (x,y)
   grid = (grid + 0.5) / torch::tensor({static_cast<float>(w), static_cast<float>(h)}, opts);
-  auto wh = torch::full({h, w, 2}, 0.05, opts);
+  auto wh = torch::full({h, w, 2}, 0.05 * std::pow(2.0, level), opts);
   return torch::cat({grid, wh}, -1).view({1, h * w, 4});
 }
 
@@ -88,8 +91,10 @@ torch::Tensor RfDecoderLayerImpl::forward(torch::Tensor tgt, const torch::Tensor
 }
 
 RfDetrRealImpl::RfDetrRealImpl(RfDetrRealConfig cfg) : cfg_(std::move(cfg)) {
+  d_model_ = cfg_.d_model;
   const int d = d_model_;
   const int c = cfg_.num_classes;
+  const int n_levels = cfg_.scale_factors.empty() ? 1 : static_cast<int>(cfg_.scale_factors.size());
   const int pe = cfg_.pe_grid > 0 ? cfg_.pe_grid : cfg_.imgsz / cfg_.patch;
   if (cfg_.backbone == RfDetrRealConfig::kLwDetrViT) {
     backbone_lw_ = register_module(
@@ -101,8 +106,13 @@ RfDetrRealImpl::RfDetrRealImpl(RfDetrRealConfig cfg) : cfg_(std::move(cfg)) {
                                    cfg_.num_windows, pe, 0, cfg_.out_indices, cfg_.window_blocks));
   }
   const int n_feats = static_cast<int>(cfg_.out_indices.size());  // 4 (RF-DETR) or 3 (LW-DETR-tiny)
-  projector_ = register_module(
-      "projector", RfDetrProjector(n_feats, cfg_.vit_embed, d, 3, cfg_.projector_batchnorm));
+  if (cfg_.scale_factors.empty()) {
+    projector_ = register_module(
+        "projector", RfDetrProjector(n_feats, cfg_.vit_embed, d, 3, cfg_.projector_batchnorm));
+  } else {
+    ms_projector_ = register_module(
+        "projector", LwDetrMultiScaleProjector(n_feats, cfg_.vit_embed, d, 3, cfg_.scale_factors));
+  }
   enc_output_ = register_module("enc_output", nn::Linear(d, d));
   enc_output_norm_ = register_module("enc_output_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
   enc_out_class_ = register_module("enc_out_class", nn::Linear(d, c));
@@ -112,8 +122,10 @@ RfDetrRealImpl::RfDetrRealImpl(RfDetrRealConfig cfg) : cfg_(std::move(cfg)) {
   query_feat_ = register_parameter("query_feat", torch::zeros({cfg_.num_queries, d}));
   ref_point_head_ = register_module("ref_point_head", Mlp(2 * d, d, d, 2));
   decoder_ = register_module("decoder", nn::ModuleList());
+  const int sa_heads = d / 32;  // head_dim 32 (8 @ d=256, 12 @ d=384)
+  const int ca_heads = d / 16;  // head_dim 16 (16 @ d=256, 24 @ d=384)
   for (int i = 0; i < cfg_.dec_layers; ++i) {
-    decoder_->push_back(RfDecoderLayer(d, /*sa=*/8, /*ca=*/16, /*levels=*/1, /*points=*/2, 2048));
+    decoder_->push_back(RfDecoderLayer(d, sa_heads, ca_heads, n_levels, cfg_.n_points, 2048));
   }
   dec_layernorm_ = register_module("dec_layernorm", nn::LayerNorm(nn::LayerNormOptions({d})));
   class_embed_ = register_module("class_embed", nn::Linear(d, c));
@@ -121,19 +133,35 @@ RfDetrRealImpl::RfDetrRealImpl(RfDetrRealConfig cfg) : cfg_(std::move(cfg)) {
 }
 
 Detections RfDetrRealImpl::Forward(torch::Tensor images) {
-  auto feats = backbone_lw_ ? backbone_lw_->forward(images)   // 4 x [B, vit_embed, h, w]
+  auto feats = backbone_lw_ ? backbone_lw_->forward(images)   // N x [B, vit_embed, h, w]
                             : backbone_dino_->forward(images);
-  auto mem_feat = projector_->forward(feats);           // [B, d, h, w]
-  const auto b = mem_feat.size(0);
-  const auto h = mem_feat.size(2);
-  const auto w = mem_feat.size(3);
-  auto memory = mem_feat.flatten(2).transpose(1, 2).contiguous();  // [B, hw, d]
-  SpatialShapes shapes{{h, w}};
+  // Projector -> one feature map per decoder level (single-scale: just one).
+  auto levels = ms_projector_ ? ms_projector_->forward(feats)
+                              : std::vector<torch::Tensor>{projector_->forward(feats)};
+  const auto b = levels[0].size(0);
+  const int n_levels = static_cast<int>(levels.size());
+  SpatialShapes shapes;
+  std::vector<torch::Tensor> mem_parts, prop_parts;
+  for (int l = 0; l < n_levels; ++l) {
+    const auto h = levels[static_cast<std::size_t>(l)].size(2);
+    const auto w = levels[static_cast<std::size_t>(l)].size(3);
+    shapes.emplace_back(h, w);
+    mem_parts.push_back(levels[static_cast<std::size_t>(l)].flatten(2).transpose(1, 2));  // [B,hw,d]
+    prop_parts.push_back(GridProposals(h, w, l, levels[static_cast<std::size_t>(l)].options()));
+  }
+  auto memory = torch::cat(mem_parts, 1).contiguous();                  // [B, sum(hw), d]
 
-  // Two-stage query selection (group 0).
-  auto proposals = GridProposals(h, w, memory.options()).expand({b, -1, -1});  // [B,hw,4]
-  auto oq = enc_output_norm_->forward(enc_output_->forward(memory));           // [B,hw,d]
-  auto enc_class = enc_out_class_->forward(oq);                                // [B,hw,C]
+  // Two-stage query selection (group 0). Grid anchors whose coords fall outside
+  // (0.01, 0.99) are "invalid": their object-query is zeroed and their class score is
+  // forced to -inf so they're never selected (matters when a level's grid reaches the
+  // image edge — e.g. LW-DETR's P3 80x80; a no-op for the 40x40 single-scale levels).
+  auto proposals = torch::cat(prop_parts, 1).expand({b, -1, -1}).contiguous();  // [B,sum_hw,4]
+  auto invalid = ((proposals > 0.01) & (proposals < 0.99)).all(-1, /*keepdim=*/true).logical_not();
+  auto obj_query = memory.masked_fill(invalid, 0.0);                           // [B,hw,d]
+  proposals = proposals.masked_fill(invalid, 0.0);
+  auto oq = enc_output_norm_->forward(enc_output_->forward(obj_query));        // [B,hw,d]
+  auto enc_class =
+      enc_out_class_->forward(oq).masked_fill(invalid, -std::numeric_limits<float>::infinity());
   auto enc_coord = RefineBboxes(proposals, enc_out_bbox_->forward(oq));        // [B,hw,4]
   auto topk =
       std::get<1>(std::get<0>(enc_class.max(-1)).topk(cfg_.num_queries, 1));   // [B,nq]
@@ -144,8 +172,12 @@ Detections RfDetrRealImpl::Forward(torch::Tensor images) {
   auto reference_points = RefineBboxes(topk_coords, rpe);                      // [B,nq,4]
   auto tgt = query_feat_.unsqueeze(0).expand({b, -1, -1}).contiguous();        // [B,nq,d]
 
-  // Decoder (fixed reference points; query position from the sine embed).
+  // Decoder (fixed reference points; query position from the sine embed). The 4D
+  // reference points are shared across levels — replicate for the deformable attn.
   auto ref_input = reference_points.unsqueeze(2);                              // [B,nq,1,4]
+  if (n_levels > 1) {
+    ref_input = ref_input.expand({b, cfg_.num_queries, n_levels, 4}).contiguous();
+  }
   auto query_pos = ref_point_head_->forward(SineEmbed(reference_points, d_model_ / 2));
   for (const auto& layer : *decoder_) {
     tgt = layer->as<RfDecoderLayerImpl>()->forward(tgt, query_pos, ref_input, memory, shapes);

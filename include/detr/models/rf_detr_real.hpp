@@ -29,6 +29,8 @@ struct RfDetrRealConfig {
   std::string name = "rf-detr-nano";
   std::string upstream = "https://github.com/roboflow/rf-detr";
   int num_classes = 91, num_queries = 300, imgsz = 384, dec_layers = 2;
+  int d_model = 256, n_points = 2;
+  std::vector<double> scale_factors = {};  // empty => single-scale; e.g. {2.0,0.5} multi
   bool imagenet_norm = true;
   BackboneKind backbone = kDinov2Windowed;
   int vit_embed = 384, vit_depth = 12, vit_heads = 6, patch = 16, num_windows = 2;
@@ -72,7 +74,8 @@ class RfDetrRealImpl : public IModel {
 
   Dinov2Windowed backbone_dino_{nullptr};  // RF-DETR backbone
   LwDetrViT backbone_lw_{nullptr};         // LW-DETR backbone (exactly one is built)
-  RfDetrProjector projector_{nullptr};
+  RfDetrProjector projector_{nullptr};                // single-scale
+  LwDetrMultiScaleProjector ms_projector_{nullptr};   // multi-scale (LW-DETR L/X)
   // Two-stage query selection (group 0 only at inference).
   nn::Linear enc_output_{nullptr};
   nn::LayerNorm enc_output_norm_{nullptr};

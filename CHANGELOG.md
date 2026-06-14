@@ -36,7 +36,21 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   `lw-detr-small` **0.479** (0.480), `lw-detr-medium` **0.523** (0.525) — all within
   ~0.2 AP. Native converter `lwdetr_convert_native.py` (splits the fused backbone qkv +
   decoder in_proj). Eval: `--coco91 --imgsz 640` (ImageNet-norm square, no `--aspect`).
-  large/xlarge (multi-scale projector) are a follow-up. See `VALIDATION.md`.
+  See `VALIDATION.md`.
+- **LW-DETR large/xlarge (multi-scale projector) registered + COCO-validated** —
+  `lw-detr-{large,xlarge}` add the multi-scale projector (`LwDetrMultiScaleProjector`):
+  per output scale (P3 via 2× `ConvTranspose` upsample, P5 via stride-2 `ConvX`
+  downsample) each backbone feature is resampled, concatenated, and fused by a C2f +
+  channel-LayerNorm. The two-stage query selection now spans the concatenated levels
+  with the invalid-grid-anchor masking (proposals outside `(0.01, 0.99)` zero their
+  object query / proposal and force their class score to `-inf` — needed once the P3
+  80×80 grid reaches the image edge), the deformable cross-attention runs over both
+  levels (`d_model` 384, 2 levels × 4 points, sa/ca heads 12/24), and the decoder
+  reference points replicate across levels. large = ViT-S / xlarge = ViT-B backbone.
+  Validated on full COCO `val2017` against the **native `xbsu/LW-DETR` `.pth`** (0
+  missing/unexpected): `lw-detr-large` **0.558** (official 0.561), `lw-detr-xlarge`
+  **0.582** (0.583). End-to-end fp32 parity vs the authors' own model (token-aligned
+  300/300, box p90 ≤ 4e-4): `LwDetrViTParity.Full{Large,XLarge}EndToEnd`.
 
 ### Changed
 
