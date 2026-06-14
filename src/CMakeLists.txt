@@ -211,6 +211,7 @@ if(DETR_ENABLE_TORCH)
     models/resnet.cpp
     models/hgnetv2.cpp
     models/dfine_encoder.cpp
+    models/dfine_decoder.cpp
     models/vit.cpp
     models/dinov2_windowed.cpp
     models/lw_detr_vit.cpp

@@ -55,6 +55,7 @@ if(DETR_ENABLE_TORCH)
     unit/test_lw_detr_vit.cpp
     unit/test_hgnetv2.cpp
     unit/test_dfine_encoder.cpp
+    unit/test_dfine_decoder.cpp
     unit/test_dino.cpp
     unit/test_dino_cdn.cpp
     unit/test_train.cpp
