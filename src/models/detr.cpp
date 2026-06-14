@@ -15,6 +15,7 @@
 #include "detr/models/dino.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
+#include "detr/models/dfine.hpp"
 #include "detr/models/rf_detr.hpp"
 #include "detr/models/rt_detr.hpp"
 
@@ -155,6 +156,7 @@ void RegisterBuiltins() {
   Registry::Instance().Register("dino", DinoMeta({}), &MakeDino);
   Registry::Instance().Register("dino-cdn", DinoCdnMeta({}), &MakeDinoCdn);
   RegisterRtDetr();
+  RegisterDFine();  // dfine-{n,s,m,l,x} (COCO) + dfine-{s,m,l,x}-obj (Objects365->COCO)
 }
 
 }  // namespace detr::models
