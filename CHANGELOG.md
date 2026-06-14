@@ -13,6 +13,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Added
 
 ### Changed
+
+### Fixed
+
+## [0.15.0] - 2026-06-14
+
+### Added
+
+### Changed
 - **Dropped vcpkg — dependencies are now vendored from source via CMake
   `FetchContent`**, pinned to exact upstream tags in `cmake/dependencies.cmake`
   (fmt 12.1.0, spdlog v1.17.0, CLI11 v2.6.2, tl-expected v1.1.0, simdjson v4.6.4,
