@@ -18,7 +18,8 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] Apache-2.0 `LICENSE`, `.gitignore`, `.clang-format` (Google), `.clang-tidy`
 - [x] Top-level `CMakeLists.txt` (C++20, warnings-as-errors, ASan/TSan, ccache)
 - [x] `CMakePresets.json` (debug/release/asan/tsan/release-cuda)
-- [x] `vcpkg.json` manifest (spdlog, fmt, CLI11, tl-expected, gtest)
+- [x] `cmake/dependencies.cmake` — FetchContent deps from source, pinned tags
+      (spdlog, fmt, CLI11, tl-expected, simdjson, yaml-cpp, gtest); no package manager
 - [x] `cmake/cpu_throttle.cmake` (cores-2 default, Ninja `-l` cap)
 - [x] `cmake/license_scan.cmake` (deny GPL/AGPL/LGPL/SSPL/BUSL)
 - [x] Centralized `VERSION` → generated `detr/version.hpp` + `bump_version.cmake`
@@ -30,7 +31,7 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] `CHANGELOG.md`, `TODO.md`
 - [ ] **Apply confirmed fixes from the Phase 0 self-review** (in progress)
 - [ ] `git init` + first commit (awaiting user go-ahead)
-- [ ] Verify the skeleton actually configures+builds (needs cmake/ninja/vcpkg installed locally)
+- [ ] Verify the skeleton actually configures+builds (needs cmake/ninja installed locally)
 
 ## Phase 1 — MVP: train + predict + ONNX export
 
@@ -140,37 +141,45 @@ ordered for shippability; items inside a phase can parallelize.
 
 ## Phase 2 — More variants + TensorRT + SAHI + trackers
 
-### Variants to integrate (license-gated: permissive only; ✓ confirmed, ? verify at integration)
-Each variant = a `models::IModel` module + a `WeightRemapper` validated against the
-official checkpoint. Drop any that fail the license check.
+### Model integration roadmap (the full DETR-family target list)
 
-Classic line:
-- [ ] DETR ResNet-50/101 (Apache-2.0 ✓) — swap our compact backbone for ResNet
-- [ ] Deformable-DETR (Apache-2.0 ✓)
-- [ ] Conditional-DETR (Apache-2.0 ✓)
-- [ ] Anchor-DETR (Apache-2.0 ✓)
-- [ ] DAB-DETR, DN-DETR (Apache-2.0 ✓)
+Each model = a `models::IModel` module + a `WeightRemapper`, validated against the
+official COCO mAP. **License check (verified 2026-06-14 via the GitHub license API +
+the actual LICENSE files): every target below is Apache-2.0 — all clear for our
+permissive (Apache-2.0-compatible) policy.** The ONE exception is **Efficient DETR**,
+which is *not* a license problem but has **no official public code or weights** (the
+Megvii paper was never released), so it cannot be faithfully integrated/validated and
+is dropped unless an official checkpoint appears.
 
-DINO / accuracy line (IDEA-Research, Apache-2.0 ✓):
-- [ ] DINO
-- [ ] Grounding-DINO (open-vocabulary, Apache-2.0 ✓)
-- [ ] Mask-DINO (detection + segmentation)
+Status: ✅ done/validated · 🔄 in progress · ⬜ todo · ⚠️ blocked (no weights) · ❌ no code.
+Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone**
+(R50/R101/DC5/Swin — the classic line); listed per derivative.
 
-Real-time line:
-- [ ] RT-DETR / RT-DETRv2 (Apache-2.0 ✓)
-- [ ] RT-DETRv3/v4 (? verify)
-- [ ] RF-DETR (Roboflow, Apache-2.0 ✓)
-- [ ] LW-DETR (Apache-2.0 ?)
-- [ ] D-FINE (Apache-2.0 ?)
-- [ ] DEIM / DEIMv2 (Apache-2.0 ?)
+| Model | Status | License | Official repo | Sizes (per derivative) |
+|-------|--------|---------|---------------|------------------------|
+| **DETR**            | ✅ done (detection) | Apache-2.0 | facebookresearch/detr | R50, R101, R50-DC5, R101-DC5 (+3 *panoptic seg* models — need a mask head, not done) |
+| **Deformable-DETR** | ✅ done | Apache-2.0 | fundamentalvision/Deformable-DETR | R50 (+ single-scale / box-refine / two-stage) |
+| **Conditional-DETR**| ✅ done | Apache-2.0 | Atten4Vis/ConditionalDETR | R50, R101, R50-DC5, R101-DC5 |
+| **Anchor-DETR**     | ⬜ todo | Apache-2.0 | megvii-research/AnchorDETR | R50, R50-DC5 |
+| **DAB-DETR**        | ✅ done | Apache-2.0 | IDEA-Research/DAB-DETR | R50, R50-DC5, R101 (+ DAB-Deformable) |
+| **DN-DETR**         | ✅ done | Apache-2.0 | IDEA-Research/DN-DETR | R50, R50-DC5 |
+| **DINO**            | ✅ done | Apache-2.0 | IDEA-Research/DINO | R50 (4-scale/5-scale), Swin-L |
+| **RT-DETR**         | ✅ validated | Apache-2.0 | lyuwenyu/RT-DETR | **S**=R18, **M**=R34, **L**=R50, **X**=R101 (+ our **N**=R18@128) |
+| **RT-DETRv2**       | ✅ validated | Apache-2.0 | lyuwenyu/RT-DETR | **S/M/L/X** (R18/R34/R50/R101) |
+| **RT-DETRv3**       | ⚠️ blocked | Apache-2.0 | clxia12/RT-DETRv3 | S/M/L/X — **no trained detector weights published** (Paddle; README .pdparams 404s) |
+| **LW-DETR**         | 🔄 in progress | Apache-2.0 | Atten4Vis/LW-DETR | **N**=tiny, **S**=small, **M**=medium, **L**=large, **X**=xlarge (backbone ✅; L/X = multi-scale projector) |
+| **D-FINE**          | ⬜ next | Apache-2.0 | Peterande/D-FINE | **N/S/M/L/X** (+ Obj365-pretrained) — FDR box head + GO-LSD |
+| **DEIM**            | ⬜ todo | Apache-2.0 | Intellindust-AI-Lab/DEIM | **S/M/L/X** — DEIM-D-FINE & DEIM-RT-DETRv2 (a *training* recipe over those graphs) |
+| **DEIMv2**          | ⬜ todo | Apache-2.0 | Intellindust-AI-Lab/DEIMv2 | **Atto/Femto/Pico/N/S/M/L/X** (DINOv3 backbone) |
+| **Efficient DETR**  | ❌ no code | (paper-only) | — none — | R50/R101 in paper; **no public code/weights → cannot integrate** |
+| **Sparse DETR**     | ⬜ todo | Apache-2.0 | kakaobrain/sparse-detr | R50, Swin-T |
+| **Lite DETR**       | ⬜ todo | Apache-2.0 | IDEA-Research/Lite-DETR | R50, Swin-T, Swin-L |
+| **Salience-DETR**   | ⬜ todo | Apache-2.0 | xiuqhou/Salience-DETR | R50, Swin-L, FocalNet-L |
+| **RF-DETR**         | ✅ nano validated | Apache-2.0 | roboflow/rf-detr | **N/S/M/B/L/X** (nano faithful+validated; S/M/B/L/X = placeholder ViT) |
 
-Stronger-matching / research line:
-- [ ] Co-DETR (MIT ✓)
-- [ ] Salience-DETR, Relation-DETR (Apache-2.0 ?)
-- [ ] YOLOS (Apache-2.0 ✓)
-
-Priority: DETR → RT-DETR(v2) → RF-DETR → Deformable/DAB/DN/DINO →
-D-FINE/DEIM/LW-DETR → Co-DETR/Grounding-DINO/Mask-DINO.
+Priority: classic line [DETR/Deformable/Conditional/DAB/DN/DINO ✅] → RT-DETR(v2) ✅ →
+RF-DETR ✅ → **LW-DETR [🔄] → D-FINE [next] → DEIM/DEIMv2 → Anchor/Sparse/Lite/Salience-DETR**.
+(RT-DETRv3 stays blocked on weights; Efficient DETR dropped for lack of code.)
 
 ### TensorRT
 - [ ] `infer::TrtBackend` (`.engine`)
@@ -232,7 +241,7 @@ D-FINE/DEIM/LW-DETR → Co-DETR/Grounding-DINO/Mask-DINO.
 
 - [ ] Tracy zones on hot loops (`-DDETR_TRACY=ON`); `--profile-output`
 - [ ] xsimd-vectorized box ops (IoU/GIoU); simdjson for JSON; SIMD image decode
-- [ ] Keep deps minimal & centralized in `vcpkg.json`; CI graphs the dep tree
+- [ ] Keep deps minimal & centralized (pinned in `cmake/dependencies.cmake`); CI graphs the dep tree
 - [ ] clang-tidy + cppcheck gates; gitleaks; no `system()`/shell concat
 - [ ] include-what-you-use to prevent bloat/dead code
 - [ ] **No Python anywhere** — all tooling is C++ or CMake (`cmake -P` scripts);

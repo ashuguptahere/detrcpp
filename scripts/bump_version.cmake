@@ -10,8 +10,7 @@
 #   cmake -P scripts/bump_version.cmake -- --show
 #
 # The top-level VERSION file is the single source of truth. This script also
-# keeps the two places that embed a *copy* in sync: vcpkg.json (if present) and
-# CHANGELOG.md (promotes the [Unreleased] section to the new version).
+# promotes the CHANGELOG.md [Unreleased] section to the new version.
 
 cmake_minimum_required(VERSION 3.24)
 
@@ -19,7 +18,6 @@ cmake_minimum_required(VERSION 3.24)
 get_filename_component(_script_dir "${CMAKE_CURRENT_LIST_FILE}" DIRECTORY)
 get_filename_component(_root "${_script_dir}" DIRECTORY)
 set(_version_file "${_root}/VERSION")
-set(_vcpkg_file   "${_root}/vcpkg.json")
 set(_changelog    "${_root}/CHANGELOG.md")
 
 # --- collect args after the script path (ARGV0=cmake, 1=-P, 2=script) ---
@@ -91,15 +89,6 @@ set(_new "${_major}.${_minor}.${_patch}")
 
 # --- write VERSION ---
 file(WRITE "${_version_file}" "${_new}\n")
-
-# --- sync vcpkg.json (only if it exists) ---
-if(EXISTS "${_vcpkg_file}")
-  file(READ "${_vcpkg_file}" _vc)
-  string(REGEX REPLACE
-    "(\"version-string\"[ \t]*:[ \t]*\")[0-9]+\\.[0-9]+\\.[0-9]+(\")"
-    "\\1${_new}\\2" _vc "${_vc}")
-  file(WRITE "${_vcpkg_file}" "${_vc}")
-endif()
 
 # --- promote CHANGELOG [Unreleased] -> new version ---
 if(EXISTS "${_changelog}")

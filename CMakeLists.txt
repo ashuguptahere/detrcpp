@@ -104,13 +104,10 @@ if((DETR_ASAN OR DETR_TSAN) AND NOT MSVC)
   endif()
 endif()
 
-# Dependencies (pulled in via vcpkg manifest).
-find_package(spdlog       CONFIG REQUIRED)
-find_package(fmt          CONFIG REQUIRED)
-find_package(CLI11        CONFIG REQUIRED)
-find_package(tl-expected  CONFIG REQUIRED)
-find_package(simdjson     CONFIG REQUIRED)
-find_package(yaml-cpp     CONFIG REQUIRED)
+# Dependencies — fetched from source and built via CMake FetchContent (pinned
+# tags), so a plain `cmake` configure needs no package manager. See
+# cmake/dependencies.cmake. LibTorch (below) is the sole find_package SDK.
+include(dependencies)
 
 # LibTorch — only when the training/inference path is requested. Point CMake at
 # it with -DCMAKE_PREFIX_PATH=/path/to/libtorch (or -DTorch_DIR=...).
@@ -121,17 +118,15 @@ endif()
 
 if(DETR_ENABLE_ONNX)
   # The ONNX exporter is kept torch-free (config + safetensors -> graph) and
-  # built without LibTorch, so vcpkg's protobuf and LibTorch's bundled protobuf
-  # never meet in one link. In this torch-off configuration we find protobuf
-  # ourselves (ONNX::onnx_proto's link interface needs protobuf::libprotobuf).
+  # built without LibTorch, so the FetchContent protobuf and LibTorch's bundled
+  # protobuf never meet in one link (protobuf + onnx are fetched in
+  # cmake/dependencies.cmake when DETR_ENABLE_ONNX is on).
   if(DETR_ENABLE_TORCH)
     message(FATAL_ERROR
       "DETR_ENABLE_ONNX and DETR_ENABLE_TORCH cannot be enabled together: their "
       "protobuf providers conflict. Build the ONNX exporter as a separate "
       "torch-off configuration.")
   endif()
-  find_package(Protobuf CONFIG REQUIRED)
-  find_package(ONNX CONFIG REQUIRED)
   message(STATUS "detrcpp: ONNX exporter enabled")
   # onnxruntime (prebuilt) for the parity gate — optional; set -DONNXRUNTIME_ROOT.
   find_path(DETR_ORT_INCLUDE onnxruntime_cxx_api.h HINTS ${ONNXRUNTIME_ROOT}/include)

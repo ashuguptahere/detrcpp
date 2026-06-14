@@ -9,23 +9,21 @@
 # Exits non-zero if max|Δ| exceeds the tolerance.
 #
 # Env (with the defaults used during development):
-#   VCPKG_ROOT, LIBTORCH_ROOT, ONNXRUNTIME_ROOT, CMAKE/ninja on PATH.
+#   LIBTORCH_ROOT, ONNXRUNTIME_ROOT, CMAKE/ninja on PATH. Dependencies are fetched
+#   from source by CMake FetchContent — no package manager needed.
 set -e
 
 CFG="${1:-configs/models/detr-tiny.yaml}"
 DIR="${2:-/tmp/detr_parity}"
 TOL="${3:-1e-3}"
 
-: "${VCPKG_ROOT:?set VCPKG_ROOT}"
 : "${LIBTORCH_ROOT:?set LIBTORCH_ROOT (path to libtorch)}"
 : "${ONNXRUNTIME_ROOT:?set ONNXRUNTIME_ROOT (path to onnxruntime)}"
 
 JOBS=$(( $(nproc) - 2 )); [ "$JOBS" -lt 1 ] && JOBS=1
-TC="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
 
 echo "== [1/4] build torch detr-golden =="
-cmake -S . -B build/torch -G Ninja -DCMAKE_TOOLCHAIN_FILE="$TC" \
-  -DVCPKG_MANIFEST_FEATURES=tests -DCMAKE_BUILD_TYPE=Debug \
+cmake -S . -B build/torch -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DDETR_ENABLE_TORCH=ON -DCMAKE_PREFIX_PATH="$LIBTORCH_ROOT" >/dev/null
 cmake --build build/torch --target detr-golden -j "$JOBS"
 
@@ -34,8 +32,7 @@ LD_LIBRARY_PATH="$LIBTORCH_ROOT/lib:$LD_LIBRARY_PATH" \
   build/torch/apps/detr-golden/detr-golden "$CFG" "$DIR"
 
 echo "== [3/4] build onnx detr-parity =="
-cmake -S . -B build/onnx -G Ninja -DCMAKE_TOOLCHAIN_FILE="$TC" \
-  -DVCPKG_MANIFEST_FEATURES="tests;onnx" -DCMAKE_BUILD_TYPE=Debug \
+cmake -S . -B build/onnx -G Ninja -DCMAKE_BUILD_TYPE=Debug \
   -DDETR_ENABLE_ONNX=ON -DONNXRUNTIME_ROOT="$ONNXRUNTIME_ROOT" >/dev/null
 cmake --build build/onnx --target detr-parity -j "$JOBS"
 

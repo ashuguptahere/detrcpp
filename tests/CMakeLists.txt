@@ -1,4 +1,5 @@
-find_package(GTest CONFIG REQUIRED)
+# GTest targets come from FetchContent (cmake/dependencies.cmake); GoogleTest is
+# the CMake-bundled module that provides gtest_discover_tests().
 include(GoogleTest)
 
 add_executable(detr_unit_tests
@@ -50,6 +51,8 @@ if(DETR_ENABLE_TORCH)
     unit/test_dn_detr.cpp
     unit/test_rf_detr.cpp
     unit/test_rf_detr_cdn.cpp
+    unit/test_dinov2_windowed.cpp
+    unit/test_lw_detr_vit.cpp
     unit/test_dino.cpp
     unit/test_dino_cdn.cpp
     unit/test_train.cpp

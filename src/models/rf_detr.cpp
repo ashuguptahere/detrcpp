@@ -12,6 +12,7 @@
 #include "detr/models/deform_head.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
+#include "detr/models/rf_detr_real.hpp"
 #include "detr/models/vit.hpp"
 
 namespace detr::models {
@@ -182,6 +183,77 @@ ModelMeta RfDetrCdnMeta(const YAML::Node& cfg) {
   ModelMeta m = RfDetrMeta(cfg);
   m.name = "rf-detr-cdn";
   return m;
+}
+
+void RegisterRfDetr() {
+  Registry::Instance().Register("rf-detr", RfDetrMeta({}), &MakeRfDetr);
+  Registry::Instance().Register("rf-detr-cdn", RfDetrCdnMeta({}), &MakeRfDetrCdn);
+
+  // Faithful RF-DETR-Nano (roboflow/rf-detr): the real DINOv2-windowed backbone +
+  // C2f projector + two-stage deformable decoder, so the official weights load and
+  // validate 1:1 (unlike the placeholder-ViT rf-detr-{n..x} matrix below). Inference
+  // is square-384 + ImageNet norm + the 91-class (coco91) head. The other sizes share
+  // this code but need their own published weights, so only nano is registered here.
+  {
+    ModelMeta meta = RfDetrRealImpl{}.Meta();
+    Registry::Instance().Register("rf-detr-nano", meta,
+                                  [](const YAML::Node&) -> std::shared_ptr<IModel> {
+                                    return std::make_shared<RfDetrRealImpl>();
+                                  });
+  }
+
+  // The RF-DETR detection size matrix (paper Table 7, arXiv:2511.09554). n/s/m/l use
+  // a DINOv2-S backbone (embed 384, depth 12, 6 heads); x uses DINOv2-B (embed 768,
+  // 12 heads, patch 20). NOTE: these configs are faithful, but the ViT backbone is
+  // still a structural placeholder (no DINOv2 register tokens / windowed attention),
+  // so the sizes TRAIN but do not yet load official RF-DETR weights — see
+  // VALIDATION.md ("registered-but-not-yet-validated").
+  struct RfSize {
+    const char* tag;
+    int vit_embed;
+    int vit_heads;
+    int patch;
+    int dec_layers;
+    int imgsz;
+  };
+  constexpr RfSize kSizes[] = {
+      {"n", 384, 6, 16, 2, 384}, {"s", 384, 6, 16, 3, 512}, {"m", 384, 6, 16, 4, 576},
+      {"l", 384, 6, 16, 4, 704}, {"x", 768, 12, 20, 5, 700},
+  };
+  for (const RfSize& sz : kSizes) {
+    const std::string name = std::string("rf-detr-") + sz.tag;
+    auto build = [sz, name](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+      Config c = ReadConfig(cfg);
+      if (!(cfg && cfg["vit_embed"])) {
+        c.vit_embed = sz.vit_embed;
+      }
+      if (!(cfg && cfg["vit_heads"])) {
+        c.vit_heads = sz.vit_heads;
+      }
+      if (!(cfg && cfg["vit_depth"])) {
+        c.vit_depth = 12;  // DINOv2-S and -B are both depth-12
+      }
+      if (!(cfg && cfg["patch"])) {
+        c.patch = sz.patch;
+      }
+      if (!(cfg && cfg["dec_layers"])) {
+        c.dec_layers = sz.dec_layers;
+      }
+      if (!(cfg && cfg["imgsz"])) {
+        c.imgsz = sz.imgsz;
+      }
+      return std::make_shared<RfDetrImpl>(c);
+    };
+    ModelMeta meta;
+    meta.name = name;
+    meta.imgsz = sz.imgsz;
+    meta.num_classes = 90;
+    meta.num_queries = 300;
+    meta.focal = true;
+    meta.license = "Apache-2.0";
+    meta.upstream = "https://github.com/roboflow/rf-detr";
+    Registry::Instance().Register(name, meta, std::move(build));
+  }
 }
 
 }  // namespace detr::models

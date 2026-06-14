@@ -7,7 +7,9 @@ Guidance for Claude Code (and human contributors) working in this repository.
 detrcpp — a from-scratch **C++20** DETR-family object-detection framework: train /
 eval / predict / export across DETR variants. Backend is **LibTorch** (the PyTorch
 C++ API). Permissively licensed (Apache-2.0-compatible deps only). **No Python
-anywhere** in the repo — tooling is C++ or CMake `-P` scripts; deps come via vcpkg.
+anywhere** in the repo — tooling is C++ or CMake `-P` scripts; deps are vendored
+from source via CMake **FetchContent** (pinned tags; no package manager). LibTorch
+is the one exception (a prebuilt SDK located with `find_package(Torch)`).
 
 ## Workflow conventions (IMPORTANT)
 
@@ -17,8 +19,8 @@ anywhere** in the repo — tooling is C++ or CMake `-P` scripts; deps come via v
 - **Versioning is SemVer `MAJOR.MINOR.PATCH`.** The single source of truth is the
   top-level `VERSION` file; never hard-code a version elsewhere. With every change add
   an entry under `## [Unreleased]` in `CHANGELOG.md`. Bump the version when releasing a
-  batch of work, using the pure-CMake script (it bumps `VERSION`, syncs `vcpkg.json`,
-  and promotes `[Unreleased]` in `CHANGELOG.md`):
+  batch of work, using the pure-CMake script (it bumps `VERSION` and promotes
+  `[Unreleased]` in `CHANGELOG.md`):
   - `cmake -P scripts/bump_version.cmake -- patch`  — bug / correctness fix
   - `cmake -P scripts/bump_version.cmake -- minor`  — new backward-compatible feature
   - `cmake -P scripts/bump_version.cmake -- major`  — breaking change
@@ -30,8 +32,9 @@ anywhere** in the repo — tooling is C++ or CMake `-P` scripts; deps come via v
 
 ## Build & test
 
-Requires CMake ≥3.24, Ninja, a C++20 compiler, vcpkg, and LibTorch. Point CMake at
-your LibTorch with `-DCMAKE_PREFIX_PATH=/path/to/libtorch`:
+Requires CMake ≥3.24, Ninja, a C++20 compiler, and LibTorch (no package manager —
+the other deps are fetched from source by CMake FetchContent on first configure).
+Point CMake at your LibTorch with `-DCMAKE_PREFIX_PATH=/path/to/libtorch`:
 
 ```sh
 cmake --preset debug -DDETR_BUILD_TESTS=ON -DDETR_ENABLE_TORCH=ON \

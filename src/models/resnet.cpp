@@ -71,7 +71,7 @@ struct BasicBlockImpl : nn::Module {
   FrozenBatchNorm2d bn2{nullptr};
   nn::Sequential downsample{nullptr};
 
-  BasicBlockImpl(int in, int planes, int stride, bool down, int dilation) {
+  BasicBlockImpl(int in, int planes, int stride, bool down, int dilation, bool avg_down = false) {
     conv1 = register_module("conv1", nn::Conv2d(nn::Conv2dOptions(in, planes, 3)
                                                     .stride(stride)
                                                     .padding(dilation)
@@ -84,10 +84,19 @@ struct BasicBlockImpl : nn::Module {
             nn::Conv2dOptions(planes, planes, 3).padding(dilation).dilation(dilation).bias(false)));
     bn2 = register_module("bn2", FrozenBatchNorm2d(planes));
     if (down) {
-      downsample = register_module(
-          "downsample",
-          nn::Sequential(nn::Conv2d(nn::Conv2dOptions(in, planes, 1).stride(stride).bias(false)),
-                         FrozenBatchNorm2d(planes)));
+      if (avg_down && stride > 1) {
+        // ResNet-D/VD: AvgPool(2,2) then a stride-1 1x1 conv (downsample.{0,1,2}).
+        downsample = register_module(
+            "downsample",
+            nn::Sequential(nn::AvgPool2d(nn::AvgPool2dOptions(2).stride(2).ceil_mode(true)),
+                           nn::Conv2d(nn::Conv2dOptions(in, planes, 1).stride(1).bias(false)),
+                           FrozenBatchNorm2d(planes)));
+      } else {
+        downsample = register_module(
+            "downsample",
+            nn::Sequential(nn::Conv2d(nn::Conv2dOptions(in, planes, 1).stride(stride).bias(false)),
+                           FrozenBatchNorm2d(planes)));
+      }
     }
   }
 
@@ -113,12 +122,16 @@ nn::Sequential MakeBottleneckLayer(int in, int planes, int blocks, int stride, i
   return s;
 }
 
-nn::Sequential MakeBasicLayer(int in, int planes, int blocks, int stride, int dilation = 1) {
+nn::Sequential MakeBasicLayer(int in, int planes, int blocks, int stride, int dilation = 1,
+                              bool avg_down = false) {
   nn::Sequential s;
-  const bool down = stride != 1 || in != planes;
-  s->push_back(BasicBlock(in, planes, stride, down, dilation));
+  // RT-DETR's ResNet-vd forces a shortcut on the first block of EVERY stage in the
+  // R18/R34 (basic-block) backbones — even res2, where in==out and stride==1 give a
+  // plain 1x1 stride-1 projection (no avg-pool). avg_down marks that vd path.
+  const bool first_down = avg_down || stride != 1 || in != planes;
+  s->push_back(BasicBlock(in, planes, stride, first_down, dilation, avg_down));
   for (int i = 1; i < blocks; ++i) {
-    s->push_back(BasicBlock(planes, planes, 1, false, dilation));
+    s->push_back(BasicBlock(planes, planes, 1, false, dilation, avg_down));
   }
   return s;
 }
@@ -150,10 +163,10 @@ ResNetImpl::ResNetImpl(const std::vector<int>& blocks, bool bottleneck, bool dc5
     layer3 = register_module("layer3", MakeBottleneckLayer(512, 256, blocks[2], 2, 1, avg_down));
     layer4 = register_module("layer4", MakeBottleneckLayer(1024, 512, blocks[3], s4, d4, avg_down));
   } else {
-    layer1 = register_module("layer1", MakeBasicLayer(64, 64, blocks[0], 1));
-    layer2 = register_module("layer2", MakeBasicLayer(64, 128, blocks[1], 2));
-    layer3 = register_module("layer3", MakeBasicLayer(128, 256, blocks[2], 2));
-    layer4 = register_module("layer4", MakeBasicLayer(256, 512, blocks[3], s4, d4));
+    layer1 = register_module("layer1", MakeBasicLayer(64, 64, blocks[0], 1, 1, avg_down));
+    layer2 = register_module("layer2", MakeBasicLayer(64, 128, blocks[1], 2, 1, avg_down));
+    layer3 = register_module("layer3", MakeBasicLayer(128, 256, blocks[2], 2, 1, avg_down));
+    layer4 = register_module("layer4", MakeBasicLayer(256, 512, blocks[3], s4, d4, avg_down));
   }
 }
 

@@ -11,6 +11,108 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **LW-DETR ViT backbone (`models::LwDetrViT`)** — first stage of the faithful
+  LW-DETR port (Atten4Vis/LW-DETR). A plain windowed ViT (CAEv2-style): conv
+  patch-embed + bicubic absolute pos-embed (no cls token), interleaved
+  windowed/global attention over `num_windows_side²` windows with LayerScale
+  (`gamma_1/2`), separate q/k/v/o projections (bias-free `k`), and no final norm on
+  the emitted feature maps. Verified against the HF `LwDetrForObjectDetection`
+  (medium / ViT-S) reference: the 4 backbone feature maps match to ~1e-3
+  (`LwDetrViTParity` gated test).
+- **LW-DETR-medium full model — end-to-end parity.** Since RF-DETR is built on
+  LW-DETR, the faithful model is now backbone-agnostic: `RfDetrRealImpl` takes a
+  `RfDetrRealConfig` selecting the backbone (DINOv2-windowed for RF-DETR, `LwDetrViT`
+  for LW-DETR) and reuses the same C2f projector + two-stage single-scale deformable
+  decoder + heads. The C2f projector's conv norm is now switchable (channel-LayerNorm
+  for RF-DETR, BatchNorm for LW-DETR). The whole LW-DETR-medium model loads the
+  official weights 1:1 (329/329, 0 missing/unexpected) and reproduces the HF reference
+  to fp32 noise — token-aligned 300/300, box/logit p90 2.4e-5 / 1.0e-4, max 1.4e-3
+  (`LwDetrViTParity.FullMediumEndToEnd`). Registry + COCO validation next.
+
+### Changed
+
+### Fixed
+
+## [0.15.0] - 2026-06-14
+
+### Added
+
+### Changed
+- **Dropped vcpkg — dependencies are now vendored from source via CMake
+  `FetchContent`**, pinned to exact upstream tags in `cmake/dependencies.cmake`
+  (fmt 12.1.0, spdlog v1.17.0, CLI11 v2.6.2, tl-expected v1.1.0, simdjson v4.6.4,
+  yaml-cpp 0.8.0, GoogleTest v1.17.0, Benchmark v1.9.4; protobuf v3.21.12 + ONNX
+  v1.16.2 behind the onnx feature). A plain `cmake` configure now needs no package
+  manager — only CMake, Ninja, a C++20 compiler, and (for the torch path) LibTorch,
+  which stays an external `find_package(Torch)` SDK. Removed `vcpkg.json`, the vcpkg
+  toolchain from `CMakePresets.json`, and the vcpkg setup from CI (now ccache-cached).
+  The license-compliance gate was reworked to scan the fetched sources' LICENSE files
+  (asserted SPDX per pin, fail-closed) instead of the vcpkg SBOM. The vestigial
+  `arrow` feature (never wired into CMake) was dropped.
+
+### Fixed
+
+## [0.14.0] - 2026-06-14
+
+### Added
+- **RT-DETRv2 validated against the original-repo native weights** — `rt-detrv2-{s,m,l,x}`
+  load the **native `lyuwenyu/RT-DETR` PyTorch `.pth`** checkpoints (not the HF mirror;
+  0 missing/unexpected/mismatched) and reproduce the published COCO `val2017` mAP within
+  ~0.4 AP: `rt-detrv2-s` **0.477** (official 0.481), `rt-detrv2-m` **0.497** (0.499),
+  `rt-detrv2-l` **0.532** (0.534), `rt-detrv2-x` **0.542** (0.543). The headline RT-DETRv2
+  models use the **default (grid) cross-attention** (`cross_attn_method: default`), so the
+  registered `rt-detrv2-*` now default to grid sampling and equal the v1 inference graph
+  (v2's gain is the training recipe); discrete sampling is opt-in via `discrete_sample: true`
+  for the optional `_dsp` deployment checkpoints. Native converter `convert_rtdetr_native.py`
+  maps the original PResNet + HybridEncoder + RTDETRTransformerv2 naming (dropping the
+  `num_points_scale` buffer, which detrcpp folds into its deformable formula). See
+  `VALIDATION.md`. (RT-DETRv3 stays unvalidated — upstream publishes no trained detector
+  weights, only ImageNet backbone pretrains; its inference graph equals v1/v2.)
+- **RT-DETR size matrix validated against official weights** — `rt-detr-{s,m,x}`
+  (R18/R34/R101-vd) now load the PekingU checkpoints 1:1 (0 missing/unexpected/
+  mismatched) and reproduce the published COCO `val2017` mAP within ~0.2 AP:
+  `rt-detr-s` **0.463** (official 0.465), `rt-detr-m` **0.487** (0.489), `rt-detr-x`
+  **0.542** (0.543), alongside the already-validated `rt-detr-l` 0.530. Three real
+  per-size faithfulness gaps were closed (the R50 path is byte-unchanged): the
+  decoder depth now scales per size (R18=3, R34=4, R50/R101=6 layers); the
+  HybridEncoder/CCFM is parameterized by `encoder_hidden_dim`/`enc_ffn` (R101 widens
+  to 384 / FFN 2048, with `decoder_input_proj` projecting 384→256) and CSPRepLayer
+  `hidden_expansion` (R18/R34 use 0.5 — half-width RepVGG bottlenecks plus a `conv3`
+  fuse). Eval: `--imgsz 640` (no `--coco91`, no `--aspect`). See `VALIDATION.md`.
+- **ResNet-vd BasicBlock support** (`models::ResNet`) for the R18/R34 backbones: the
+  D/VD avg-pool downsample is now applied to basic blocks too, and — matching
+  upstream RT-DETR — a shortcut is forced on the first block of every stage (a plain
+  1×1 projection at res2, where in==out and stride==1).
+- **`DETR_DEBUG_WEIGHTS`** env flag: when set, the CLI weight loader logs the full
+  unexpected-source and missing-param key lists (not just the count + mismatched
+  list), to diagnose checkpoint/architecture key gaps.
+- **Faithful RF-DETR (`RfDetrReal`)** reproducing the upstream `roboflow/rf-detr`
+  architecture end-to-end, so the official weights load and validate: the
+  DINOv2-with-windowed-attention backbone (conv patch-embed + cls token + bicubic
+  pos-embed; windowed blocks `[0,1,2,4,5,7,8,10,11]`, global blocks `[3,6,9]`;
+  per-stage final-norm at out-indices `[3,6,9,12]`), the YOLOv8 **C2f** scale
+  projector, and a two-stage single-scale **deformable decoder** (grid-anchor
+  proposals → query selection → per-slot `reference_point_embed` refinement;
+  8-head self-attn + 16-head / 1-level / 2-point MSDeformAttn cross-attn + ReLU
+  FFN; fixed reference points; sinusoidal query positions). Loads official
+  RF-DETR-Nano weights 1:1 and is validated against the Hugging Face reference:
+  backbone and projector match to ~1e-4, and — aligned by selected encoder token —
+  the full model reproduces logits/boxes to fp32 noise (median box 1.2e-4, logit
+  1.6e-3; the only tail is an irreducible `torch.topk` tie-break on the random-noise
+  parity input, which a couple of slots and its self-attention ripple inherit).
+  New gated parity tests (`Dinov2WindowedParity.*`) cover backbone, projector, and
+  the end-to-end model. Registered as **`rf-detr-nano`** and validated end-to-end on
+  full COCO `val2017`: **mAP50-95 0.482 / mAP50 0.672** vs the official 0.484 / 0.676
+  (`--coco91 --imgsz 384`, ImageNet-norm square resize, no `--aspect`). The
+  placeholder-ViT `rf-detr-{n..x}` matrix is unchanged (kept for the training recipes).
+- **RF-DETR size matrix** — `rf-detr-{n,s,m,l,x}` registered with the official
+  per-variant configs (paper Table 7, arXiv:2511.09554): n/s/m/l use a DINOv2-S
+  backbone (embed 384, depth 12, 6 heads, patch 16) at resolution 384/512/576/704
+  with 2/3/4/4 decoder layers; x uses DINOv2-B (embed 768, 12 heads, patch 20) at
+  700 with 5 decoder layers; all 300 queries. The configs are faithful and the
+  sizes train, but the ViT backbone remains a structural placeholder (no DINOv2
+  register tokens / windowed attention), so they do **not** yet load official
+  RF-DETR weights — see VALIDATION.md.
 - **`VALIDATION.md`** documenting the official-weight COCO validations: per-model
   measured vs published mAP (`detr-r50` 0.419, `deformable-detr` 0.443,
   `conditional-detr` 0.407, `rt-detr-l` 0.530), the converted-weights paths + the

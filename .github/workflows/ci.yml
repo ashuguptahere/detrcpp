@@ -11,10 +11,10 @@ permissions:
   contents: read
 
 env:
-  VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
   # Opt JS actions (checkout, github-script, gitleaks) into Node 24 — Node 20 is
   # deprecated on the runners. Remove once Node 24 is the default.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
   build:
@@ -29,13 +29,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Export GitHub Actions cache vars (for vcpkg binary cache)
-        uses: actions/github-script@v7
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
       - name: Install Ninja + ccache (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build ccache pkg-config
@@ -44,17 +37,20 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja ccache pkg-config
 
-      - name: Setup vcpkg
-        uses: lukka/run-vcpkg@v11
+      # Dependencies are vendored from source by CMake FetchContent (no package
+      # manager). Cache the ccache dir so the dep + project recompiles are fast
+      # across runs; the shallow git fetches themselves are cheap.
+      - name: ccache cache
+        uses: actions/cache@v4
         with:
-          # Must be a full 40-hex SHA (not a release tag); matches the
-          # builtin-baseline in vcpkg.json so CI uses the manifest's vcpkg.
-          vcpkgGitCommitId: '75672db6bd812b060482b0f00b5a16b18a0c0f07'
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ matrix.os }}-${{ matrix.preset }}-${{ hashFiles('cmake/dependencies.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ matrix.os }}-${{ matrix.preset }}-${{ hashFiles('cmake/dependencies.cmake') }}-
+            ccache-${{ matrix.os }}-${{ matrix.preset }}-
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} -DDETR_BUILD_TESTS=ON
-        env:
-          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
 
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}

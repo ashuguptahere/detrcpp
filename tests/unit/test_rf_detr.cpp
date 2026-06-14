@@ -51,6 +51,26 @@ TEST_F(RfDetrTest, RegistersAndForwards) {
   EXPECT_LE(out.boxes.max().item<float>(), 1.0F);
 }
 
+TEST_F(RfDetrTest, SizeMatrixRegistered) {
+  for (const char* m : {"rf-detr-n", "rf-detr-s", "rf-detr-m", "rf-detr-l", "rf-detr-x"}) {
+    EXPECT_TRUE(Registry::Instance().Contains(m)) << m;
+  }
+  // The default config applies the size's resolution (paper Table 7) — build only.
+  auto n = Registry::Instance().Build("rf-detr-n", YAML::Node{});
+  ASSERT_TRUE(n.has_value()) << n.error().message;
+  EXPECT_EQ((*n)->Meta().imgsz, 384);
+  auto x = Registry::Instance().Build("rf-detr-x", YAML::Node{});
+  ASSERT_TRUE(x.has_value()) << x.error().message;
+  EXPECT_EQ((*x)->Meta().imgsz, 700);
+  // A small-override build of a size forwards to the right shapes (the registration
+  // plumbing respects config overrides).
+  auto small = *Registry::Instance().Build("rf-detr-n", Tiny());
+  small->eval();
+  torch::NoGradGuard ng;
+  EXPECT_EQ(small->Forward(torch::randn({1, 3, 64, 64})).logits.sizes(),
+            (std::vector<std::int64_t>{1, 8, 5}));
+}
+
 TEST_F(RfDetrTest, FocalTrainingStep) {
   auto model = *Registry::Instance().Build("rf-detr", Tiny());
   train::TrainConfig tc;
