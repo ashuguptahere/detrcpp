@@ -9,8 +9,9 @@ full task list lives in [`TODO.md`](../TODO.md); the release notes in
 ## Done
 
 ### Foundation
-- **C++20** project: CMake + Ninja + vcpkg, Google style (clang-format enforced in
-  CI), `tl::expected` errors, RAII, spdlog (NDJSON) logging, CLI11.
+- **C++20** project: CMake + Ninja + FetchContent (deps from source, no package
+  manager), Google style (clang-format enforced in CI), `tl::expected` errors, RAII,
+  spdlog (NDJSON) logging, CLI11.
 - **CLI** verbs fully wired (with LibTorch): `--train`, `--val`, `--test`,
   `--predict`, `--export`, `--list-models`, `--version`. (`--download` is a stub.)
 - **CI** green: build matrix (Linux/macOS × debug/release), clang-format check,

@@ -2,7 +2,8 @@
 # (`--benchmark` / model table). This stub keeps DETR_BUILD_BENCHMARKS=ON
 # configurable today without a dangling add_subdirectory.
 
-find_package(benchmark CONFIG REQUIRED)
+# The benchmark::benchmark target comes from FetchContent (cmake/dependencies.cmake)
+# when DETR_BUILD_BENCHMARKS is on.
 
 # Example wiring for when benchmarks exist:
 #   add_executable(detr_bench_boxops boxops_bench.cpp)

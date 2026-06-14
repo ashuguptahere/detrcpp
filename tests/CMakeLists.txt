@@ -1,4 +1,5 @@
-find_package(GTest CONFIG REQUIRED)
+# GTest targets come from FetchContent (cmake/dependencies.cmake); GoogleTest is
+# the CMake-bundled module that provides gtest_discover_tests().
 include(GoogleTest)
 
 add_executable(detr_unit_tests

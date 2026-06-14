@@ -13,6 +13,17 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Added
 
 ### Changed
+- **Dropped vcpkg — dependencies are now vendored from source via CMake
+  `FetchContent`**, pinned to exact upstream tags in `cmake/dependencies.cmake`
+  (fmt 12.1.0, spdlog v1.17.0, CLI11 v2.6.2, tl-expected v1.1.0, simdjson v4.6.4,
+  yaml-cpp 0.8.0, GoogleTest v1.17.0, Benchmark v1.9.4; protobuf v3.21.12 + ONNX
+  v1.16.2 behind the onnx feature). A plain `cmake` configure now needs no package
+  manager — only CMake, Ninja, a C++20 compiler, and (for the torch path) LibTorch,
+  which stays an external `find_package(Torch)` SDK. Removed `vcpkg.json`, the vcpkg
+  toolchain from `CMakePresets.json`, and the vcpkg setup from CI (now ccache-cached).
+  The license-compliance gate was reworked to scan the fetched sources' LICENSE files
+  (asserted SPDX per pin, fail-closed) instead of the vcpkg SBOM. The vestigial
+  `arrow` feature (never wired into CMake) was dropped.
 
 ### Fixed
 

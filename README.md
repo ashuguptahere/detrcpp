@@ -67,11 +67,11 @@ detrcpp --list-models          # the full table with imgsz / queries / classes /
 
 ### Build (CPU)
 
-Uses CMake + Ninja + vcpkg + LibTorch. See [`TODO.md`](TODO.md) /
-[CHANGELOG](CHANGELOG.md) for the pinned versions.
+Uses CMake + Ninja + LibTorch. No package manager — every other dependency is
+vendored from source by CMake **FetchContent** (pinned tags; see
+[`cmake/dependencies.cmake`](cmake/dependencies.cmake)) on first configure.
 
 ```sh
-export VCPKG_ROOT=/path/to/vcpkg
 cmake --preset debug -DDETR_ENABLE_TORCH=ON -DCMAKE_PREFIX_PATH=/path/to/libtorch
 cmake --build build/debug -j"$(( $(nproc) - 2 ))"
 ctest --test-dir build/debug --output-on-failure

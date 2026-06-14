@@ -164,7 +164,7 @@ if(DETR_ENABLE_ONNX)
   )
   target_compile_definitions(detr_onnx
     PUBLIC DETR_ENABLE_ONNX
-    # vcpkg builds onnx with the ML schema (onnx-ml.pb.h) under namespace onnx.
+    # ONNX is built with the ML schema (onnx-ml.pb.h) under namespace onnx.
     PRIVATE ONNX_ML=1 ONNX_NAMESPACE=onnx)
   set_target_properties(detr_onnx PROPERTIES
     CXX_STANDARD 20
