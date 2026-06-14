@@ -100,8 +100,9 @@ RfDetrRealImpl::RfDetrRealImpl(RfDetrRealConfig cfg) : cfg_(std::move(cfg)) {
         "backbone", Dinov2Windowed(cfg_.vit_embed, cfg_.vit_depth, cfg_.vit_heads, cfg_.patch,
                                    cfg_.num_windows, pe, 0, cfg_.out_indices, cfg_.window_blocks));
   }
-  projector_ =
-      register_module("projector", RfDetrProjector(4, cfg_.vit_embed, d, 3, cfg_.projector_batchnorm));
+  const int n_feats = static_cast<int>(cfg_.out_indices.size());  // 4 (RF-DETR) or 3 (LW-DETR-tiny)
+  projector_ = register_module(
+      "projector", RfDetrProjector(n_feats, cfg_.vit_embed, d, 3, cfg_.projector_batchnorm));
   enc_output_ = register_module("enc_output", nn::Linear(d, d));
   enc_output_norm_ = register_module("enc_output_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
   enc_out_class_ = register_module("enc_out_class", nn::Linear(d, c));

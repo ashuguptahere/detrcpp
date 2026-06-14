@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "detr/models/deform_attn.hpp"  // SpatialShapes
@@ -200,6 +201,42 @@ void RegisterRfDetr() {
                                   [](const YAML::Node&) -> std::shared_ptr<IModel> {
                                     return std::make_shared<RfDetrRealImpl>();
                                   });
+  }
+
+  // Faithful LW-DETR (Atten4Vis/LW-DETR) — the same family as RF-DETR (RF-DETR is
+  // built on LW-DETR): a windowed CAEv2-ViT backbone + the shared C2f projector +
+  // two-stage single-scale deformable decoder. Square-640 + ImageNet norm + the
+  // 91-class (coco91) head. The single-scale sizes (tiny/small/medium) share this
+  // code; large/xlarge add a multi-scale projector (tracked follow-up).
+  {
+    auto lw = [](const char* tag, int embed, int depth, int queries,
+                 std::vector<int> out_layers, std::vector<int> window_blocks) {
+      RfDetrRealConfig c;
+      c.name = std::string("lw-detr-") + tag;
+      c.upstream = "https://github.com/Atten4Vis/LW-DETR";
+      c.imgsz = 640;
+      c.num_classes = 91;
+      c.num_queries = queries;
+      c.dec_layers = 3;
+      c.backbone = RfDetrRealConfig::kLwDetrViT;
+      c.vit_embed = embed;
+      c.vit_depth = depth;
+      c.vit_heads = 12;
+      c.patch = 16;
+      c.num_windows = 4;  // windows per side
+      c.pe_grid = 14;     // pretrain 224/16
+      c.projector_batchnorm = true;
+      c.out_indices = std::move(out_layers);
+      c.window_blocks = std::move(window_blocks);
+      RfDetrRealImpl probe(c);
+      Registry::Instance().Register(c.name, probe.Meta(),
+                                    [c](const YAML::Node&) -> std::shared_ptr<IModel> {
+                                      return std::make_shared<RfDetrRealImpl>(c);
+                                    });
+    };
+    lw("tiny", 192, 6, 100, {1, 3, 5}, {0, 2, 4});
+    lw("small", 192, 10, 300, {2, 4, 5, 9}, {0, 1, 3, 6, 7, 9});
+    lw("medium", 384, 10, 300, {2, 4, 5, 9}, {0, 1, 3, 6, 7, 9});
   }
 
   // The RF-DETR detection size matrix (paper Table 7, arXiv:2511.09554). n/s/m/l use

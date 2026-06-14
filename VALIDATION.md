@@ -22,6 +22,9 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `rt-detrv2-l`      | **0.532** | 0.712 | 0.573 | ~0.534 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detrv2-x`      | **0.542** | 0.725 | 0.585 | ~0.543 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rf-detr-nano`     | **0.482** | 0.672 | 0.516 | 0.484 (AP50 67.6) | `--coco91 --imgsz 384` (no `--aspect`) |
+| `lw-detr-tiny`     | **0.428** | 0.606 | 0.459 | ~0.426 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `lw-detr-small`    | **0.479** | 0.666 | 0.516 | ~0.480 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `lw-detr-medium`   | **0.523** | 0.717 | 0.564 | ~0.525 | `--coco91 --imgsz 640` (no `--aspect`) |
 
 `detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
 pure-C++ unpickler (no Python, no conversion): the load reports `458 tensors,
@@ -49,6 +52,13 @@ are scratch — regenerate them from the Hugging Face source with the listed con
 | `rt-detr-x`        | `PekingU/rtdetr_r101vd`                       | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r101vd.safetensors` (990 tensors) |
 | `rt-detrv2-{s,m,l,x}` | **native** `lyuwenyu/RT-DETR` `.pth` (GitHub releases — see `rtdetrv2_pytorch/README.md`) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/rtdetrv2_{s,m,l,x}_detr.safetensors` (509/619/735/990) |
 | `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.safetensors` (328 tensors) |
+| `lw-detr-{tiny,small,medium}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_*_60e_coco.pth`, the authors') | `/tmp/lwdetr_convert_native.py <in> <out> <num_queries>` | `/tmp/lwdetr_{tiny,small,medium}_native.safetensors` (261/329/329) |
+
+`lw-detr-*` uses the authors' own native PyTorch `.pth` (the original Atten4Vis/LW-DETR
+naming); `lwdetr_convert_native.py` splits the fused backbone `qkv` and decoder
+`in_proj` into separate q/k/v and maps the PResNet-free ViT + C2f projector +
+two-stage decoder onto detrcpp. Architecture cross-checked against the HF
+`LwDetrForObjectDetection` reference (`LwDetrViTParity` end-to-end parity test).
 
 The `rt-detrv2-*` weights are the **native PyTorch checkpoints from the original
 `lyuwenyu/RT-DETR` repo** (`rtdetrv2_r{18,34,50,101}vd_*.pth`, the headline grid-sampling
@@ -79,6 +89,9 @@ classes (no `--coco91`), square raw-`[0,1]` resize (no `--aspect`,
 (`--coco91`), ImageNet-normalized **square** resize at the native `--imgsz 384`
 (no `--aspect`) — the faithful `rf-detr-nano` model (DINOv2-windowed backbone + C2f
 projector + two-stage deformable decoder), not the placeholder-ViT `rf-detr-{n..x}`.
+**LW-DETR** uses the same recipe as RF-DETR but at `--imgsz 640` (`--coco91`,
+ImageNet-norm square, no `--aspect`) — it shares RF-DETR's projector + decoder with a
+windowed CAEv2-ViT backbone (`lw-detr-{tiny,small,medium}`; large/xlarge multi-scale TBD).
 
 ## Registered-but-not-yet-validated variants
 

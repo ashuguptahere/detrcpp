@@ -27,7 +27,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   for RF-DETR, BatchNorm for LW-DETR). The whole LW-DETR-medium model loads the
   official weights 1:1 (329/329, 0 missing/unexpected) and reproduces the HF reference
   to fp32 noise — token-aligned 300/300, box/logit p90 2.4e-5 / 1.0e-4, max 1.4e-3
-  (`LwDetrViTParity.FullMediumEndToEnd`). Registry + COCO validation next.
+  (`LwDetrViTParity.FullMediumEndToEnd`).
+- **LW-DETR single-scale matrix registered + COCO-validated** — `lw-detr-{tiny,small,
+  medium}` registered (each a `RfDetrRealConfig`: tiny = ViT-Ti / 6 layers / 3 features
+  / 100 queries; small = ViT-Ti / 10 layers; medium = ViT-S / 10 layers) and validated
+  on full COCO `val2017` against the **native `xbsu/LW-DETR` `.pth`** (the authors' own
+  weights, 0 missing/unexpected): `lw-detr-tiny` **0.428** (official 0.426),
+  `lw-detr-small` **0.479** (0.480), `lw-detr-medium` **0.523** (0.525) — all within
+  ~0.2 AP. Native converter `lwdetr_convert_native.py` (splits the fused backbone qkv +
+  decoder in_proj). Eval: `--coco91 --imgsz 640` (ImageNet-norm square, no `--aspect`).
+  large/xlarge (multi-scale projector) are a follow-up. See `VALIDATION.md`.
 
 ### Changed
 
