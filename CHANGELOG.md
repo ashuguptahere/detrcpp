@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.14.0] - 2026-06-14
+
+### Added
 - **RT-DETRv2 validated against the original-repo native weights** — `rt-detrv2-{s,m,l,x}`
   load the **native `lyuwenyu/RT-DETR` PyTorch `.pth`** checkpoints (not the HF mirror;
   0 missing/unexpected/mismatched) and reproduce the published COCO `val2017` mAP within
