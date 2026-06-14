@@ -129,6 +129,16 @@ DfEncOutputImpl::DfEncOutputImpl(int d) {
 }
 torch::Tensor DfEncOutputImpl::forward(torch::Tensor x) { return norm->forward(proj->forward(x)); }
 
+DfDecInputProjImpl::DfDecInputProjImpl(int in_ch, int out_ch) : identity_(in_ch == out_ch) {
+  if (!identity_) {
+    conv = register_module("conv", nn::Conv2d(nn::Conv2dOptions(in_ch, out_ch, 1).bias(false)));
+    norm = register_module("norm", nn::BatchNorm2d(out_ch));
+  }
+}
+torch::Tensor DfDecInputProjImpl::forward(torch::Tensor x) {
+  return identity_ ? x : norm->forward(conv->forward(x));
+}
+
 DfMSDeformImpl::DfMSDeformImpl(int d, int nhead, int num_levels, std::vector<int> num_points)
     : nhead_(nhead), num_levels_(num_levels), num_points_(std::move(num_points)) {
   const int sum_points = std::accumulate(num_points_.begin(), num_points_.end(), 0);
@@ -217,6 +227,10 @@ DFINETransformerImpl::DFINETransformerImpl(DfTransformerConfig cfg) : cfg_(std::
   const int d = cfg_.hidden_dim, nc = cfg_.num_classes;
   project_ = WeightingFunction(cfg_.reg_max, cfg_.up, cfg_.reg_scale);
 
+  input_proj = register_module("input_proj", nn::ModuleList());
+  for (int fc : cfg_.feat_channels) {
+    input_proj->push_back(DfDecInputProj(fc, d));
+  }
   enc_output = register_module("enc_output", DfEncOutput(d));
   enc_score_head = register_module("enc_score_head", nn::Linear(d, nc));
   enc_bbox_head = register_module("enc_bbox_head", DfMLP(d, d, 4, 3));
@@ -238,7 +252,8 @@ std::pair<torch::Tensor, torch::Tensor> DFINETransformerImpl::forward(
   // Encoder input: flatten each (already-hidden_dim) level into one memory sequence.
   DfShapes shapes;
   std::vector<torch::Tensor> flat;
-  for (const auto& f : feats) {
+  for (std::size_t i = 0; i < feats.size(); ++i) {
+    auto f = input_proj[i]->as<DfDecInputProjImpl>()->forward(feats[i]);  // neck -> decoder width
     shapes.emplace_back(f.size(2), f.size(3));
     flat.push_back(f.flatten(2).permute({0, 2, 1}));  // [B, hw, d]
   }

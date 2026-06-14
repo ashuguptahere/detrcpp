@@ -89,6 +89,7 @@ TEST(DFINETransformerParity, MatchesDFineNDecoder) {
   DfTransformerConfig cfg;
   cfg.num_classes = 80;
   cfg.hidden_dim = 128;
+  cfg.feat_channels = {128, 128};
   cfg.feat_strides = {16, 32};
   cfg.num_levels = 2;
   cfg.num_points = {6, 6};

@@ -17,7 +17,9 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
                                  cfg_.num_encoder_layers, 10000.0));
   DfTransformerConfig dc;
   dc.num_classes = cfg_.num_classes;
-  dc.hidden_dim = cfg_.hidden_dim;
+  dc.hidden_dim = cfg_.dec_hidden_dim;                                   // decoder width
+  dc.feat_channels =
+      std::vector<int>(static_cast<std::size_t>(cfg_.num_levels), cfg_.hidden_dim);  // neck width
   dc.num_queries = cfg_.num_queries;
   dc.feat_strides = cfg_.feat_strides;
   dc.num_levels = cfg_.num_levels;
@@ -64,6 +66,7 @@ DFineConfig SizeConfig(const std::string& size) {
     c.use_lab = true;
     c.return_idx = {2, 3};
     c.hidden_dim = 128;
+    c.dec_hidden_dim = 128;
     c.feat_strides = {16, 32};
     c.num_levels = 2;
     c.neck_ffn = 512;
@@ -88,7 +91,9 @@ DFineConfig SizeConfig(const std::string& size) {
     c.backbone = "B4";  // defaults already match D-FINE-L
   } else if (size == "x") {
     c.backbone = "B5";
-    c.hidden_dim = 384;
+    c.hidden_dim = 384;       // neck width
+    c.dec_hidden_dim = 256;   // decoder runs narrower; input_proj projects 384 -> 256
+    c.neck_ffn = 2048;
     c.reg_scale = 8.0;
   }
   return c;

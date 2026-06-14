@@ -30,8 +30,10 @@ struct DFineConfig {
   std::string backbone = "B4";
   bool use_lab = false;
   std::vector<int> return_idx = {1, 2, 3};
-  // Shared width and the neck/decoder feature levels.
+  // Backbone/neck width and the decoder's (possibly narrower) internal width — they
+  // differ only for D-FINE-X (neck 384, decoder 256), which then projects in the decoder.
   int hidden_dim = 256;
+  int dec_hidden_dim = 256;
   std::vector<int> feat_strides = {8, 16, 32};
   int num_levels = 3;
   // Neck (HybridEncoder).

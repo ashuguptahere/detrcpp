@@ -41,6 +41,18 @@ struct DfEncOutputImpl : nn::Module {
 };
 TORCH_MODULE(DfEncOutput);
 
+// Per-level decoder input projection: a 1x1 conv + BN re-projecting a neck feature to
+// the decoder width, or identity when they already match (the usual n/s/m/l case; the
+// conv path is only needed by D-FINE-X, whose neck is wider than its decoder).
+struct DfDecInputProjImpl : nn::Module {
+  DfDecInputProjImpl(int in_ch, int out_ch);
+  torch::Tensor forward(torch::Tensor x);
+  bool identity_;
+  nn::Conv2d conv{nullptr};
+  nn::BatchNorm2d norm{nullptr};
+};
+TORCH_MODULE(DfDecInputProj);
+
 // D-FINE deformable cross-attention: only sampling_offsets + attention_weights (value is
 // pre-split, no value/output projection). 4D reference -> per-edge box-scaled sampling.
 struct DfMSDeformImpl : nn::Module {
@@ -104,8 +116,9 @@ TORCH_MODULE(DfDecoderStack);
 // Configures a DFINETransformer (the D-FINE decoder + heads). Defaults are D-FINE-L.
 struct DfTransformerConfig {
   int num_classes = 80;
-  int hidden_dim = 256;
+  int hidden_dim = 256;  // decoder internal width
   int num_queries = 300;
+  std::vector<int> feat_channels = {256, 256, 256};  // neck output channels per level
   std::vector<int> feat_strides = {8, 16, 32};
   int num_levels = 3;
   std::vector<int> num_points = {3, 6, 3};
@@ -130,6 +143,7 @@ struct DFINETransformerImpl : nn::Module {
   torch::Tensor project_;  // weighting function W(n), [reg_max+1]
   torch::Tensor topk_idx_;
 
+  nn::ModuleList input_proj{nullptr};      // per level: DfDecInputProj (neck -> decoder width)
   DfEncOutput enc_output{nullptr};
   nn::Linear enc_score_head{nullptr};
   DfMLP enc_bbox_head{nullptr};
