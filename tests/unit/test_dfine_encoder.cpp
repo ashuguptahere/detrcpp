@@ -72,5 +72,37 @@ TEST(DfHybridEncoderParity, MatchesDFineLNeck) {
             3, "/tmp/dfine_l_neck.safetensors", "/tmp/dfine_l_neck/parity.safetensors");
 }
 
+// DEIMv2-Atto LiteEncoder: 1 feature (256) -> hidden 64, 2-scale output.
+TEST(DfLiteEncoderParity, MatchesDeimv2Atto) {
+  const std::string wpath = "/tmp/deimv2_atto_neck.safetensors";
+  const std::string ppath = "/tmp/deimv2_atto_neck/parity.safetensors";
+  if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
+    GTEST_SKIP() << "DEIMv2 lite-encoder fixtures absent";
+  }
+  auto neck = DfLiteEncoder(256, 64, 0.34, 0.5);
+  auto wsd = weights::LoadSafetensors(wpath);
+  ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
+  auto rep = weights::LoadStateDictInto(*neck, *wsd);
+  ASSERT_TRUE(rep.has_value()) << rep.error().message;
+  std::cout << "loaded " << rep->loaded << " missing " << rep->missing.size() << " unexpected "
+            << rep->unexpected.size() << "\n";
+  for (const auto& mk : rep->missing) std::cout << "  MISSING " << mk << "\n";
+  EXPECT_EQ(rep->missing.size(), 0U);
+  EXPECT_EQ(rep->unexpected.size(), 0U);
+  auto psd = *weights::LoadSafetensors(ppath);
+  std::vector<torch::Tensor> feats{RawToTorch(psd.Find("feat0"))};
+  neck->eval();
+  torch::NoGradGuard ng;
+  auto outs = neck->forward(feats);
+  ASSERT_EQ(outs.size(), 2U);
+  for (int i = 0; i < 2; ++i) {
+    auto ref = RawToTorch(psd.Find("out" + std::to_string(i)));
+    ASSERT_EQ(outs[static_cast<std::size_t>(i)].sizes(), ref.sizes());
+    const float d = (outs[static_cast<std::size_t>(i)] - ref).abs().max().item<float>();
+    std::cout << "out" << i << " max|diff| = " << d << "\n";
+    EXPECT_LT(d, 5e-4F) << "out" << i;
+  }
+}
+
 }  // namespace
 }  // namespace detr::models

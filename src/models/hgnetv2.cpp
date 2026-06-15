@@ -175,6 +175,22 @@ ArchCfg Arch(const std::string& v) {
          {128, 128, 512, 2, 6, 3, true, false},
          {512, 256, 1024, 5, 6, 5, true, true},
          {1024, 512, 2048, 2, 6, 5, true, true}}}},
+      // DEIMv2 micro variants: 3 stages only (Atto/Femto/Pico). {in,mid,out,blocks,layer,kernel,down,light}.
+      {"Atto",
+       {{3, 16, 16},
+        {{16, 16, 64, 1, 3, 3, false, false},
+         {64, 32, 256, 1, 3, 3, true, false},
+         {256, 64, 256, 1, 3, 3, true, true}}}},
+      {"Femto",
+       {{3, 16, 16},
+        {{16, 16, 64, 1, 3, 3, false, false},
+         {64, 32, 256, 1, 3, 3, true, false},
+         {256, 64, 512, 1, 3, 5, true, true}}}},
+      {"Pico",
+       {{3, 16, 16},
+        {{16, 16, 64, 1, 3, 3, false, false},
+         {64, 32, 256, 1, 3, 3, true, false},
+         {256, 64, 512, 2, 3, 5, true, true}}}},
   };
   return kArch.at(v);
 }

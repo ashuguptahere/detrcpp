@@ -45,6 +45,9 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `deim-rt-m`        | **0.507** | 0.680 | 0.551 | ~0.509 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `deim-rt-l`        | **0.541** | 0.720 | 0.585 | ~0.543 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `deimv2-n`         | **0.427** | 0.598 | 0.459 | ~0.430 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deimv2-atto`      | **0.236** | 0.363 | 0.249 | ~0.238 | `--imgsz 320` (model default; no `--coco91`, no `--aspect`) |
+| `deimv2-femto`     | **0.308** | 0.457 | 0.329 | ~0.310 | `--imgsz 416` (model default; no `--coco91`, no `--aspect`) |
+| `deimv2-pico`      | **0.383** | 0.550 | 0.411 | ~0.385 | `--imgsz 640` (model default; no `--coco91`, no `--aspect`) |
 
 `detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
 pure-C++ unpickler (no Python, no conversion): the load reports `458 tensors,

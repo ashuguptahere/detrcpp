@@ -22,12 +22,27 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   (RepNCSPELAN4 `c1 = hidden`) and uses **CSPLayer2** (RepC3-style). New modules
   `DfRMSNorm` / `DfSwiGLU` / `DfCSPLayer2`, all flags default off (D-FINE/DEIM unchanged;
   6 D-FINE parity tests pass). `deimv2-n` loads 590/590 and scores **0.427** on COCO
-  `val2017` (official 0.430). atto/femto/pico (micro HGNetv2 + lite encoder) and
-  s/m/l/x (ViT-Tiny / DINOv3-STA backbone) are follow-ups.
+  `val2017` (official 0.430). s/m/l/x (ViT-Tiny / DINOv3-STA backbone) are follow-ups.
+- **DEIMv2 — the micro variants (`deimv2-atto` / `deimv2-femto` / `deimv2-pico`),
+  validated on COCO.** The ultra-light DEIMv2 sizes: a 3-stage **micro HGNetv2**
+  (Atto/Femto/Pico) feeding a single feature into the new **`DfLiteEncoder`** (a 1→2-scale
+  bi-fusion neck: input proj → downsample → GAP fusion → FPN/PAN blocks) and the DEIMv2
+  decoder running with `use_gateway=false` (plain RMSNorm `norm2` instead of the gate) and
+  per-level `num_points=[4,2]`. Each evaluates at its own native resolution (`atto` 320,
+  `femto` 416, `pico` 640). New backbone + lite-encoder + decoder parity tests pass with
+  `max|diff| = 0` (backbone/encoder) and ~1e-6 (decoder). Scores on COCO `val2017`:
+  `deimv2-atto` **0.236** (official 0.238), `deimv2-femto` **0.308** (0.310),
+  `deimv2-pico` **0.383** (0.385).
 
 ### Changed
 
 ### Fixed
+- **DEIMv2 decoder: compute `query_pos_embed` once, not per layer.** The DEIMv2
+  `DEIMTransformer` derives the query position embedding from the *initial* reference
+  points once before the decoder loop and reuses it for every layer; base D-FINE/DEIM
+  recompute it each layer from the refined references. The C++ decoder was recomputing it
+  for all `deimv2` models — invisible on the well-converged `deimv2-n` but catastrophic on
+  the micro sizes (`deimv2-atto` 0.048→0.236). Gated on `cfg.deimv2`; D-FINE/DEIM unchanged.
 
 ## [0.17.0] - 2026-06-15
 

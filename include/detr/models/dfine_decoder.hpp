@@ -101,18 +101,19 @@ TORCH_MODULE(DfGate);
 
 // One decoder layer: self-attn (post-norm) -> deformable cross-attn (gated) -> FFN.
 // `deimv2` switches the norms to RMSNorm and the FFN to SwiGLU (`swish_ffn`).
+// `gateway` selects the gated fusion (D-FINE / DEIMv2-N) vs a plain post-norm2 (DEIMv2 micro).
 struct DfDecLayerImpl : nn::Module {
   DfDecLayerImpl(int d, int nhead, int ffn, int num_levels, std::vector<int> num_points,
-                 bool silu = false, bool deimv2 = false);
+                 bool silu = false, bool deimv2 = false, bool use_gateway = true);
   torch::Tensor forward(torch::Tensor target, const torch::Tensor& ref,
                         const std::vector<torch::Tensor>& value, const DfShapes& shapes,
                         const torch::Tensor& query_pos);
-  bool silu_, deimv2_;
+  bool silu_, deimv2_, gateway_;
   nn::MultiheadAttention self_attn{nullptr};
   nn::LayerNorm norm1{nullptr}, norm3{nullptr};       // D-FINE
-  DfRMSNorm rms1{nullptr}, rms3{nullptr};             // DEIMv2
+  DfRMSNorm rms1{nullptr}, rms3{nullptr}, rms2{nullptr};  // DEIMv2 (rms2 when no gateway)
   DfMSDeform cross_attn{nullptr};
-  DfGate gateway{nullptr};
+  DfGate gateway{nullptr};                            // when use_gateway
   nn::Linear linear1{nullptr}, linear2{nullptr};      // D-FINE FFN
   DfSwiGLU swish_ffn{nullptr};                        // DEIMv2 FFN
 };
@@ -132,7 +133,8 @@ TORCH_MODULE(DfLQE);
 // itself lives in DFINETransformer (it needs the shared bbox/score heads).
 struct DfDecoderStackImpl : nn::Module {
   DfDecoderStackImpl(int num_layers, int d, int nhead, int ffn, int num_levels,
-                     std::vector<int> num_points, int reg_max, bool silu, bool deimv2 = false);
+                     std::vector<int> num_points, int reg_max, bool silu, bool deimv2 = false,
+                     bool use_gateway = true);
   nn::ModuleList layers{nullptr};      // DfDecLayer
   nn::ModuleList lqe_layers{nullptr};  // DfLQE
 };
@@ -157,6 +159,7 @@ struct DfTransformerConfig {
   bool silu = false;  // decoder FFN + MLP-head activation (D-FINE: ReLU; DEIM: SiLU)
   // DEIMv2: RMSNorm + SwiGLU decoder layers, no enc_output, 3-layer query_pos_head, SiLU MLPs.
   bool deimv2 = false;
+  bool use_gateway = true;  // gated fusion (D-FINE / DEIMv2-N) vs plain norm2 (DEIMv2 micro)
 };
 
 struct DFINETransformerImpl : nn::Module {

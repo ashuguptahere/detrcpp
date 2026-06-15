@@ -199,12 +199,16 @@ torch::Tensor DfGateImpl::forward(const torch::Tensor& x1, const torch::Tensor& 
 }
 
 DfDecLayerImpl::DfDecLayerImpl(int d, int nhead, int ffn, int num_levels,
-                               std::vector<int> num_points, bool silu, bool deimv2)
-    : silu_(silu), deimv2_(deimv2) {
+                               std::vector<int> num_points, bool silu, bool deimv2, bool use_gateway)
+    : silu_(silu), deimv2_(deimv2), gateway_(use_gateway) {
   self_attn = register_module("self_attn",
                               nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.0)));
   cross_attn = register_module("cross_attn", DfMSDeform(d, nhead, num_levels, std::move(num_points)));
-  gateway = register_module("gateway", DfGate(d, /*rms=*/deimv2));
+  if (gateway_) {
+    gateway = register_module("gateway", DfGate(d, /*rms=*/deimv2));
+  } else {
+    rms2 = register_module("norm2", DfRMSNorm(d));  // DEIMv2 micro: plain post-norm2
+  }
   if (deimv2_) {
     // DEIMv2: RMSNorm + a SwiGLU FFN (hidden = ffn/2).
     rms1 = register_module("norm1", DfRMSNorm(d));
@@ -226,7 +230,7 @@ torch::Tensor DfDecLayerImpl::forward(torch::Tensor target, const torch::Tensor&
   auto sa = std::get<0>(self_attn->forward(q, q, v)).transpose(0, 1);
   target = deimv2_ ? rms1->forward(target + sa) : norm1->forward(target + sa);
   auto ca = cross_attn->forward(target + query_pos, ref, value, shapes);
-  target = gateway->forward(target, ca);
+  target = gateway_ ? gateway->forward(target, ca) : rms2->forward(target + ca);
   torch::Tensor ffn;
   if (deimv2_) {
     ffn = swish_ffn->forward(target);
@@ -252,11 +256,11 @@ torch::Tensor DfLQEImpl::forward(const torch::Tensor& scores, const torch::Tenso
 
 DfDecoderStackImpl::DfDecoderStackImpl(int num_layers, int d, int nhead, int ffn, int num_levels,
                                        std::vector<int> num_points, int reg_max, bool silu,
-                                       bool deimv2) {
+                                       bool deimv2, bool use_gateway) {
   layers = register_module("layers", nn::ModuleList());
   lqe_layers = register_module("lqe_layers", nn::ModuleList());
   for (int i = 0; i < num_layers; ++i) {
-    layers->push_back(DfDecLayer(d, nhead, ffn, num_levels, num_points, silu, deimv2));
+    layers->push_back(DfDecLayer(d, nhead, ffn, num_levels, num_points, silu, deimv2, use_gateway));
     lqe_layers->push_back(DfLQE(4, 64, 2, reg_max, silu));
   }
 }
@@ -288,7 +292,8 @@ DFINETransformerImpl::DFINETransformerImpl(DfTransformerConfig cfg) : cfg_(std::
   }
   decoder = register_module(
       "decoder", DfDecoderStack(cfg_.num_layers, d, cfg_.nhead, cfg_.dim_feedforward,
-                                cfg_.num_levels, cfg_.num_points, cfg_.reg_max, silu, cfg_.deimv2));
+                                cfg_.num_levels, cfg_.num_points, cfg_.reg_max, silu, cfg_.deimv2,
+                                cfg_.use_gateway));
 }
 
 std::pair<torch::Tensor, torch::Tensor> DFINETransformerImpl::forward(
@@ -332,11 +337,14 @@ std::pair<torch::Tensor, torch::Tensor> DFINETransformerImpl::forward(
 
   // FDR decoder loop (eval: run all layers, emit the last).
   auto ref_points_detach = torch::sigmoid(ref_unact);
+  // DEIMv2 computes the query position embedding once from the initial reference points and
+  // reuses it across all layers; base D-FINE/DEIM recompute it per layer from the refined refs.
+  auto query_pos = query_pos_head->forward(ref_points_detach).clamp(-10.0, 10.0);
   torch::Tensor output = content, output_detach, pred_corners_undetach, ref_points_initial;
   torch::Tensor out_logits, out_boxes;
   for (int i = 0; i < cfg_.num_layers; ++i) {
     auto ref_input = ref_points_detach.unsqueeze(2);  // [B, nq, 1, 4]
-    auto query_pos = query_pos_head->forward(ref_points_detach).clamp(-10.0, 10.0);
+    if (!cfg_.deimv2) query_pos = query_pos_head->forward(ref_points_detach).clamp(-10.0, 10.0);
     output = decoder->layers[static_cast<std::size_t>(i)]->as<DfDecLayerImpl>()->forward(
         output, ref_input, value_split, shapes, query_pos);
     if (i == 0) {

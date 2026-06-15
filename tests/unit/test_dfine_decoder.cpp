@@ -104,5 +104,23 @@ TEST(DFINETransformerParity, MatchesDFineLDecoder) {
   CheckDecoder(cfg, 3, "/tmp/dfine_l_decoder.safetensors", "/tmp/dfine_l_dec/parity.safetensors");
 }
 
+// DEIMv2-Atto: 2 levels, hidden 64, num_points [4,2], 3 layers, RMSNorm + SwiGLU,
+// no enc_output, no gateway (plain norm2).
+TEST(DFINETransformerParity, MatchesDeimv2AttoDecoder) {
+  DfTransformerConfig cfg;
+  cfg.num_classes = 80;
+  cfg.hidden_dim = 64;
+  cfg.feat_channels = {64, 64};
+  cfg.feat_strides = {16, 32};
+  cfg.num_levels = 2;
+  cfg.num_points = {4, 2};
+  cfg.num_layers = 3;
+  cfg.dim_feedforward = 160;
+  cfg.silu = true;
+  cfg.deimv2 = true;
+  cfg.use_gateway = false;
+  CheckDecoder(cfg, 2, "/tmp/deimv2_atto_decoder.safetensors", "/tmp/deimv2_atto_dec/parity.safetensors");
+}
+
 }  // namespace
 }  // namespace detr::models

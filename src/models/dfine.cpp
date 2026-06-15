@@ -11,10 +11,15 @@ namespace detr::models {
 DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
   backbone_ = register_module("backbone", HgNetV2(cfg_.backbone, cfg_.use_lab, cfg_.return_idx));
   const auto in_ch = backbone_->out_channels();
-  encoder_ = register_module(
-      "encoder", DfHybridEncoder(in_ch, cfg_.feat_strides, cfg_.hidden_dim, cfg_.nhead, cfg_.neck_ffn,
-                                 cfg_.expansion, cfg_.depth_mult, cfg_.use_encoder_idx,
-                                 cfg_.num_encoder_layers, 10000.0, cfg_.decoder_deimv2));
+  if (cfg_.lite_encoder) {
+    lite_encoder_ = register_module(
+        "encoder", DfLiteEncoder(in_ch[0], cfg_.hidden_dim, cfg_.expansion, cfg_.depth_mult));
+  } else {
+    encoder_ = register_module(
+        "encoder", DfHybridEncoder(in_ch, cfg_.feat_strides, cfg_.hidden_dim, cfg_.nhead, cfg_.neck_ffn,
+                                   cfg_.expansion, cfg_.depth_mult, cfg_.use_encoder_idx,
+                                   cfg_.num_encoder_layers, 10000.0, cfg_.decoder_deimv2));
+  }
   DfTransformerConfig dc;
   dc.num_classes = cfg_.num_classes;
   dc.hidden_dim = cfg_.dec_hidden_dim;                                   // decoder width
@@ -31,12 +36,13 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
   dc.reg_scale = cfg_.reg_scale;
   dc.silu = cfg_.decoder_silu || cfg_.decoder_deimv2;  // DEIMv2 MLPs use SiLU too
   dc.deimv2 = cfg_.decoder_deimv2;
+  dc.use_gateway = cfg_.decoder_gateway;
   decoder_ = register_module("decoder", DFINETransformer(dc));
 }
 
 Detections DFineImpl::Forward(torch::Tensor images) {
   auto feats = backbone_->forward(images);
-  auto neck_outs = encoder_->forward(feats);
+  auto neck_outs = lite_encoder_ ? lite_encoder_->forward(feats) : encoder_->forward(feats);
   auto [logits, boxes] = decoder_->forward(neck_outs);
   Detections det;
   det.logits = logits;  // [B, Q, num_classes] (sigmoid/focal)
@@ -139,6 +145,36 @@ void RegisterDFine() {
     v2.name = "deimv2-n";
     v2.upstream = "https://github.com/Intellindust-AI-Lab/DEIMv2";
     v2.decoder_deimv2 = true;
+    RegisterOne(v2);
+  }
+  // DEIMv2 micro sizes: a 3-stage HGNetv2 + the 2-scale LiteEncoder + the DEIMv2 decoder.
+  // Each evaluates at its own native resolution (the published mAP is measured there).
+  struct Micro {
+    const char* name;
+    const char* backbone;
+    int hidden, dec_ffn, imgsz;
+  };
+  for (const Micro& m : {Micro{"atto", "Atto", 64, 160, 320}, Micro{"femto", "Femto", 96, 256, 416},
+                         Micro{"pico", "Pico", 112, 320, 640}}) {
+    DFineConfig v2;
+    v2.name = std::string("deimv2-") + m.name;
+    v2.upstream = "https://github.com/Intellindust-AI-Lab/DEIMv2";
+    v2.imgsz = m.imgsz;
+    v2.backbone = m.backbone;
+    v2.use_lab = true;
+    v2.return_idx = {2};
+    v2.hidden_dim = m.hidden;
+    v2.dec_hidden_dim = m.hidden;
+    v2.feat_strides = {16, 32};
+    v2.num_levels = 2;
+    v2.num_points = {4, 2};
+    v2.num_layers = 3;
+    v2.dec_ffn = m.dec_ffn;
+    v2.expansion = 0.34;
+    v2.depth_mult = 0.5;
+    v2.lite_encoder = true;
+    v2.decoder_deimv2 = true;
+    v2.decoder_gateway = false;  // micro models use a plain norm2, not the gate
     RegisterOne(v2);
   }
 }

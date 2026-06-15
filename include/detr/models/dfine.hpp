@@ -36,16 +36,18 @@ struct DFineConfig {
   int dec_hidden_dim = 256;
   std::vector<int> feat_strides = {8, 16, 32};
   int num_levels = 3;
-  // Neck (HybridEncoder).
+  // Neck (HybridEncoder, or DEIMv2 LiteEncoder for the micro sizes).
   int nhead = 8, neck_ffn = 1024, num_encoder_layers = 1;
   double expansion = 1.0, depth_mult = 1.0;
   std::vector<int> use_encoder_idx = {2};
+  bool lite_encoder = false;  // DEIMv2 atto/femto/pico: 1 feature -> 2-scale LiteEncoder
   // Decoder (FDR).
   std::vector<int> num_points = {3, 6, 3};
   int num_layers = 6, dec_ffn = 1024, reg_max = 32;
   double reg_scale = 4.0;
   bool decoder_silu = false;    // D-FINE uses ReLU; DEIM (training recipe) uses SiLU
   bool decoder_deimv2 = false;  // DEIMv2 decoder: RMSNorm + SwiGLU, no enc_output, SiLU MLPs
+  bool decoder_gateway = true;  // gated fusion vs plain norm2 (DEIMv2 micro = false)
 };
 
 class DFineImpl : public IModel {
@@ -57,7 +59,8 @@ class DFineImpl : public IModel {
  private:
   DFineConfig cfg_;
   HgNetV2 backbone_{nullptr};
-  DfHybridEncoder encoder_{nullptr};
+  DfHybridEncoder encoder_{nullptr};       // standard neck
+  DfLiteEncoder lite_encoder_{nullptr};    // DEIMv2 micro neck (exactly one is built)
   DFINETransformer decoder_{nullptr};
 };
 

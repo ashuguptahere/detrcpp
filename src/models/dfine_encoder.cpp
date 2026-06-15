@@ -203,6 +203,23 @@ struct DfInputProjImpl : nn::Module {
 };
 TORCH_MODULE(DfInputProj);
 
+// GAP_Fusion (DEIMv2 LiteEncoder): add the global-average-pooled context, then a 1x1 ConvNorm.
+struct DfGapFusionImpl : nn::Module {
+  DfConvNorm cv{nullptr};
+  explicit DfGapFusionImpl(int ch) { cv = register_module("cv", DfConvNorm(ch, ch, 1, 1, true)); }
+  torch::Tensor forward(torch::Tensor x) {
+    return cv->forward(x + torch::adaptive_avg_pool2d(x, {1, 1}));
+  }
+};
+TORCH_MODULE(DfGapFusion);
+
+// Stride-2 avg-pool downsample: AvgPool(3,2,1) -> 1x1 conv(no bias) -> BN -> SiLU.
+nn::Sequential MakeLiteDown(int ch) {
+  return nn::Sequential(nn::AvgPool2d(nn::AvgPool2dOptions(3).stride(2).padding(1)),
+                        nn::Conv2d(nn::Conv2dOptions(ch, ch, 1).bias(false)), nn::BatchNorm2d(ch),
+                        nn::Functional(torch::silu));
+}
+
 }  // namespace
 
 DfHybridEncoderImpl::DfHybridEncoderImpl(std::vector<int> in_channels, std::vector<int> feat_strides,
@@ -288,6 +305,37 @@ std::vector<torch::Tensor> DfHybridEncoderImpl::forward(std::vector<torch::Tenso
     outs.push_back(pan_blocks[idx]->as<DfRepNCSPELAN4Impl>()->forward(fused));
   }
   return outs;
+}
+
+DfLiteEncoderImpl::DfLiteEncoderImpl(int in_channel, int hidden_dim, double expansion,
+                                     double depth_mult)
+    : hidden_dim_(hidden_dim) {
+  const int c4 = static_cast<int>(std::floor(expansion * hidden_dim / 2.0));
+  const int nblk = static_cast<int>(std::lround(3.0 * depth_mult));
+  input_proj = register_module("input_proj", nn::ModuleList());
+  input_proj->push_back(DfInputProj(in_channel, hidden_dim));
+  down_sample1 = register_module("down_sample1", MakeLiteDown(hidden_dim));
+  down_sample2 = register_module("down_sample2", MakeLiteDown(hidden_dim));
+  auto bf = DfGapFusion(hidden_dim);
+  register_module("bi_fusion", bf);
+  bi_fusion = nn::AnyModule(bf);
+  auto fpn = DfRepNCSPELAN4(hidden_dim, hidden_dim, hidden_dim * 2, c4, nblk, /*csp2=*/true);
+  register_module("fpn_block", fpn);
+  fpn_block = nn::AnyModule(fpn);
+  auto pan = DfRepNCSPELAN4(hidden_dim, hidden_dim, hidden_dim * 2, c4, nblk, /*csp2=*/true);
+  register_module("pan_block", pan);
+  pan_block = nn::AnyModule(pan);
+}
+
+std::vector<torch::Tensor> DfLiteEncoderImpl::forward(std::vector<torch::Tensor> feats) {
+  auto proj = input_proj[0]->as<DfInputProjImpl>()->forward(feats[0]);  // [B, hidden, H/16, W/16]
+  auto ds1 = down_sample1->forward(proj);                               // [B, hidden, H/32, W/32]
+  ds1 = bi_fusion.forward<torch::Tensor>(ds1);
+  auto up = F::interpolate(
+      ds1, F::InterpolateFuncOptions().scale_factor(std::vector<double>{2.0, 2.0}).mode(torch::kNearest));
+  auto out0 = fpn_block.forward<torch::Tensor>(proj + up);
+  auto out1 = pan_block.forward<torch::Tensor>(ds1 + down_sample2->forward(out0));
+  return {out0, out1};
 }
 
 }  // namespace detr::models

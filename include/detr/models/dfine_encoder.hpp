@@ -42,4 +42,17 @@ struct DfHybridEncoderImpl : nn::Module {
 };
 TORCH_MODULE(DfHybridEncoder);
 
+// DEIMv2 LiteEncoder (atto/femto/pico): one backbone feature -> input_proj -> a small
+// 2-scale pyramid via stride-2 avg-pool downsample + a global-average-pool fusion, then
+// a sum-fusion FPN/PAN with RepNCSPELAN4 (csp2) blocks. Returns 2 levels (stride 16/32).
+struct DfLiteEncoderImpl : nn::Module {
+  DfLiteEncoderImpl(int in_channel, int hidden_dim, double expansion, double depth_mult);
+  std::vector<torch::Tensor> forward(std::vector<torch::Tensor> feats);
+  int hidden_dim_;
+  nn::ModuleList input_proj{nullptr};
+  nn::Sequential down_sample1{nullptr}, down_sample2{nullptr};
+  nn::AnyModule bi_fusion, fpn_block, pan_block;
+};
+TORCH_MODULE(DfLiteEncoder);
+
 }  // namespace detr::models

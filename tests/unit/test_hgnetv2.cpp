@@ -66,5 +66,10 @@ TEST(HgNetV2Parity, MatchesDFineLBackbone) {
   CheckBackbone("B4", false, {1, 2, 3}, "/tmp/dfine_l_backbone.safetensors", "/tmp/dfine_l_bb/parity.safetensors");
 }
 
+// DEIMv2-Atto: micro 3-stage HGNetv2, use_lab=True, return_idx [2] (single feature, stride 16).
+TEST(HgNetV2Parity, MatchesDeimv2AttoBackbone) {
+  CheckBackbone("Atto", true, {2}, "/tmp/deimv2_atto_backbone.safetensors", "/tmp/deimv2_atto_bb/parity.safetensors");
+}
+
 }  // namespace
 }  // namespace detr::models
