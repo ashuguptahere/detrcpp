@@ -33,6 +33,16 @@ set(MANIFEST
   "rt-detrv2-m|rtdetrv2_r34vd_120e_coco_ema.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r34vd_120e_coco_ema.pth"
   "rt-detrv2-l|rtdetrv2_r50vd_6x_coco_ema.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_6x_coco_ema.pth"
   "rt-detrv2-x|rtdetrv2_r101vd_6x_coco_from_paddle.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r101vd_6x_coco_from_paddle.pth"
+  # DEIM (Intellindust-AI-Lab/DEIM) — DEIM-D-FINE (n/s/m/l/x) + DEIM-RT-DETRv2 (s/m/l),
+  # the authors' Google-Drive releases. Same graphs as D-FINE / RT-DETRv2 (shared remappers).
+  "deim-n|deim_dfine_n.pth|gdrive:1ZPEhiU9nhW4M5jLnYOFwTSLQC1Ugf62e"
+  "deim-s|deim_dfine_s.pth|gdrive:1tB8gVJNrfb6dhFvoHJECKOF5VpkthhfC"
+  "deim-m|deim_dfine_m.pth|gdrive:18Lj2a6UN6k_n_UzqnJyiaiLGpDzQQit8"
+  "deim-l|deim_dfine_l.pth|gdrive:1PIRf02XkrA2xAD3wEiKE2FaamZgSGTAr"
+  "deim-x|deim_dfine_x.pth|gdrive:1dPtbgtGgq1Oa7k_LgH1GXPelg1IVeu0j"
+  "deim-rt-s|deim_rt_r18.pth|gdrive:153_JKff6EpFgiLKaqkJsoDcLal_0ux_F"
+  "deim-rt-m|deim_rt_r34.pth|gdrive:1O9RjZF6kdFWGv1Etn1Toml4r-YfdMDMM"
+  "deim-rt-l|deim_rt_r50.pth|gdrive:1mWknAXD5JYknUQ94WCEvPfXz13jcNOTI"
   # D-FINE (Peterande/D-FINE) — COCO + Objects365->COCO, GitHub release assets.
   "dfine-n|dfine_n_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth"
   "dfine-s|dfine_s_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_coco.pth"
@@ -82,7 +92,13 @@ function(fetch_one name file url)
   endif()
   resolve_url("${url}" real)
   message(STATUS "${name}: downloading ${file}")
-  file(DOWNLOAD "${real}" "${dest}" SHOW_PROGRESS STATUS st)
+  # SHOW_PROGRESS trips file(DOWNLOAD) on Google-Drive's usercontent endpoint, so the
+  # progress meter is GitHub-only; Drive downloads run quietly.
+  if(real MATCHES "drive\\.usercontent\\.google\\.com")
+    file(DOWNLOAD "${real}" "${dest}" STATUS st)
+  else()
+    file(DOWNLOAD "${real}" "${dest}" SHOW_PROGRESS STATUS st)
+  endif()
   list(GET st 0 code)
   list(GET st 1 msg)
   if(NOT code EQUAL 0)

@@ -11,6 +11,12 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DEIM family loads its native `Intellindust-AI-Lab/DEIM` checkpoints directly.** The
+  eight DEIM models reuse the D-FINE (`deim-{n,s,m,l,x}`) and RT-DETRv2
+  (`deim-rt-{s,m,l}`) remappers unchanged — they share those graphs — so only the
+  download links were needed. The downloader now fetches Google-Drive assets (the DEIM
+  releases) via the `drive.usercontent` direct endpoint (`gdrive:<id>` manifest entries);
+  all eight verified loading 0/0/0.
 - **RT-DETR / RT-DETRv2 load their native `lyuwenyu/RT-DETR` checkpoints directly.** A
   new `RtDetrImpl::UpstreamRemapper()` maps the original PResNet + HybridEncoder +
   RTDETRTransformer naming onto our flat module tree (PResNet vd stem / `res_layers` /
