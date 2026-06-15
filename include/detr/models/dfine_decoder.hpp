@@ -33,6 +33,23 @@ struct DfMLPImpl : nn::Module {
 };
 TORCH_MODULE(DfMLP);
 
+// RMSNorm (DEIMv2): x * rsqrt(mean(x^2, -1) + eps) * scale. A single `scale` weight.
+struct DfRMSNormImpl : nn::Module {
+  explicit DfRMSNormImpl(int dim);
+  torch::Tensor forward(const torch::Tensor& x);
+  torch::Tensor scale;
+  double eps_{1e-6};
+};
+TORCH_MODULE(DfRMSNorm);
+
+// SwiGLU FFN (DEIMv2): w12 splits into (x1,x2); silu(x1)*x2 -> w3.
+struct DfSwiGLUImpl : nn::Module {
+  DfSwiGLUImpl(int in_dim, int hidden_dim, int out_dim);
+  torch::Tensor forward(const torch::Tensor& x);
+  nn::Linear w12{nullptr}, w3{nullptr};
+};
+TORCH_MODULE(DfSwiGLU);
+
 // enc_output: Linear projection + LayerNorm (named "proj"/"norm").
 struct DfEncOutputImpl : nn::Module {
   explicit DfEncOutputImpl(int d);
@@ -71,28 +88,33 @@ struct DfMSDeformImpl : nn::Module {
 };
 TORCH_MODULE(DfMSDeform);
 
-// Gating fusion of self-attn output and cross-attn output, post-normed.
+// Gating fusion of self-attn output and cross-attn output, post-normed. `rmsnorm`
+// selects RMSNorm (DEIMv2) over LayerNorm (D-FINE) for the post-norm.
 struct DfGateImpl : nn::Module {
-  explicit DfGateImpl(int d);
+  explicit DfGateImpl(int d, bool rmsnorm = false);
   torch::Tensor forward(const torch::Tensor& x1, const torch::Tensor& x2);
   nn::Linear gate{nullptr};
-  nn::LayerNorm norm{nullptr};
+  nn::LayerNorm norm{nullptr};   // D-FINE
+  DfRMSNorm rmsnorm{nullptr};    // DEIMv2
 };
 TORCH_MODULE(DfGate);
 
 // One decoder layer: self-attn (post-norm) -> deformable cross-attn (gated) -> FFN.
+// `deimv2` switches the norms to RMSNorm and the FFN to SwiGLU (`swish_ffn`).
 struct DfDecLayerImpl : nn::Module {
   DfDecLayerImpl(int d, int nhead, int ffn, int num_levels, std::vector<int> num_points,
-                 bool silu = false);
+                 bool silu = false, bool deimv2 = false);
   torch::Tensor forward(torch::Tensor target, const torch::Tensor& ref,
                         const std::vector<torch::Tensor>& value, const DfShapes& shapes,
                         const torch::Tensor& query_pos);
-  bool silu_;
+  bool silu_, deimv2_;
   nn::MultiheadAttention self_attn{nullptr};
-  nn::LayerNorm norm1{nullptr}, norm3{nullptr};
+  nn::LayerNorm norm1{nullptr}, norm3{nullptr};       // D-FINE
+  DfRMSNorm rms1{nullptr}, rms3{nullptr};             // DEIMv2
   DfMSDeform cross_attn{nullptr};
   DfGate gateway{nullptr};
-  nn::Linear linear1{nullptr}, linear2{nullptr};
+  nn::Linear linear1{nullptr}, linear2{nullptr};      // D-FINE FFN
+  DfSwiGLU swish_ffn{nullptr};                        // DEIMv2 FFN
 };
 TORCH_MODULE(DfDecLayer);
 
@@ -110,7 +132,7 @@ TORCH_MODULE(DfLQE);
 // itself lives in DFINETransformer (it needs the shared bbox/score heads).
 struct DfDecoderStackImpl : nn::Module {
   DfDecoderStackImpl(int num_layers, int d, int nhead, int ffn, int num_levels,
-                     std::vector<int> num_points, int reg_max, bool silu);
+                     std::vector<int> num_points, int reg_max, bool silu, bool deimv2 = false);
   nn::ModuleList layers{nullptr};      // DfDecLayer
   nn::ModuleList lqe_layers{nullptr};  // DfLQE
 };
@@ -133,6 +155,8 @@ struct DfTransformerConfig {
   double up = 0.5;
   double eps = 1e-2;
   bool silu = false;  // decoder FFN + MLP-head activation (D-FINE: ReLU; DEIM: SiLU)
+  // DEIMv2: RMSNorm + SwiGLU decoder layers, no enc_output, 3-layer query_pos_head, SiLU MLPs.
+  bool deimv2 = false;
 };
 
 struct DFINETransformerImpl : nn::Module {

@@ -86,16 +86,46 @@ struct DfCSPLayerImpl : nn::Module {
 };
 TORCH_MODULE(DfCSPLayer);
 
+// CSPLayer2 (DEIMv2 "csp2", RepC3-style): conv1 -> 2*hidden, split, y0 + bottlenecks(y1),
+// fused by conv3 (Identity when hidden == out). No second 1x1 branch.
+struct DfCSPLayer2Impl : nn::Module {
+  DfConvNorm conv1{nullptr}, conv3{nullptr};
+  nn::Sequential bottlenecks{nullptr};
+  DfCSPLayer2Impl(int in, int out, int num_blocks, double expansion = 1.0) {
+    const int hidden = static_cast<int>(static_cast<double>(out) * expansion);
+    conv1 = register_module("conv1", DfConvNorm(in, 2 * hidden, 1, 1, true));
+    bottlenecks = nn::Sequential();
+    for (int i = 0; i < num_blocks; ++i) {
+      bottlenecks->push_back(DfVgg(hidden));
+    }
+    register_module("bottlenecks", bottlenecks);
+    if (hidden != out) {
+      conv3 = register_module("conv3", DfConvNorm(hidden, out, 1, 1, true));
+    }
+  }
+  torch::Tensor forward(torch::Tensor x) {
+    auto y = conv1->forward(x).chunk(2, 1);
+    auto fused = y[0] + bottlenecks->forward(y[1]);
+    return conv3.is_empty() ? fused : conv3->forward(fused);
+  }
+};
+TORCH_MODULE(DfCSPLayer2);
+
 // RepNCSPELAN4 (YOLOv9 CSP-ELAN): split cv1 output, run two CSPLayer->3x3 chains off the
-// second half, concat all four, fuse with cv4.
+// second half, concat all four, fuse with cv4. `csp2` selects DEIMv2's CSPLayer2.
 struct DfRepNCSPELAN4Impl : nn::Module {
   DfConvNorm cv1{nullptr}, cv4{nullptr};
   nn::Sequential cv2{nullptr}, cv3{nullptr};
   int c_;
-  DfRepNCSPELAN4Impl(int c1, int c2, int c3, int c4, int n) : c_(c3 / 2) {
+  DfRepNCSPELAN4Impl(int c1, int c2, int c3, int c4, int n, bool csp2 = false) : c_(c3 / 2) {
     cv1 = register_module("cv1", DfConvNorm(c1, c3, 1, 1, true));
-    cv2 = register_module("cv2", nn::Sequential(DfCSPLayer(c3 / 2, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
-    cv3 = register_module("cv3", nn::Sequential(DfCSPLayer(c4, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
+    if (csp2) {
+      cv2 = register_module("cv2", nn::Sequential(DfCSPLayer2(c3 / 2, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
+      cv3 = register_module("cv3", nn::Sequential(DfCSPLayer2(c4, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
+    } else {
+      cv2 = register_module("cv2", nn::Sequential(DfCSPLayer(c3 / 2, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
+      cv3 = register_module("cv3", nn::Sequential(DfCSPLayer(c4, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
+    }
     cv4 = register_module("cv4", DfConvNorm(c3 + 2 * c4, c2, 1, 1, true));
   }
   torch::Tensor forward(torch::Tensor x) {
@@ -179,13 +209,16 @@ DfHybridEncoderImpl::DfHybridEncoderImpl(std::vector<int> in_channels, std::vect
                                          int hidden_dim, int nhead, int dim_feedforward,
                                          double expansion, double depth_mult,
                                          std::vector<int> use_encoder_idx, int num_encoder_layers,
-                                         double pe_temperature)
+                                         double pe_temperature, bool deimv2)
     : in_channels_(std::move(in_channels)),
       feat_strides_(std::move(feat_strides)),
       use_encoder_idx_(std::move(use_encoder_idx)),
       hidden_dim_(hidden_dim),
-      pe_temperature_(pe_temperature) {
+      pe_temperature_(pe_temperature),
+      deimv2_(deimv2) {
   const int L = static_cast<int>(in_channels_.size());
+  // DEIMv2 sums upsample+feat_low (block c1 = hidden_dim) and uses CSPLayer2 blocks.
+  const int fuse_in = deimv2 ? hidden_dim : hidden_dim * 2;
   // RepNCSPELAN4 hidden width and depth, matching D-FINE's round((expansion*hidden)//2)
   // and round(3*depth_mult).
   const int c4 = static_cast<int>(std::floor(expansion * hidden_dim / 2.0));
@@ -203,13 +236,13 @@ DfHybridEncoderImpl::DfHybridEncoderImpl(std::vector<int> in_channels, std::vect
   fpn_blocks = register_module("fpn_blocks", nn::ModuleList());
   for (int i = 0; i < L - 1; ++i) {
     lateral_convs->push_back(DfConvNorm(hidden_dim, hidden_dim, 1, 1, false));
-    fpn_blocks->push_back(DfRepNCSPELAN4(hidden_dim * 2, hidden_dim, hidden_dim * 2, c4, nblk));
+    fpn_blocks->push_back(DfRepNCSPELAN4(fuse_in, hidden_dim, hidden_dim * 2, c4, nblk, deimv2));
   }
   downsample_convs = register_module("downsample_convs", nn::ModuleList());
   pan_blocks = register_module("pan_blocks", nn::ModuleList());
   for (int i = 0; i < L - 1; ++i) {
     downsample_convs->push_back(DfSCDown(hidden_dim, hidden_dim, 3, 2));
-    pan_blocks->push_back(DfRepNCSPELAN4(hidden_dim * 2, hidden_dim, hidden_dim * 2, c4, nblk));
+    pan_blocks->push_back(DfRepNCSPELAN4(fuse_in, hidden_dim, hidden_dim * 2, c4, nblk, deimv2));
   }
 }
 
@@ -241,8 +274,8 @@ std::vector<torch::Tensor> DfHybridEncoderImpl::forward(std::vector<torch::Tenso
     auto up = F::interpolate(feat_high,
                              F::InterpolateFuncOptions().scale_factor(std::vector<double>{2.0, 2.0}).mode(
                                  torch::kNearest));
-    auto inner_out = fpn_blocks[L - 1 - idx]->as<DfRepNCSPELAN4Impl>()->forward(
-        torch::cat({up, feat_low}, 1));
+    auto fused = deimv2_ ? (up + feat_low) : torch::cat({up, feat_low}, 1);
+    auto inner_out = fpn_blocks[L - 1 - idx]->as<DfRepNCSPELAN4Impl>()->forward(fused);
     inner.insert(inner.begin(), inner_out);
   }
   // Bottom-up PAN.
@@ -251,8 +284,8 @@ std::vector<torch::Tensor> DfHybridEncoderImpl::forward(std::vector<torch::Tenso
     auto feat_low = outs.back();
     auto feat_high = inner[static_cast<std::size_t>(idx + 1)];
     auto down = downsample_convs[idx]->as<DfSCDownImpl>()->forward(feat_low);
-    outs.push_back(
-        pan_blocks[idx]->as<DfRepNCSPELAN4Impl>()->forward(torch::cat({down, feat_high}, 1)));
+    auto fused = deimv2_ ? (down + feat_high) : torch::cat({down, feat_high}, 1);
+    outs.push_back(pan_blocks[idx]->as<DfRepNCSPELAN4Impl>()->forward(fused));
   }
   return outs;
 }

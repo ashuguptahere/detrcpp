@@ -129,6 +129,23 @@ DfEncOutputImpl::DfEncOutputImpl(int d) {
 }
 torch::Tensor DfEncOutputImpl::forward(torch::Tensor x) { return norm->forward(proj->forward(x)); }
 
+DfRMSNormImpl::DfRMSNormImpl(int dim) {
+  scale = register_parameter("scale", torch::ones({dim}));
+}
+torch::Tensor DfRMSNormImpl::forward(const torch::Tensor& x) {
+  auto n = x * torch::rsqrt(x.pow(2).mean(-1, /*keepdim=*/true) + eps_);
+  return n * scale;
+}
+
+DfSwiGLUImpl::DfSwiGLUImpl(int in_dim, int hidden_dim, int out_dim) {
+  w12 = register_module("w12", nn::Linear(in_dim, 2 * hidden_dim));
+  w3 = register_module("w3", nn::Linear(hidden_dim, out_dim));
+}
+torch::Tensor DfSwiGLUImpl::forward(const torch::Tensor& x) {
+  auto c = w12->forward(x).chunk(2, -1);
+  return w3->forward(torch::silu(c[0]) * c[1]);
+}
+
 DfDecInputProjImpl::DfDecInputProjImpl(int in_ch, int out_ch) : identity_(in_ch == out_ch) {
   if (!identity_) {
     conv = register_module("conv", nn::Conv2d(nn::Conv2dOptions(in_ch, out_ch, 1).bias(false)));
@@ -166,27 +183,39 @@ torch::Tensor DfMSDeformImpl::forward(const torch::Tensor& query, const torch::T
   return DeformCore(value, shapes, sampling_locations, aw, num_points_);
 }
 
-DfGateImpl::DfGateImpl(int d) {
+DfGateImpl::DfGateImpl(int d, bool rms) {
   gate = register_module("gate", nn::Linear(2 * d, 2 * d));
-  norm = register_module("norm", nn::LayerNorm(nn::LayerNormOptions({d})));
+  if (rms) {
+    rmsnorm = register_module("norm", DfRMSNorm(d));
+  } else {
+    norm = register_module("norm", nn::LayerNorm(nn::LayerNormOptions({d})));
+  }
 }
 torch::Tensor DfGateImpl::forward(const torch::Tensor& x1, const torch::Tensor& x2) {
   auto g = torch::sigmoid(gate->forward(torch::cat({x1, x2}, -1)));
   auto c = g.chunk(2, -1);
-  return norm->forward(c[0] * x1 + c[1] * x2);
+  auto fused = c[0] * x1 + c[1] * x2;
+  return rmsnorm ? rmsnorm->forward(fused) : norm->forward(fused);
 }
 
 DfDecLayerImpl::DfDecLayerImpl(int d, int nhead, int ffn, int num_levels,
-                               std::vector<int> num_points, bool silu)
-    : silu_(silu) {
+                               std::vector<int> num_points, bool silu, bool deimv2)
+    : silu_(silu), deimv2_(deimv2) {
   self_attn = register_module("self_attn",
                               nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.0)));
-  norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
   cross_attn = register_module("cross_attn", DfMSDeform(d, nhead, num_levels, std::move(num_points)));
-  gateway = register_module("gateway", DfGate(d));
-  linear1 = register_module("linear1", nn::Linear(d, ffn));
-  linear2 = register_module("linear2", nn::Linear(ffn, d));
-  norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
+  gateway = register_module("gateway", DfGate(d, /*rms=*/deimv2));
+  if (deimv2_) {
+    // DEIMv2: RMSNorm + a SwiGLU FFN (hidden = ffn/2).
+    rms1 = register_module("norm1", DfRMSNorm(d));
+    swish_ffn = register_module("swish_ffn", DfSwiGLU(d, ffn / 2, d));
+    rms3 = register_module("norm3", DfRMSNorm(d));
+  } else {
+    norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
+    linear1 = register_module("linear1", nn::Linear(d, ffn));
+    linear2 = register_module("linear2", nn::Linear(ffn, d));
+    norm3 = register_module("norm3", nn::LayerNorm(nn::LayerNormOptions({d})));
+  }
 }
 
 torch::Tensor DfDecLayerImpl::forward(torch::Tensor target, const torch::Tensor& ref,
@@ -195,12 +224,18 @@ torch::Tensor DfDecLayerImpl::forward(torch::Tensor target, const torch::Tensor&
   auto q = (target + query_pos).transpose(0, 1);  // [L, N, d]
   auto v = target.transpose(0, 1);
   auto sa = std::get<0>(self_attn->forward(q, q, v)).transpose(0, 1);
-  target = norm1->forward(target + sa);
+  target = deimv2_ ? rms1->forward(target + sa) : norm1->forward(target + sa);
   auto ca = cross_attn->forward(target + query_pos, ref, value, shapes);
   target = gateway->forward(target, ca);
-  auto h = linear1->forward(target);
-  auto ffn = linear2->forward(silu_ ? torch::silu(h) : torch::relu(h));
-  return norm3->forward((target + ffn).clamp(-65504.0, 65504.0));
+  torch::Tensor ffn;
+  if (deimv2_) {
+    ffn = swish_ffn->forward(target);
+  } else {
+    auto h = linear1->forward(target);
+    ffn = linear2->forward(silu_ ? torch::silu(h) : torch::relu(h));
+  }
+  auto out = (target + ffn).clamp(-65504.0, 65504.0);
+  return deimv2_ ? rms3->forward(out) : norm3->forward(out);
 }
 
 DfLQEImpl::DfLQEImpl(int k, int hidden_dim, int num_layers, int reg_max, bool silu)
@@ -216,11 +251,12 @@ torch::Tensor DfLQEImpl::forward(const torch::Tensor& scores, const torch::Tenso
 }
 
 DfDecoderStackImpl::DfDecoderStackImpl(int num_layers, int d, int nhead, int ffn, int num_levels,
-                                       std::vector<int> num_points, int reg_max, bool silu) {
+                                       std::vector<int> num_points, int reg_max, bool silu,
+                                       bool deimv2) {
   layers = register_module("layers", nn::ModuleList());
   lqe_layers = register_module("lqe_layers", nn::ModuleList());
   for (int i = 0; i < num_layers; ++i) {
-    layers->push_back(DfDecLayer(d, nhead, ffn, num_levels, num_points, silu));
+    layers->push_back(DfDecLayer(d, nhead, ffn, num_levels, num_points, silu, deimv2));
     lqe_layers->push_back(DfLQE(4, 64, 2, reg_max, silu));
   }
 }
@@ -234,10 +270,15 @@ DFINETransformerImpl::DFINETransformerImpl(DfTransformerConfig cfg) : cfg_(std::
     input_proj->push_back(DfDecInputProj(fc, d));
   }
   const bool silu = cfg_.silu;
-  enc_output = register_module("enc_output", DfEncOutput(d));
+  // DEIMv2 drops the enc_output projection (memory is scored directly) and uses a
+  // 3-layer query_pos_head; D-FINE keeps enc_output and a 2-layer query_pos_head.
+  if (!cfg_.deimv2) {
+    enc_output = register_module("enc_output", DfEncOutput(d));
+  }
   enc_score_head = register_module("enc_score_head", nn::Linear(d, nc));
   enc_bbox_head = register_module("enc_bbox_head", DfMLP(d, d, 4, 3, silu));
-  query_pos_head = register_module("query_pos_head", DfMLP(4, 2 * d, d, 2, silu));
+  query_pos_head = register_module(
+      "query_pos_head", cfg_.deimv2 ? DfMLP(4, d, d, 3, silu) : DfMLP(4, 2 * d, d, 2, silu));
   pre_bbox_head = register_module("pre_bbox_head", DfMLP(d, d, 4, 3, silu));
   dec_score_head = register_module("dec_score_head", nn::ModuleList());
   dec_bbox_head = register_module("dec_bbox_head", nn::ModuleList());
@@ -245,9 +286,9 @@ DFINETransformerImpl::DFINETransformerImpl(DfTransformerConfig cfg) : cfg_(std::
     dec_score_head->push_back(nn::Linear(d, nc));
     dec_bbox_head->push_back(DfMLP(d, d, 4 * (cfg_.reg_max + 1), 3, silu));
   }
-  decoder = register_module("decoder", DfDecoderStack(cfg_.num_layers, d, cfg_.nhead,
-                                                      cfg_.dim_feedforward, cfg_.num_levels,
-                                                      cfg_.num_points, cfg_.reg_max, silu));
+  decoder = register_module(
+      "decoder", DfDecoderStack(cfg_.num_layers, d, cfg_.nhead, cfg_.dim_feedforward,
+                                cfg_.num_levels, cfg_.num_points, cfg_.reg_max, silu, cfg_.deimv2));
 }
 
 std::pair<torch::Tensor, torch::Tensor> DFINETransformerImpl::forward(
@@ -267,8 +308,10 @@ std::pair<torch::Tensor, torch::Tensor> DFINETransformerImpl::forward(
 
   // Two-stage query selection. The validity mask zeros invalid grid-anchor tokens for
   // the encoder scoring only; the deformable value below uses the unmasked memory.
+  // D-FINE projects the masked memory through enc_output; DEIMv2 scores it directly.
   auto [anchors, valid_mask] = GenerateAnchors(shapes, cfg_.eps, memory.options());
-  auto output_memory = enc_output->forward(valid_mask.to(memory.dtype()) * memory);
+  auto masked = valid_mask.to(memory.dtype()) * memory;
+  auto output_memory = cfg_.deimv2 ? masked : enc_output->forward(masked);
   auto enc_logits = enc_score_head->forward(output_memory);  // [B, L, nc]
   auto topk = std::get<1>(std::get<0>(enc_logits.max(-1)).topk(cfg_.num_queries, -1));  // [B, nq]
   topk_idx_ = topk;

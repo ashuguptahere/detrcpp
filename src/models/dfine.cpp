@@ -14,7 +14,7 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
   encoder_ = register_module(
       "encoder", DfHybridEncoder(in_ch, cfg_.feat_strides, cfg_.hidden_dim, cfg_.nhead, cfg_.neck_ffn,
                                  cfg_.expansion, cfg_.depth_mult, cfg_.use_encoder_idx,
-                                 cfg_.num_encoder_layers, 10000.0));
+                                 cfg_.num_encoder_layers, 10000.0, cfg_.decoder_deimv2));
   DfTransformerConfig dc;
   dc.num_classes = cfg_.num_classes;
   dc.hidden_dim = cfg_.dec_hidden_dim;                                   // decoder width
@@ -29,7 +29,8 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
   dc.dim_feedforward = cfg_.dec_ffn;
   dc.reg_max = cfg_.reg_max;
   dc.reg_scale = cfg_.reg_scale;
-  dc.silu = cfg_.decoder_silu;
+  dc.silu = cfg_.decoder_silu || cfg_.decoder_deimv2;  // DEIMv2 MLPs use SiLU too
+  dc.deimv2 = cfg_.decoder_deimv2;
   decoder_ = register_module("decoder", DFINETransformer(dc));
 }
 
@@ -129,6 +130,16 @@ void RegisterDFine() {
     dc.upstream = "https://github.com/Intellindust-AI-Lab/DEIM";
     dc.decoder_silu = true;
     RegisterOne(dc);
+  }
+  // DEIMv2 (Intellindust-AI-Lab/DEIMv2): the HGNetv2-backbone N variant reuses D-FINE-N's
+  // backbone + neck with the new DEIMv2 decoder (RMSNorm + SwiGLU, no enc_output).
+  // (atto/femto/pico need a lite encoder + micro HGNetv2; s/m/l/x need ViT/DINOv3 — TBD.)
+  {
+    DFineConfig v2 = SizeConfig("n");
+    v2.name = "deimv2-n";
+    v2.upstream = "https://github.com/Intellindust-AI-Lab/DEIMv2";
+    v2.decoder_deimv2 = true;
+    RegisterOne(v2);
   }
 }
 

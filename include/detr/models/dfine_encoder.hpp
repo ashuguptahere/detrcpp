@@ -21,14 +21,18 @@ namespace nn = torch::nn;
 // D-FINE HybridEncoder. `in_channels`/`feat_strides` are the backbone levels feeding
 // the neck (2 for nano, 3 otherwise); all outputs are `hidden_dim` wide.
 struct DfHybridEncoderImpl : nn::Module {
+  // `deimv2`: DEIMv2's sum-fusion FPN/PAN (RepNCSPELAN4 c1 = hidden, CSPLayer2 blocks)
+  // instead of D-FINE's concat fusion.
   DfHybridEncoderImpl(std::vector<int> in_channels, std::vector<int> feat_strides, int hidden_dim,
                       int nhead, int dim_feedforward, double expansion, double depth_mult,
-                      std::vector<int> use_encoder_idx, int num_encoder_layers, double pe_temperature);
+                      std::vector<int> use_encoder_idx, int num_encoder_layers, double pe_temperature,
+                      bool deimv2 = false);
   std::vector<torch::Tensor> forward(std::vector<torch::Tensor> feats);
 
   std::vector<int> in_channels_, feat_strides_, use_encoder_idx_;
   int hidden_dim_;
   double pe_temperature_;
+  bool deimv2_;
   nn::ModuleList input_proj{nullptr};       // per level: conv(1x1) + BN
   nn::ModuleList encoder{nullptr};          // AIFI stacks (one per use_encoder_idx)
   nn::ModuleList lateral_convs{nullptr};    // top-down 1x1 (no act)

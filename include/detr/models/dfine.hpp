@@ -44,7 +44,8 @@ struct DFineConfig {
   std::vector<int> num_points = {3, 6, 3};
   int num_layers = 6, dec_ffn = 1024, reg_max = 32;
   double reg_scale = 4.0;
-  bool decoder_silu = false;  // D-FINE uses ReLU; DEIM (training recipe) uses SiLU
+  bool decoder_silu = false;    // D-FINE uses ReLU; DEIM (training recipe) uses SiLU
+  bool decoder_deimv2 = false;  // DEIMv2 decoder: RMSNorm + SwiGLU, no enc_output, SiLU MLPs
 };
 
 class DFineImpl : public IModel {
