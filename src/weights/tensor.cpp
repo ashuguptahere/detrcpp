@@ -41,7 +41,7 @@ core::Result<DType> DTypeFromName(std::string_view name) {
     }
   }
   return core::Err(core::ErrorCode::Unsupported,
-                   std::string("unsupported safetensors dtype: ").append(name));
+                   std::string("unsupported dtype: ").append(name));
 }
 
 }  // namespace detr::weights

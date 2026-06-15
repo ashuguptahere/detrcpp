@@ -1,7 +1,7 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 //
 // Proves the weight-interop round trip on a real LibTorch module: extract a
-// module's weights -> safetensors -> load back into a freshly-initialized
+// module's weights -> .pth -> load back into a freshly-initialized
 // module by name, and confirm the parameters are identical. Also proves the
 // WeightRemapper adapts upstream parameter names (e.g. a "model." prefix).
 
@@ -11,7 +11,7 @@
 #include <filesystem>
 
 #include "detr/weights/remapper.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
@@ -27,7 +27,7 @@ struct TinyNet : torch::nn::Module {
   torch::nn::Linear fc2{nullptr};
 };
 
-TEST(TorchBridge, RoundTripThroughSafetensors) {
+TEST(TorchBridge, RoundTripThroughPth) {
   torch::manual_seed(0);
   TinyNet a;
 
@@ -35,9 +35,9 @@ TEST(TorchBridge, RoundTripThroughSafetensors) {
   // fc1.weight, fc1.bias, fc2.weight, fc2.bias
   ASSERT_EQ(sd.Size(), 4U);
 
-  const auto path = std::filesystem::temp_directory_path() / "detr_bridge_roundtrip.safetensors";
-  ASSERT_TRUE(SaveSafetensors(path, sd).has_value());
-  auto loaded = LoadSafetensors(path);
+  const auto path = std::filesystem::temp_directory_path() / "detr_bridge_roundtrip.pth";
+  ASSERT_TRUE(SavePth(path, sd).has_value());
+  auto loaded = LoadPth(path);
   ASSERT_TRUE(loaded.has_value()) << loaded.error().message;
 
   torch::manual_seed(1);

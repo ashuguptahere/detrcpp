@@ -10,6 +10,20 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ## [Unreleased]
 
+### Changed
+- **Weight format is now PyTorch `.pth` everywhere; safetensors removed.** detrcpp
+  reads and writes the authors' native `.pth` (`torch.save`) directly — no safetensors,
+  no LibTorch for I/O, no Python. New torch-free reader/writer in the `detr_weights`
+  library: vendored **miniz** (MIT, the ZIP container `torch.save` uses) + a restricted
+  pickle VM (shared with the legacy reader via `weights/pickle_vm.hpp`) that emits/parses
+  the exact `_rebuild_tensor_v2` layout. `LoadPth` sniffs modern-zip vs legacy-pickle;
+  `SavePth` output is byte-loadable by Python `torch.load(weights_only=True)`. Migrated
+  every call site: the CLI `--weights` / `--export pth`, training checkpoints
+  (`<tag>.pth` / `<tag>.model.pth`; train-state scalars ride as reserved rank-0 tensors),
+  and the torch-free ONNX exporter / parity tools. Removed `weights/safetensors.{hpp,cpp}`
+  and the LibTorch-only `.pth` reader from `torch_bridge.cpp`. The reader stays safe on
+  untrusted files (the VM errors on unknown opcodes; never executes arbitrary pickle).
+
 ### Added
 - **Anchor-DETR (`anchor-detr` / `anchor-detr-dc5`), validated on COCO.** A from-scratch
   port of megvii-research/AnchorDETR (Apache-2.0): a new model (`anchor_detr.{hpp,cpp}`)

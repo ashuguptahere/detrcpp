@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "detr/models/dfine_encoder.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
@@ -31,7 +31,7 @@ void CheckNeck(DfHybridEncoder neck, int num_levels, const std::string& wpath,
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "D-FINE neck fixtures absent (run /tmp/dfine_neck_parity.py + convert)";
   }
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*neck, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -42,7 +42,7 @@ void CheckNeck(DfHybridEncoder neck, int num_levels, const std::string& wpath,
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   std::vector<torch::Tensor> feats;
   for (int i = 0; i < num_levels; ++i) feats.push_back(RawToTorch(psd.Find("feat" + std::to_string(i))));
   neck->eval();
@@ -62,25 +62,25 @@ void CheckNeck(DfHybridEncoder neck, int num_levels, const std::string& wpath,
 TEST(DfHybridEncoderParity, MatchesDFineNNeck) {
   CheckNeck(DfHybridEncoder(std::vector<int>{512, 1024}, std::vector<int>{16, 32}, 128, 8, 512, 0.34,
                             0.5, std::vector<int>{1}, 1, 10000.0),
-            2, "/tmp/dfine_n_neck.safetensors", "/tmp/dfine_n_neck/parity.safetensors");
+            2, "/tmp/dfine_n_neck.pth", "/tmp/dfine_n_neck/parity.pth");
 }
 
 // D-FINE-L: 3 levels, hidden 256, ff 1024, expansion 1.0, depth_mult 1.0, AIFI on level 2.
 TEST(DfHybridEncoderParity, MatchesDFineLNeck) {
   CheckNeck(DfHybridEncoder(std::vector<int>{512, 1024, 2048}, std::vector<int>{8, 16, 32}, 256, 8,
                             1024, 1.0, 1.0, std::vector<int>{2}, 1, 10000.0),
-            3, "/tmp/dfine_l_neck.safetensors", "/tmp/dfine_l_neck/parity.safetensors");
+            3, "/tmp/dfine_l_neck.pth", "/tmp/dfine_l_neck/parity.pth");
 }
 
 // DEIMv2-Atto LiteEncoder: 1 feature (256) -> hidden 64, 2-scale output.
 TEST(DfLiteEncoderParity, MatchesDeimv2Atto) {
-  const std::string wpath = "/tmp/deimv2_atto_neck.safetensors";
-  const std::string ppath = "/tmp/deimv2_atto_neck/parity.safetensors";
+  const std::string wpath = "/tmp/deimv2_atto_neck.pth";
+  const std::string ppath = "/tmp/deimv2_atto_neck/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "DEIMv2 lite-encoder fixtures absent";
   }
   auto neck = DfLiteEncoder(256, 64, 0.34, 0.5);
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*neck, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -89,7 +89,7 @@ TEST(DfLiteEncoderParity, MatchesDeimv2Atto) {
   for (const auto& mk : rep->missing) std::cout << "  MISSING " << mk << "\n";
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   std::vector<torch::Tensor> feats{RawToTorch(psd.Find("feat0"))};
   neck->eval();
   torch::NoGradGuard ng;

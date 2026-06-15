@@ -3,7 +3,7 @@
 // DETR (DEtection TRansformer) — a conv backbone feeding a transformer
 // encoder/decoder with learned object queries and class/box heads. This is the
 // canonical end-to-end set-prediction detector; it trains from scratch and its
-// weights serialize to .safetensors for interchange. Compiled with
+// weights serialize to .pth for interchange. Compiled with
 // DETR_ENABLE_TORCH.
 
 #pragma once

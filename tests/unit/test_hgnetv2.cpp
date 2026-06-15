@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "detr/models/hgnetv2.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
@@ -32,7 +32,7 @@ void CheckBackbone(const std::string& variant, bool use_lab, const std::vector<i
     GTEST_SKIP() << "D-FINE backbone fixtures absent (run /tmp/dfine_backbone_parity.py + convert)";
   }
   auto bb = HgNetV2(variant, use_lab, return_idx);
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*bb, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -41,7 +41,7 @@ void CheckBackbone(const std::string& variant, bool use_lab, const std::vector<i
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   bb->eval();
   torch::NoGradGuard ng;
@@ -58,17 +58,17 @@ void CheckBackbone(const std::string& variant, bool use_lab, const std::vector<i
 
 // D-FINE-N: HGNetv2-B0, use_lab=True, return_idx [2,3] (strides 16/32).
 TEST(HgNetV2Parity, MatchesDFineNBackbone) {
-  CheckBackbone("B0", true, {2, 3}, "/tmp/dfine_n_backbone.safetensors", "/tmp/dfine_n_bb/parity.safetensors");
+  CheckBackbone("B0", true, {2, 3}, "/tmp/dfine_n_backbone.pth", "/tmp/dfine_n_bb/parity.pth");
 }
 
 // D-FINE-L: HGNetv2-B4, use_lab=False, return_idx [1,2,3] (strides 8/16/32).
 TEST(HgNetV2Parity, MatchesDFineLBackbone) {
-  CheckBackbone("B4", false, {1, 2, 3}, "/tmp/dfine_l_backbone.safetensors", "/tmp/dfine_l_bb/parity.safetensors");
+  CheckBackbone("B4", false, {1, 2, 3}, "/tmp/dfine_l_backbone.pth", "/tmp/dfine_l_bb/parity.pth");
 }
 
 // DEIMv2-Atto: micro 3-stage HGNetv2, use_lab=True, return_idx [2] (single feature, stride 16).
 TEST(HgNetV2Parity, MatchesDeimv2AttoBackbone) {
-  CheckBackbone("Atto", true, {2}, "/tmp/deimv2_atto_backbone.safetensors", "/tmp/deimv2_atto_bb/parity.safetensors");
+  CheckBackbone("Atto", true, {2}, "/tmp/deimv2_atto_backbone.pth", "/tmp/deimv2_atto_bb/parity.pth");
 }
 
 }  // namespace

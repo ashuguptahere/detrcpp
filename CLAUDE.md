@@ -120,5 +120,5 @@ detrcpp --val -m <model> -w <weights> --data <coco-root> --coco91 --aspect [--im
 - **Deep supervision:** auxiliary per-decoder-layer losses are emitted by the heads
   only in training mode (empty at inference, so eval/postprocess are untouched).
 - **Untrusted inputs:** model files and dataset annotations are parsed defensively
-  (safetensors size/offset guards; COCO `file_name` path-traversal rejection).
+  (.pth zip/pickle parse guards; COCO `file_name` path-traversal rejection).
 - Validated-vs-official mAP is measured at `--imgsz 800`.

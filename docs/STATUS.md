@@ -22,7 +22,7 @@ full task list lives in [`TODO.md`](../TODO.md); the release notes in
 - **Python-free** repo: weight conversions and tooling stay outside the codebase.
 
 ### Weights & export
-- **Weight interop**: `.safetensors` reader/writer, `StateDict`/`RawTensor`,
+- **Weight interop**: torch-free `.pth` reader/writer (miniz + restricted pickle VM), `StateDict`/`RawTensor`,
   `WeightRemapper`, LibTorch bridge. `.pth` loader for modern (zip) checkpoints.
 - **ONNX export**: hand-written C++ emitter (no `torch.onnx`), gated by an
   onnxruntime numeric **parity** test (`detr`, `detr-r50`, `detr-r101`, ~1e-6).

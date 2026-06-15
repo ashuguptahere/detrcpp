@@ -1,7 +1,7 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 //
 // detrcpp-export — the torch-free ONNX exporter binary. Reads an architecture
-// config + a .safetensors checkpoint and writes a validated .onnx (no Python, no
+// config + a .pth checkpoint and writes a validated .onnx (no Python, no
 // LibTorch). Kept separate from the main `detrcpp` binary because vcpkg-protobuf
 // (for onnx) and LibTorch's bundled protobuf cannot coexist in one link.
 
@@ -12,7 +12,7 @@
 #include <string>
 
 #include "detr/onnxexport/detr_export.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 
 namespace {
 
@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
   int imgsz = 0;
   app.add_option("-m,--model", model, "model architecture (currently: detr)");
   app.add_option("-c,--config", config, "YAML architecture config");
-  app.add_option("-w,--weights", weights, "input .safetensors checkpoint")->required();
+  app.add_option("-w,--weights", weights, "input .pth checkpoint")->required();
   app.add_option("-o,--out", out, "output .onnx path")->capture_default_str();
   app.add_option("--imgsz", imgsz, "override image size (fixed in the exported graph)");
   CLI11_PARSE(app, argc, argv);
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
     arch.imgsz = imgsz;
   }
 
-  auto sd = detr::weights::LoadSafetensors(weights);
+  auto sd = detr::weights::LoadPth(weights);
   if (!sd) {
     std::fprintf(stderr, "weights '%s': %s\n", weights.c_str(), sd.error().message.c_str());
     return 1;

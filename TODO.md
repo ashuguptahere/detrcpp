@@ -48,11 +48,11 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] Format auto-detection (`DetectFormat`) + `LoadDataset` dispatch
 
 ### Weight interop (foundational — DONE, proven against LibTorch 2.5.1)
-- [x] safetensors reader/writer (Python-free, bidirectional with upstream)
+- [x] Torch-free .pth reader/writer (miniz + restricted pickle VM, bidirectional with torch.save)
 - [x] `StateDict` + `RawTensor` (LibTorch-independent)
 - [x] `WeightRemapper` (adapt upstream keys without changing models)
 - [x] torch bridge: `StateDictFromModule` / `LoadStateDictInto` (by name + report)
-- [ ] Direct `.pth` reader in pure C++ (currently a clear stub → use safetensors)
+- [x] Direct `.pth` reader/writer in pure C++ (miniz + pickle VM; safetensors removed)
 - [ ] Per-variant remappers validated against official checkpoints
 
 ### Models
@@ -116,7 +116,7 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] `io::source` — file / directory / glob (url/rtsp/webcam = Phase 3)
 - [x] `io::image` (stb load/save/draw) + `infer::preprocess`/`postprocess`
 - [x] `detrcpp --predict` — infer, threshold, draw boxes, save annotated PNGs
-- [x] `detrcpp --export safetensors` — consolidated weights (Python-free)
+- [x] `detrcpp --export pth` — consolidated weights (Python-free)
 - [x] **Hand-written ONNX exporter** (no Python; user decision 2026-06-08):
   - [x] `onnxexport::GraphBuilder` over official onnx lib + `onnx::checker`
   - [x] `ExportDetr(arch, StateDict)` — full DETR graph (MHA decomposed, pos-enc

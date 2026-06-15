@@ -56,7 +56,6 @@
 #include "detr/train/checkpoint.hpp"
 #include "detr/train/trainer.hpp"
 #include "detr/weights/pth.hpp"
-#include "detr/weights/safetensors.hpp"
 #include "detr/weights/torch_bridge.hpp"
 #endif
 
@@ -169,14 +168,10 @@ ExitCode NotImplemented(std::string_view verb) {
 }
 
 #ifdef DETR_ENABLE_TORCH
-// Loads weights, dispatching on extension: .pth/.pt go through the pure-C++
-// PyTorch reader (official checkpoints), everything else through safetensors.
+// Loads weights from a PyTorch `.pth`/`.pt` (modern torch.save zip or legacy pickle),
+// in pure C++ — the reader sniffs the format from the file's first bytes.
 detr::core::Result<detr::weights::StateDict> LoadWeightsAuto(const std::string& path) {
-  const auto ext = std::filesystem::path(path).extension().string();
-  if (ext == ".pth" || ext == ".pt") {
-    return detr::weights::LoadPth(path);
-  }
-  return detr::weights::LoadSafetensors(path);
+  return detr::weights::LoadPth(path);
 }
 
 torch::Device ToTorchDevice(const detr::core::Device& d) {
@@ -680,14 +675,12 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
   std::error_code ec;
   std::filesystem::create_directories(out_dir, ec);
 
-  // safetensors: a real, supported, Python-free export. Consolidates the loaded
-  // checkpoint into a clean weights file the original repos can also load.
-  if (o.export_format == "safetensors") {
+  // pth: a real, supported, Python-free export. Consolidates the loaded checkpoint
+  // into a clean torch.save-compatible weights file the original repos can also load.
+  if (o.export_format == "pth") {
     auto sd = detr::weights::StateDictFromModule(*model);
-    sd.SetMeta("model", o.model);
-    sd.SetMeta("imgsz", std::to_string(model->Meta().imgsz));
-    const auto path = out_dir / (o.model + ".safetensors");
-    if (auto w = detr::weights::SaveSafetensors(path, sd); !w) {
+    const auto path = out_dir / (o.model + ".pth");
+    if (auto w = detr::weights::SavePth(path, sd); !w) {
       lg.error("{}", w.error().message);
       return ExitCode::InternalError;
     }
@@ -695,9 +688,9 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
     return ExitCode::Ok;
   }
 
-  // ONNX export runs in the separate torch-free `detrcpp-export` binary: vcpkg's
-  // protobuf (for onnx) and LibTorch's bundled protobuf cannot share one link,
-  // so the exporter is built without LibTorch and reads weights from safetensors.
+  // ONNX export runs in the separate torch-free `detrcpp-export` binary: the ONNX
+  // protobuf (for onnx) and LibTorch's bundled protobuf cannot share one link, so the
+  // exporter is built without LibTorch and reads weights from a `.pth`.
   if (o.export_format == "onnx") {
     lg.error("ONNX export runs in the separate torch-free tool `detrcpp-export`.");
     lg.error("Run:  detrcpp-export -m {} {}-w {} -o model.onnx", o.model,
@@ -769,7 +762,7 @@ int main(int argc, char** argv) {
   app.add_flag("--list-models", list_models, "list registered models and exit");
   auto* export_opt =
       app.add_option("-x,--export", o.export_format,
-                     "export to FMT (onnx|trt|coreml|executorch|axelera|memryx|deepx|hailo)");
+                     "export to FMT (pth|onnx|trt|coreml|executorch|axelera|memryx|deepx|hailo)");
   auto* download_opt =
       app.add_option("-D,--download", o.download_name, "download a dataset by name");
 

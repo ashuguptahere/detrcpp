@@ -5,7 +5,6 @@ include(GoogleTest)
 add_executable(detr_unit_tests
   unit/test_device.cpp
   unit/test_log.cpp
-  unit/test_safetensors.cpp
   unit/test_pth.cpp
   unit/test_remapper.cpp
   unit/test_dataset.cpp

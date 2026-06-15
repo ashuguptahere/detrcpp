@@ -27,13 +27,12 @@ set_target_properties(detr_core PROPERTIES
 
 add_library(detr::core ALIAS detr_core)
 
-# detr_weights — framework-independent weight interchange (safetensors, state
+# detr_weights — framework-independent weight interchange (.pth, state
 # dict, key remapping). No LibTorch dependency, so it builds and tests anywhere;
 # the optional torch bridge is added separately when DETR_ENABLE_TORCH is on.
 add_library(detr_weights STATIC
   weights/tensor.cpp
   weights/state_dict.cpp
-  weights/safetensors.cpp
   weights/legacy_pickle.cpp
   weights/pth.cpp
   weights/zip.cpp

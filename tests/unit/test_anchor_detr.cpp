@@ -17,7 +17,7 @@
 #include "detr/models/anchor_detr.hpp"
 #include "detr/models/detr.hpp"
 #include "detr/models/registry.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
@@ -29,8 +29,8 @@ torch::Tensor RawToTorch(const weights::RawTensor* rt) {
 }
 
 TEST(AnchorDetrParity, MatchesNativeR50Dc5) {
-  const std::string wpath = "/tmp/anchordetr_r50dc5.safetensors";
-  const std::string ppath = "/tmp/anchordetr_par/parity.safetensors";
+  const std::string wpath = "/tmp/anchordetr_r50dc5.pth";
+  const std::string ppath = "/tmp/anchordetr_par/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "AnchorDETR fixtures absent (run /tmp/anchordetr_parity.py + convert)";
   }
@@ -39,7 +39,7 @@ TEST(AnchorDetrParity, MatchesNativeR50Dc5) {
   ASSERT_TRUE(model_r.has_value()) << model_r.error().message;
   auto model = *model_r;
 
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*model, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -50,7 +50,7 @@ TEST(AnchorDetrParity, MatchesNativeR50Dc5) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   model->eval();
   torch::NoGradGuard ng;

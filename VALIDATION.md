@@ -56,10 +56,12 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `deimv2-l`         | **0.557** | 0.730 | 0.607 | ~0.560 | `--imgsz 640` (DINOv3 ViT-S/16; ImageNet-norm SQUARE; no `--coco91`, no `--aspect`) |
 | `deimv2-x`         | **0.576** | 0.750 | 0.631 | ~0.578 | `--imgsz 640` (DINOv3 ViT-S+/16; ImageNet-norm SQUARE; no `--coco91`, no `--aspect`) |
 
-`detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
-pure-C++ unpickler (no Python, no conversion): the load reports `458 tensors,
-0 missing / 0 unexpected / 0 shape-mismatched`. The other three load from
-safetensors converted from the official Hugging Face checkpoints.
+`detr-r50` / `detr-r50-dc5` load from their **original `.pth`** directly by detrcpp's
+pure-C++ readers (no Python, no conversion): the load reports `458 tensors,
+0 missing / 0 unexpected / 0 shape-mismatched`. The other models load from a
+key-renamed `.pth` produced by a `/tmp` converter from the authors' original weights.
+All weight files detrcpp reads or writes are PyTorch `.pth` (torch.save); there is no
+safetensors anywhere in the pipeline.
 
 > The remaining ~0.1–0.4 AP gap to the published numbers is the stb-vs-PIL image
 > resize interpolation difference (the eval is otherwise pycocotools-faithful:
@@ -74,20 +76,20 @@ are scratch — regenerate them from the Hugging Face source with the listed con
 | Model | Official source | Converter (`python <script>`) | Converted weights (detrcpp-named) |
 |-------|-----------------|-------------------------------|-----------------------------------|
 | `detr-r50`         | facebookresearch DETR (legacy `.pth`)        | none — read directly by the C++ legacy unpickler | `/home/origo/detr-tools/detr-r50-official.pth` |
-| `deformable-detr`  | `SenseTime/deformable-detr` `model.safetensors` | `/tmp/convert_defdetr.py` (in: `/tmp/hf_defdetr.safetensors`) | `/tmp/defdetr_official.safetensors` |
-| `conditional-detr` | `microsoft/conditional-detr-resnet-50`       | `/tmp/convert_cond.py`    | `/tmp/cond_official.safetensors` |
-| `rt-detr-s`        | `PekingU/rtdetr_r18vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r18vd.safetensors` (509 tensors) |
-| `rt-detr-m`        | `PekingU/rtdetr_r34vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r34vd.safetensors` (619 tensors) |
-| `rt-detr-l`        | `PekingU/rtdetr_r50vd`                        | `/tmp/convert_rtdetr.py` (in: `/tmp/hf_rtdetr.safetensors`) | `/tmp/rtdetr_official.safetensors` |
-| `rt-detr-x`        | `PekingU/rtdetr_r101vd`                       | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r101vd.safetensors` (990 tensors) |
-| `rt-detrv2-{s,m,l,x}` | **native** `lyuwenyu/RT-DETR` `.pth` (GitHub releases — see `rtdetrv2_pytorch/README.md`) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/rtdetrv2_{s,m,l,x}_detr.safetensors` (509/619/735/990) |
-| `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.safetensors` (328 tensors) |
-| `lw-detr-{tiny,small,medium}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_*_60e_coco.pth`, the authors') | `/tmp/lwdetr_convert_native.py <in> <out> <num_queries>` | `/tmp/lwdetr_{tiny,small,medium}_native.safetensors` (261/329/329) |
-| `lw-detr-{large,xlarge}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_{large,xlarge}_60e_coco.pth`) | `/tmp/lwdetr_convert_native_full.py <in> <out> <num_queries>` | `/tmp/lwdetr_{large,xlarge}_full_native.safetensors` (411/435) |
-| `dfine-{n,s,m,l,x}` | **native** `Peterande/D-FINE` `.pth` (GitHub releases `dfine_{n,s,m,l,x}_coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{n,s,m,l,x}_coco.safetensors` (625/745/986/1166/1434) |
-| `dfine-{s,m,l,x}-obj` | **native** `Peterande/D-FINE` `.pth` (`dfine_{s,m}_obj2coco.pth`, `dfine_l_obj2coco_e25.pth`, `dfine_x_obj2coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{s,m,l,x}_obj2coco.safetensors` |
-| `deim-{n,s,m,l,x}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-D-FINE; Google Drive, see DEIM README) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/deim_dfine_{n,s,m,l,x}.safetensors` (625/745/986/1166/1434) |
-| `deim-rt-{s,m,l}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-RT-DETRv2 R18/R34/R50; Google Drive) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/deim_rt_r{18,34,50}.safetensors` (511/621/737) |
+| `deformable-detr`  | `SenseTime/deformable-detr` `model.pth` | `/tmp/convert_defdetr.py` (in: `/tmp/hf_defdetr.pth`) | `/tmp/defdetr_official.pth` |
+| `conditional-detr` | `microsoft/conditional-detr-resnet-50`       | `/tmp/convert_cond.py`    | `/tmp/cond_official.pth` |
+| `rt-detr-s`        | `PekingU/rtdetr_r18vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r18vd.pth` (509 tensors) |
+| `rt-detr-m`        | `PekingU/rtdetr_r34vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r34vd.pth` (619 tensors) |
+| `rt-detr-l`        | `PekingU/rtdetr_r50vd`                        | `/tmp/convert_rtdetr.py` (in: `/tmp/hf_rtdetr.pth`) | `/tmp/rtdetr_official.pth` |
+| `rt-detr-x`        | `PekingU/rtdetr_r101vd`                       | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r101vd.pth` (990 tensors) |
+| `rt-detrv2-{s,m,l,x}` | **native** `lyuwenyu/RT-DETR` `.pth` (GitHub releases — see `rtdetrv2_pytorch/README.md`) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/rtdetrv2_{s,m,l,x}_detr.pth` (509/619/735/990) |
+| `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.pth` (328 tensors) |
+| `lw-detr-{tiny,small,medium}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_*_60e_coco.pth`, the authors') | `/tmp/lwdetr_convert_native.py <in> <out> <num_queries>` | `/tmp/lwdetr_{tiny,small,medium}_native.pth` (261/329/329) |
+| `lw-detr-{large,xlarge}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_{large,xlarge}_60e_coco.pth`) | `/tmp/lwdetr_convert_native_full.py <in> <out> <num_queries>` | `/tmp/lwdetr_{large,xlarge}_full_native.pth` (411/435) |
+| `dfine-{n,s,m,l,x}` | **native** `Peterande/D-FINE` `.pth` (GitHub releases `dfine_{n,s,m,l,x}_coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{n,s,m,l,x}_coco.pth` (625/745/986/1166/1434) |
+| `dfine-{s,m,l,x}-obj` | **native** `Peterande/D-FINE` `.pth` (`dfine_{s,m}_obj2coco.pth`, `dfine_l_obj2coco_e25.pth`, `dfine_x_obj2coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{s,m,l,x}_obj2coco.pth` |
+| `deim-{n,s,m,l,x}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-D-FINE; Google Drive, see DEIM README) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/deim_dfine_{n,s,m,l,x}.pth` (625/745/986/1166/1434) |
+| `deim-rt-{s,m,l}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-RT-DETRv2 R18/R34/R50; Google Drive) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/deim_rt_r{18,34,50}.pth` (511/621/737) |
 
 `lw-detr-*` uses the authors' own native PyTorch `.pth` (the original Atten4Vis/LW-DETR
 naming); `lwdetr_convert_native.py` (single-scale) and `lwdetr_convert_native_full.py`
@@ -118,10 +120,10 @@ The `rt-detr-{s,m,x}` checkpoints share one I/O-parameterized converter
 (`convert_rtdetr_size.py`); it is backbone-agnostic (BasicBlock R18/R34 vs Bottleneck
 R101) and counts the decoder depth (3/4/6) from the source.
 
-A converter downloads (or reads) the HF safetensors, renames keys to detrcpp's
-module tree (and concatenates split `q/k/v` projections into the
-`nn::MultiheadAttention` `in_proj`), and writes a detrcpp-named safetensors that
-loads with an identity remapper.
+A converter reads the original checkpoint, renames keys to detrcpp's module tree
+(and concatenates split `q/k/v` projections into the `nn::MultiheadAttention`
+`in_proj`), and writes a detrcpp-named `.pth` (`torch.save`) that loads with an
+identity remapper.
 
 ## Command
 

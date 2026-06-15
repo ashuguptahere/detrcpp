@@ -19,7 +19,7 @@
 #include "detr/models/lw_detr_vit.hpp"
 #include "detr/models/rf_detr_projector.hpp"
 #include "detr/models/rf_detr_real.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
@@ -31,8 +31,8 @@ torch::Tensor RawToTorch(const weights::RawTensor* rt) {
 }
 
 TEST(LwDetrViTParity, MatchesMediumBackbone) {
-  const std::string wpath = "/tmp/lwdetr_backbone.safetensors";
-  const std::string ppath = "/tmp/lwdetr_parity/parity.safetensors";
+  const std::string wpath = "/tmp/lwdetr_backbone.pth";
+  const std::string ppath = "/tmp/lwdetr_parity/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "parity fixtures absent (run /tmp/lwdetr_dump_parity.py + convert)";
   }
@@ -40,7 +40,7 @@ TEST(LwDetrViTParity, MatchesMediumBackbone) {
   // pretrain pos grid 14, features after layers [2,4,5,9], windowed [0,1,3,6,7,9].
   auto bb = LwDetrViT(384, 10, 12, 16, 4, 14, std::vector<int>{2, 4, 5, 9},
                       std::vector<int>{0, 1, 3, 6, 7, 9});
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*bb, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -49,7 +49,7 @@ TEST(LwDetrViTParity, MatchesMediumBackbone) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   bb->eval();
   torch::NoGradGuard ng;
@@ -67,13 +67,13 @@ TEST(LwDetrViTParity, MatchesMediumBackbone) {
 // The LW-DETR-large/xlarge multi-scale projector (P3 2x-up + P5 0.5x-down) must
 // reproduce the reference's two feature maps from the 4 backbone features.
 TEST(LwDetrViTParity, MultiScaleProjectorMatchesLarge) {
-  const std::string wpath = "/tmp/lwdetr_large_projector_native.safetensors";
-  const std::string ppath = "/tmp/lwdetr_native_large/parity.safetensors";
+  const std::string wpath = "/tmp/lwdetr_large_projector_native.pth";
+  const std::string ppath = "/tmp/lwdetr_native_large/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "large projector fixtures absent";
   }
   auto proj = LwDetrMultiScaleProjector(4, 384, 384, 3, std::vector<double>{2.0, 0.5});
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*proj, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -82,7 +82,7 @@ TEST(LwDetrViTParity, MultiScaleProjectorMatchesLarge) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   std::vector<torch::Tensor> feats;
   for (int i = 0; i < 4; ++i) {
     feats.push_back(RawToTorch(psd.Find("feat" + std::to_string(i))));
@@ -145,7 +145,7 @@ void CheckEndToEnd(const std::string& wpath, const std::string& ppath, RfDetrRea
     GTEST_SKIP() << "parity fixtures absent";
   }
   auto model = std::make_shared<RfDetrRealImpl>(cfg);
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*model, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -155,7 +155,7 @@ void CheckEndToEnd(const std::string& wpath, const std::string& ppath, RfDetrRea
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   model->eval();
   torch::NoGradGuard ng;
@@ -194,23 +194,23 @@ void CheckEndToEnd(const std::string& wpath, const std::string& ppath, RfDetrRea
 }
 
 TEST(LwDetrViTParity, FullLargeEndToEnd) {
-  CheckEndToEnd("/tmp/lwdetr_large_full_native.safetensors",
-                "/tmp/lwdetr_native_large/parity.safetensors", LwDetrLargeConfig());
+  CheckEndToEnd("/tmp/lwdetr_large_full_native.pth",
+                "/tmp/lwdetr_native_large/parity.pth", LwDetrLargeConfig());
 }
 
 TEST(LwDetrViTParity, FullXLargeEndToEnd) {
-  CheckEndToEnd("/tmp/lwdetr_xlarge_full_native.safetensors",
-                "/tmp/lwdetr_native_xlarge/parity.safetensors", LwDetrXLargeConfig());
+  CheckEndToEnd("/tmp/lwdetr_xlarge_full_native.pth",
+                "/tmp/lwdetr_native_xlarge/parity.pth", LwDetrXLargeConfig());
 }
 
 TEST(LwDetrViTParity, FullMediumEndToEnd) {
-  const std::string wpath = "/tmp/lwdetr_full.safetensors";
-  const std::string ppath = "/tmp/lwdetr_parity/parity.safetensors";
+  const std::string wpath = "/tmp/lwdetr_full.pth";
+  const std::string ppath = "/tmp/lwdetr_parity/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "parity fixtures absent";
   }
   auto model = std::make_shared<RfDetrRealImpl>(LwDetrMediumConfig());
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*model, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -222,7 +222,7 @@ TEST(LwDetrViTParity, FullMediumEndToEnd) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   model->eval();
   torch::NoGradGuard ng;

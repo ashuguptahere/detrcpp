@@ -117,7 +117,7 @@ if(DETR_ENABLE_TORCH)
 endif()
 
 if(DETR_ENABLE_ONNX)
-  # The ONNX exporter is kept torch-free (config + safetensors -> graph) and
+  # The ONNX exporter is kept torch-free (config + .pth -> graph) and
   # built without LibTorch, so the FetchContent protobuf and LibTorch's bundled
   # protobuf never meet in one link (protobuf + onnx are fetched in
   # cmake/dependencies.cmake when DETR_ENABLE_ONNX is on).

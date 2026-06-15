@@ -11,18 +11,18 @@
 #include <filesystem>
 
 #include "detr/models/deform_attn.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
 namespace {
 
 TEST(DeformAttnTest, CoreMatchesTorchReference) {
-  const std::filesystem::path ref = "/tmp/deform_ref.safetensors";
+  const std::filesystem::path ref = "/tmp/deform_ref.pth";
   if (!std::filesystem::exists(ref)) {
     GTEST_SKIP() << "reference fixture not present: " << ref;
   }
-  auto sd = weights::LoadSafetensors(ref);
+  auto sd = weights::LoadPth(ref);
   ASSERT_TRUE(sd.has_value()) << sd.error().message;
 
   auto get = [&](const char* name) {

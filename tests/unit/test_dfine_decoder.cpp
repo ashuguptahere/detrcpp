@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "detr/models/dfine_decoder.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
@@ -33,7 +33,7 @@ void CheckDecoder(const DfTransformerConfig& cfg, int num_levels, const std::str
     GTEST_SKIP() << "D-FINE decoder fixtures absent (run /tmp/dfine_decoder_parity.py + convert)";
   }
   auto model = DFINETransformer(cfg);
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*model, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -44,7 +44,7 @@ void CheckDecoder(const DfTransformerConfig& cfg, int num_levels, const std::str
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   std::vector<torch::Tensor> feats;
   for (int i = 0; i < num_levels; ++i) feats.push_back(RawToTorch(psd.Find("feat" + std::to_string(i))));
   model->eval();
@@ -95,13 +95,13 @@ TEST(DFINETransformerParity, MatchesDFineNDecoder) {
   cfg.num_points = {6, 6};
   cfg.num_layers = 3;
   cfg.dim_feedforward = 512;
-  CheckDecoder(cfg, 2, "/tmp/dfine_n_decoder.safetensors", "/tmp/dfine_n_dec/parity.safetensors");
+  CheckDecoder(cfg, 2, "/tmp/dfine_n_decoder.pth", "/tmp/dfine_n_dec/parity.pth");
 }
 
 // D-FINE-L: 3 levels, hidden 256, num_points [3,6,3], 6 layers.
 TEST(DFINETransformerParity, MatchesDFineLDecoder) {
   DfTransformerConfig cfg;  // defaults are D-FINE-L
-  CheckDecoder(cfg, 3, "/tmp/dfine_l_decoder.safetensors", "/tmp/dfine_l_dec/parity.safetensors");
+  CheckDecoder(cfg, 3, "/tmp/dfine_l_decoder.pth", "/tmp/dfine_l_dec/parity.pth");
 }
 
 // DEIMv2-Atto: 2 levels, hidden 64, num_points [4,2], 3 layers, RMSNorm + SwiGLU,
@@ -119,7 +119,7 @@ TEST(DFINETransformerParity, MatchesDeimv2AttoDecoder) {
   cfg.silu = true;
   cfg.deimv2 = true;
   cfg.use_gateway = false;
-  CheckDecoder(cfg, 2, "/tmp/deimv2_atto_decoder.safetensors", "/tmp/deimv2_atto_dec/parity.safetensors");
+  CheckDecoder(cfg, 2, "/tmp/deimv2_atto_decoder.pth", "/tmp/deimv2_atto_dec/parity.pth");
 }
 
 }  // namespace

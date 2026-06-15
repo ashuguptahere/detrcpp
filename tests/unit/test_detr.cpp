@@ -2,7 +2,7 @@
 //
 // Proves the DETR model: it registers, builds from a YAML config, runs a forward
 // pass with the correct output shapes and box range, and round-trips its weights
-// through the safetensors interchange into a freshly-built model.
+// through the .pth interchange into a freshly-built model.
 
 #include <gtest/gtest.h>
 #include <torch/torch.h>
@@ -11,7 +11,7 @@
 
 #include "detr/models/detr.hpp"
 #include "detr/models/registry.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
@@ -66,16 +66,16 @@ TEST_F(DetrTest, ForwardShapesAndBoxRange) {
   EXPECT_LE(out.boxes.max().item<float>(), 1.0F);
 }
 
-TEST_F(DetrTest, WeightsRoundTripThroughSafetensors) {
+TEST_F(DetrTest, WeightsRoundTripThroughPth) {
   auto a_built = Registry::Instance().Build("detr", TinyConfig());
   ASSERT_TRUE(a_built.has_value()) << a_built.error().message;
   auto a = *a_built;
   weights::StateDict sd = weights::StateDictFromModule(*a);
   EXPECT_GT(sd.Size(), 10U);  // backbone + transformer + heads have many tensors
 
-  const auto path = std::filesystem::temp_directory_path() / "detr_model_roundtrip.safetensors";
-  ASSERT_TRUE(weights::SaveSafetensors(path, sd).has_value());
-  auto loaded = weights::LoadSafetensors(path);
+  const auto path = std::filesystem::temp_directory_path() / "detr_model_roundtrip.pth";
+  ASSERT_TRUE(weights::SavePth(path, sd).has_value());
+  auto loaded = weights::LoadPth(path);
   ASSERT_TRUE(loaded.has_value()) << loaded.error().message;
 
   auto b_built = Registry::Instance().Build("detr", TinyConfig());
