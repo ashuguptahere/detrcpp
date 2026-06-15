@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.18.0] - 2026-06-15
+
+### Added
 - **DEIMv2 — the N variant (`deimv2-n`), validated on COCO.** First milestone of the
   DEIMv2 (Intellindust-AI-Lab/DEIMv2) port. DEIMv2 evolves D-FINE with a new decoder
   and neck fusion; the N size reuses D-FINE-N's HGNetv2-B0 backbone. The DEIMv2 decoder
