@@ -11,6 +11,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DEIM (`deim-{n,s,m,l,x}`), validated on COCO.** DEIM
+  (Intellindust-AI-Lab/DEIM) is a training recipe over the D-FINE graph, so its
+  DEIM-D-FINE checkpoints load into the existing D-FINE model. The one architectural
+  change the DEIM recipe makes is the decoder **activation: SiLU** (D-FINE uses ReLU)
+  — across the decoder FFN, the LQE head, and every bbox/query MLP head; this is now a
+  `silu` flag threaded through `DFINETransformer` (`DfMLP`/`DfDecLayer`/`DfLQE`) and a
+  `decoder_silu` config knob (D-FINE keeps ReLU). Registered `deim-{n,s,m,l,x}` (the
+  per-size D-FINE config with `decoder_silu=true`), reusing the D-FINE converter and
+  eval recipe. COCO `val2017` vs the native DEIM weights (all 0 missing/unexpected),
+  each within ~0.3 AP of the published figure: `deim-n` **0.427** (off 0.430),
+  `deim-s` **0.487** (0.487), `deim-m` **0.525** (0.527), `deim-l` **0.545** (0.547),
+  `deim-x` **0.563** (0.565) — ~0.4 AP over the matching base D-FINE size. See
+  `VALIDATION.md`.
 
 ### Changed
 

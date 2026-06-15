@@ -36,6 +36,11 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `dfine-m-obj`      | **0.549** | 0.723 | 0.596 | ~0.551 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `dfine-l-obj`      | **0.570** | 0.745 | 0.620 | ~0.573 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `dfine-x-obj`      | **0.591** | 0.764 | 0.645 | ~0.593 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-n`           | **0.427** | 0.600 | 0.460 | ~0.430 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-s`           | **0.487** | 0.655 | 0.528 | ~0.487 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-m`           | **0.525** | 0.697 | 0.571 | ~0.527 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-l`           | **0.545** | 0.720 | 0.594 | ~0.547 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-x`           | **0.563** | 0.737 | 0.613 | ~0.565 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 
 `detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
 pure-C++ unpickler (no Python, no conversion): the load reports `458 tensors,
@@ -67,6 +72,7 @@ are scratch — regenerate them from the Hugging Face source with the listed con
 | `lw-detr-{large,xlarge}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_{large,xlarge}_60e_coco.pth`) | `/tmp/lwdetr_convert_native_full.py <in> <out> <num_queries>` | `/tmp/lwdetr_{large,xlarge}_full_native.safetensors` (411/435) |
 | `dfine-{n,s,m,l,x}` | **native** `Peterande/D-FINE` `.pth` (GitHub releases `dfine_{n,s,m,l,x}_coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{n,s,m,l,x}_coco.safetensors` (625/745/986/1166/1434) |
 | `dfine-{s,m,l,x}-obj` | **native** `Peterande/D-FINE` `.pth` (`dfine_{s,m}_obj2coco.pth`, `dfine_l_obj2coco_e25.pth`, `dfine_x_obj2coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{s,m,l,x}_obj2coco.safetensors` |
+| `deim-{n,s,m,l,x}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-D-FINE; Google Drive, see DEIM README) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/deim_dfine_{n,s,m,l,x}.safetensors` (625/745/986/1166/1434) |
 
 `lw-detr-*` uses the authors' own native PyTorch `.pth` (the original Atten4Vis/LW-DETR
 naming); `lwdetr_convert_native.py` (single-scale) and `lwdetr_convert_native_full.py`
@@ -122,7 +128,10 @@ multi-scale (P3+P5) projector (ViT-S / ViT-B backbone, `d_model` 384, 2 levels).
 **D-FINE** uses the **RT-DETR recipe** (contiguous 80 classes, square raw-`[0,1]` resize,
 no `--coco91`, no `--aspect`, `--imgsz 640`) — an HGNetv2 backbone + HybridEncoder neck +
 the FDR (Fine-grained Distribution Refinement) deformable decoder, in n/s/m/l/x and the
-`-obj` (Objects365→COCO) variants.
+`-obj` (Objects365→COCO) variants. **DEIM** (`deim-{n,s,m,l,x}`) is the same D-FINE graph
+trained with the DEIM recipe — architecturally just the decoder's SiLU activation (vs
+D-FINE's ReLU) — so it shares the D-FINE eval recipe and converter and scores ~0.4 AP
+higher than the base D-FINE per size.
 
 ## Registered-but-not-yet-validated variants
 
