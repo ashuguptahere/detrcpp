@@ -104,8 +104,8 @@ torch::Tensor DeformCore(const std::vector<torch::Tensor>& value, const DfShapes
 
 }  // namespace
 
-DfMLPImpl::DfMLPImpl(int in_dim, int hidden_dim, int out_dim, int num_layers)
-    : num_layers_(num_layers) {
+DfMLPImpl::DfMLPImpl(int in_dim, int hidden_dim, int out_dim, int num_layers, bool silu)
+    : num_layers_(num_layers), silu_(silu) {
   layers = register_module("layers", nn::ModuleList());
   int prev = in_dim;
   for (int i = 0; i < num_layers; ++i) {
@@ -117,8 +117,8 @@ DfMLPImpl::DfMLPImpl(int in_dim, int hidden_dim, int out_dim, int num_layers)
 
 torch::Tensor DfMLPImpl::forward(torch::Tensor x) {
   for (int i = 0; i < num_layers_; ++i) {
-    auto* lin = layers[static_cast<std::size_t>(i)]->as<nn::LinearImpl>();
-    x = (i < num_layers_ - 1) ? torch::relu(lin->forward(x)) : lin->forward(x);
+    auto y = layers[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(x);
+    x = (i < num_layers_ - 1) ? (silu_ ? torch::silu(y) : torch::relu(y)) : y;
   }
   return x;
 }
@@ -177,7 +177,8 @@ torch::Tensor DfGateImpl::forward(const torch::Tensor& x1, const torch::Tensor& 
 }
 
 DfDecLayerImpl::DfDecLayerImpl(int d, int nhead, int ffn, int num_levels,
-                               std::vector<int> num_points) {
+                               std::vector<int> num_points, bool silu)
+    : silu_(silu) {
   self_attn = register_module("self_attn",
                               nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, nhead).dropout(0.0)));
   norm1 = register_module("norm1", nn::LayerNorm(nn::LayerNormOptions({d})));
@@ -197,13 +198,14 @@ torch::Tensor DfDecLayerImpl::forward(torch::Tensor target, const torch::Tensor&
   target = norm1->forward(target + sa);
   auto ca = cross_attn->forward(target + query_pos, ref, value, shapes);
   target = gateway->forward(target, ca);
-  auto ffn = linear2->forward(torch::relu(linear1->forward(target)));
+  auto h = linear1->forward(target);
+  auto ffn = linear2->forward(silu_ ? torch::silu(h) : torch::relu(h));
   return norm3->forward((target + ffn).clamp(-65504.0, 65504.0));
 }
 
-DfLQEImpl::DfLQEImpl(int k, int hidden_dim, int num_layers, int reg_max)
+DfLQEImpl::DfLQEImpl(int k, int hidden_dim, int num_layers, int reg_max, bool silu)
     : k_(k), reg_max_(reg_max) {
-  reg_conf = register_module("reg_conf", DfMLP(4 * (k + 1), hidden_dim, 1, num_layers));
+  reg_conf = register_module("reg_conf", DfMLP(4 * (k + 1), hidden_dim, 1, num_layers, silu));
 }
 torch::Tensor DfLQEImpl::forward(const torch::Tensor& scores, const torch::Tensor& pred_corners) {
   const auto B = pred_corners.size(0), L = pred_corners.size(1);
@@ -214,12 +216,12 @@ torch::Tensor DfLQEImpl::forward(const torch::Tensor& scores, const torch::Tenso
 }
 
 DfDecoderStackImpl::DfDecoderStackImpl(int num_layers, int d, int nhead, int ffn, int num_levels,
-                                       std::vector<int> num_points, int reg_max) {
+                                       std::vector<int> num_points, int reg_max, bool silu) {
   layers = register_module("layers", nn::ModuleList());
   lqe_layers = register_module("lqe_layers", nn::ModuleList());
   for (int i = 0; i < num_layers; ++i) {
-    layers->push_back(DfDecLayer(d, nhead, ffn, num_levels, num_points));
-    lqe_layers->push_back(DfLQE(4, 64, 2, reg_max));
+    layers->push_back(DfDecLayer(d, nhead, ffn, num_levels, num_points, silu));
+    lqe_layers->push_back(DfLQE(4, 64, 2, reg_max, silu));
   }
 }
 
@@ -231,20 +233,21 @@ DFINETransformerImpl::DFINETransformerImpl(DfTransformerConfig cfg) : cfg_(std::
   for (int fc : cfg_.feat_channels) {
     input_proj->push_back(DfDecInputProj(fc, d));
   }
+  const bool silu = cfg_.silu;
   enc_output = register_module("enc_output", DfEncOutput(d));
   enc_score_head = register_module("enc_score_head", nn::Linear(d, nc));
-  enc_bbox_head = register_module("enc_bbox_head", DfMLP(d, d, 4, 3));
-  query_pos_head = register_module("query_pos_head", DfMLP(4, 2 * d, d, 2));
-  pre_bbox_head = register_module("pre_bbox_head", DfMLP(d, d, 4, 3));
+  enc_bbox_head = register_module("enc_bbox_head", DfMLP(d, d, 4, 3, silu));
+  query_pos_head = register_module("query_pos_head", DfMLP(4, 2 * d, d, 2, silu));
+  pre_bbox_head = register_module("pre_bbox_head", DfMLP(d, d, 4, 3, silu));
   dec_score_head = register_module("dec_score_head", nn::ModuleList());
   dec_bbox_head = register_module("dec_bbox_head", nn::ModuleList());
   for (int i = 0; i < cfg_.num_layers; ++i) {
     dec_score_head->push_back(nn::Linear(d, nc));
-    dec_bbox_head->push_back(DfMLP(d, d, 4 * (cfg_.reg_max + 1), 3));
+    dec_bbox_head->push_back(DfMLP(d, d, 4 * (cfg_.reg_max + 1), 3, silu));
   }
   decoder = register_module("decoder", DfDecoderStack(cfg_.num_layers, d, cfg_.nhead,
                                                       cfg_.dim_feedforward, cfg_.num_levels,
-                                                      cfg_.num_points, cfg_.reg_max));
+                                                      cfg_.num_points, cfg_.reg_max, silu));
 }
 
 std::pair<torch::Tensor, torch::Tensor> DFINETransformerImpl::forward(

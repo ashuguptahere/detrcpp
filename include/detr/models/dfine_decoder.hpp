@@ -23,12 +23,13 @@ namespace nn = torch::nn;
 
 using DfShapes = std::vector<std::pair<std::int64_t, std::int64_t>>;
 
-// A simple MLP (D-FINE `MLP`): `num_layers` Linear layers, ReLU between them.
+// A simple MLP (D-FINE `MLP`): `num_layers` Linear layers, ReLU (or SiLU) between them.
 struct DfMLPImpl : nn::Module {
-  DfMLPImpl(int in_dim, int hidden_dim, int out_dim, int num_layers);
+  DfMLPImpl(int in_dim, int hidden_dim, int out_dim, int num_layers, bool silu = false);
   torch::Tensor forward(torch::Tensor x);
   nn::ModuleList layers{nullptr};
   int num_layers_;
+  bool silu_;
 };
 TORCH_MODULE(DfMLP);
 
@@ -81,10 +82,12 @@ TORCH_MODULE(DfGate);
 
 // One decoder layer: self-attn (post-norm) -> deformable cross-attn (gated) -> FFN.
 struct DfDecLayerImpl : nn::Module {
-  DfDecLayerImpl(int d, int nhead, int ffn, int num_levels, std::vector<int> num_points);
+  DfDecLayerImpl(int d, int nhead, int ffn, int num_levels, std::vector<int> num_points,
+                 bool silu = false);
   torch::Tensor forward(torch::Tensor target, const torch::Tensor& ref,
                         const std::vector<torch::Tensor>& value, const DfShapes& shapes,
                         const torch::Tensor& query_pos);
+  bool silu_;
   nn::MultiheadAttention self_attn{nullptr};
   nn::LayerNorm norm1{nullptr}, norm3{nullptr};
   DfMSDeform cross_attn{nullptr};
@@ -96,7 +99,7 @@ TORCH_MODULE(DfDecLayer);
 // Location Quality Estimator: a small MLP over the top-k corner-distribution stats,
 // added to the class scores.
 struct DfLQEImpl : nn::Module {
-  DfLQEImpl(int k, int hidden_dim, int num_layers, int reg_max);
+  DfLQEImpl(int k, int hidden_dim, int num_layers, int reg_max, bool silu = false);
   torch::Tensor forward(const torch::Tensor& scores, const torch::Tensor& pred_corners);
   int k_, reg_max_;
   DfMLP reg_conf{nullptr};
@@ -107,7 +110,7 @@ TORCH_MODULE(DfLQE);
 // itself lives in DFINETransformer (it needs the shared bbox/score heads).
 struct DfDecoderStackImpl : nn::Module {
   DfDecoderStackImpl(int num_layers, int d, int nhead, int ffn, int num_levels,
-                     std::vector<int> num_points, int reg_max);
+                     std::vector<int> num_points, int reg_max, bool silu);
   nn::ModuleList layers{nullptr};      // DfDecLayer
   nn::ModuleList lqe_layers{nullptr};  // DfLQE
 };
@@ -129,6 +132,7 @@ struct DfTransformerConfig {
   double reg_scale = 4.0;
   double up = 0.5;
   double eps = 1e-2;
+  bool silu = false;  // decoder FFN + MLP-head activation (D-FINE: ReLU; DEIM: SiLU)
 };
 
 struct DFINETransformerImpl : nn::Module {

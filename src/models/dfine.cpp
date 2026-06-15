@@ -29,6 +29,7 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
   dc.dim_feedforward = cfg_.dec_ffn;
   dc.reg_max = cfg_.reg_max;
   dc.reg_scale = cfg_.reg_scale;
+  dc.silu = cfg_.decoder_silu;
   decoder_ = register_module("decoder", DFINETransformer(dc));
 }
 
@@ -120,6 +121,14 @@ void RegisterDFine() {
       oc.upstream = "https://github.com/Peterande/D-FINE (Objects365->COCO)";
       RegisterOne(oc);
     }
+    // DEIM (Intellindust-AI-Lab/DEIM): the same D-FINE graph trained with the DEIM
+    // recipe — the one architectural change is the decoder's SiLU activation (D-FINE
+    // uses ReLU). Loads DEIM-D-FINE checkpoints; higher mAP than the base D-FINE.
+    DFineConfig dc = SizeConfig(sz);
+    dc.name = "deim-" + sz;
+    dc.upstream = "https://github.com/Intellindust-AI-Lab/DEIM";
+    dc.decoder_silu = true;
+    RegisterOne(dc);
   }
 }
 
