@@ -160,8 +160,10 @@ if(DETR_ENABLE_ONNX)
       detr_core
       detr_weights
     PRIVATE
-      ONNX::onnx
-      ONNX::onnx_proto
+      # FetchContent's onnx exports the bare `onnx` / `onnx_proto` targets (the
+      # ONNX::* namespaced aliases only exist via an installed find_package config).
+      onnx
+      onnx_proto
       fmt::fmt
   )
   target_compile_definitions(detr_onnx
