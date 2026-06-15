@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.17.0] - 2026-06-15
+
+### Added
 - **DEIM-RT-DETRv2 (`deim-rt-{s,m,l}`), validated on COCO.** The second DEIM family —
   the RT-DETRv2 graph trained with the DEIM recipe. Beyond the SiLU decoder activation
   (as in DEIM-D-FINE), DEIM widens the RT-DETRv2 `query_pos_head` to a 3-layer
