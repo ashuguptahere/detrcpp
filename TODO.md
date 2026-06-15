@@ -170,7 +170,7 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **LW-DETR**         | ✅ validated | Apache-2.0 | Atten4Vis/LW-DETR | **N**=tiny, **S**=small, **M**=medium, **L**=large, **X**=xlarge (all 5 validated vs native weights) |
 | **D-FINE**          | ✅ validated | Apache-2.0 | Peterande/D-FINE | **N/S/M/L/X** + Obj365→COCO `-obj` (all 9 validated, FDR box head) |
 | **DEIM**            | ✅ validated | Apache-2.0 | Intellindust-AI-Lab/DEIM | **DEIM-D-FINE n/s/m/l/x** (`deim-*`, SiLU decoder) + **DEIM-RT-DETRv2 s/m/l** (`deim-rt-*`, SiLU + 3-layer query_pos_head) — all validated |
-| **DEIMv2**          | ⬜ todo | Apache-2.0 | Intellindust-AI-Lab/DEIMv2 | **Atto/Femto/Pico/N/S/M/L/X** (DINOv3 backbone) |
+| **DEIMv2**          | 🔄 partial | Apache-2.0 | Intellindust-AI-Lab/DEIMv2 | **N ✅ validated** (`deimv2-n`; new RMSNorm+SwiGLU decoder + sum/CSPLayer2 neck). atto/femto/pico (lite encoder + micro HGNetv2) ⬜; s/m/l/x (DINOv3-STA backbone) ⬜ |
 | **Efficient DETR**  | ❌ no code | (paper-only) | — none — | R50/R101 in paper; **no public code/weights → cannot integrate** |
 | **Sparse DETR**     | ⬜ todo | Apache-2.0 | kakaobrain/sparse-detr | R50, Swin-T |
 | **Lite DETR**       | ⬜ todo | Apache-2.0 | IDEA-Research/Lite-DETR | R50, Swin-T, Swin-L |

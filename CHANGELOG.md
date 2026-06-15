@@ -11,6 +11,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DEIMv2 — the N variant (`deimv2-n`), validated on COCO.** First milestone of the
+  DEIMv2 (Intellindust-AI-Lab/DEIMv2) port. DEIMv2 evolves D-FINE with a new decoder
+  and neck fusion; the N size reuses D-FINE-N's HGNetv2-B0 backbone. The DEIMv2 decoder
+  (a `deimv2` mode on `DFINETransformer`) swaps LayerNorm→**RMSNorm** and the FFN→
+  **SwiGLU** (`swish_ffn`), drops the `enc_output` projection (memory is scored
+  directly), and uses a 3-layer `query_pos_head` — the FDR distribution math, deformable
+  cross-attention, LQE and query selection are unchanged. The DEIMv2 neck (a `deimv2`
+  mode on `DfHybridEncoder`) **sums** upsample+feat_low instead of concatenating
+  (RepNCSPELAN4 `c1 = hidden`) and uses **CSPLayer2** (RepC3-style). New modules
+  `DfRMSNorm` / `DfSwiGLU` / `DfCSPLayer2`, all flags default off (D-FINE/DEIM unchanged;
+  6 D-FINE parity tests pass). `deimv2-n` loads 590/590 and scores **0.427** on COCO
+  `val2017` (official 0.430). atto/femto/pico (micro HGNetv2 + lite encoder) and
+  s/m/l/x (ViT-Tiny / DINOv3-STA backbone) are follow-ups.
 
 ### Changed
 
