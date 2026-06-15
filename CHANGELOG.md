@@ -11,6 +11,29 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **D-FINE — the full size matrix (`dfine-{n,s,m,l,x}` + `dfine-{s,m,l,x}-obj`),
+  validated on COCO.** A from-scratch port of Peterande/D-FINE (Apache-2.0): an HGNetv2
+  backbone (`models::HgNetV2`, PPHGNetV2 B0/B2/B4/B5 — stem + HG stages with light/plain
+  blocks, squeeze-excite aggregation, optional LearnableAffineBlock) → a HybridEncoder
+  neck (`models::DfHybridEncoder` — AIFI + CCFM FPN/PAN, with YOLOv9 `RepNCSPELAN4`
+  fusion and `SCDown` downsample) → the FDR decoder (`models::DFINETransformer`). The
+  decoder's novelty, Fine-grained Distribution Refinement, is reproduced exactly: each
+  layer predicts a per-edge softmax distribution over `reg_max+1` bins, integrated
+  against the non-uniform weighting `W(n)` into edge distances and decoded with
+  `distance2bbox`, refined residually across layers, with a gated self/cross-attention
+  fusion and an LQE localization-quality term; the deformable cross-attention is
+  D-FINE's stripped form (sampling offsets + weights only, value pre-split). Each
+  component reproduces the authors' own model to fp32 noise (`HgNetV2Parity` exact,
+  `DfHybridEncoderParity` / `DFINETransformerParity` ~1e-5; both the n (2-level, uniform
+  points) and l (3-level, `[3,6,3]`) topologies). RT-DETR-style eval recipe (contiguous
+  80-class sigmoid head, raw-`[0,1]` square resize, no ImageNet norm, `--imgsz 640`).
+  COCO `val2017` vs the **native** `Peterande/D-FINE` `.pth` (all 0 missing/unexpected),
+  every size within ~0.3 AP of the published figure: `dfine-n` **0.426** (off 0.428),
+  `dfine-s` **0.483** (0.485), `dfine-m` **0.520** (0.523), `dfine-l` **0.537** (0.540),
+  `dfine-x` **0.555** (0.558); the Objects365→COCO `-obj` variants `dfine-s-obj`
+  **0.504** (0.507), `dfine-m-obj` **0.549** (0.551), `dfine-l-obj` **0.570** (0.573),
+  `dfine-x-obj` **0.591** (0.593). D-FINE-X is the one size whose neck (384) is wider
+  than its decoder (256), re-projected by the decoder's `input_proj`. See `VALIDATION.md`.
 - **LW-DETR ViT backbone (`models::LwDetrViT`)** — first stage of the faithful
   LW-DETR port (Atten4Vis/LW-DETR). A plain windowed ViT (CAEv2-style): conv
   patch-embed + bicubic absolute pos-embed (no cls token), interleaved

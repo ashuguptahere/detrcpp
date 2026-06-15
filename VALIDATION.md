@@ -27,6 +27,15 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `lw-detr-medium`   | **0.523** | 0.717 | 0.564 | ~0.525 | `--coco91 --imgsz 640` (no `--aspect`) |
 | `lw-detr-large`    | **0.558** | 0.742 | 0.608 | ~0.561 | `--coco91 --imgsz 640` (no `--aspect`) |
 | `lw-detr-xlarge`   | **0.582** | 0.766 | 0.632 | ~0.583 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `dfine-n`          | **0.426** | 0.598 | 0.453 | ~0.428 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-s`          | **0.483** | 0.651 | 0.524 | ~0.485 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-m`          | **0.520** | 0.695 | 0.561 | ~0.523 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-l`          | **0.537** | 0.713 | 0.581 | ~0.540 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-x`          | **0.555** | 0.734 | 0.601 | ~0.558 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-s-obj`      | **0.504** | 0.672 | 0.548 | ~0.507 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-m-obj`      | **0.549** | 0.723 | 0.596 | ~0.551 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-l-obj`      | **0.570** | 0.745 | 0.620 | ~0.573 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-x-obj`      | **0.591** | 0.764 | 0.645 | ~0.593 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 
 `detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
 pure-C++ unpickler (no Python, no conversion): the load reports `458 tensors,
@@ -56,6 +65,8 @@ are scratch — regenerate them from the Hugging Face source with the listed con
 | `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.safetensors` (328 tensors) |
 | `lw-detr-{tiny,small,medium}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_*_60e_coco.pth`, the authors') | `/tmp/lwdetr_convert_native.py <in> <out> <num_queries>` | `/tmp/lwdetr_{tiny,small,medium}_native.safetensors` (261/329/329) |
 | `lw-detr-{large,xlarge}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_{large,xlarge}_60e_coco.pth`) | `/tmp/lwdetr_convert_native_full.py <in> <out> <num_queries>` | `/tmp/lwdetr_{large,xlarge}_full_native.safetensors` (411/435) |
+| `dfine-{n,s,m,l,x}` | **native** `Peterande/D-FINE` `.pth` (GitHub releases `dfine_{n,s,m,l,x}_coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{n,s,m,l,x}_coco.safetensors` (625/745/986/1166/1434) |
+| `dfine-{s,m,l,x}-obj` | **native** `Peterande/D-FINE` `.pth` (`dfine_{s,m}_obj2coco.pth`, `dfine_l_obj2coco_e25.pth`, `dfine_x_obj2coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{s,m,l,x}_obj2coco.safetensors` |
 
 `lw-detr-*` uses the authors' own native PyTorch `.pth` (the original Atten4Vis/LW-DETR
 naming); `lwdetr_convert_native.py` (single-scale) and `lwdetr_convert_native_full.py`
@@ -64,6 +75,16 @@ large/xlarge) split the fused backbone `qkv` and decoder `in_proj` into separate
 and map the PResNet-free ViT + C2f projector + two-stage decoder onto detrcpp. Parity
 is checked against the authors' own model run on CPU (the native repo's pure-PyTorch
 deformable path), reproduced to fp32 noise by `LwDetrViTParity.Full*EndToEnd`.
+
+`dfine-*` uses the authors' own native `.pth` (the `Peterande/D-FINE` GitHub releases).
+`dfine_convert_full.py` maps the HGNetv2 backbone (drops `num_batches_tracked` for the
+FrozenBN), the HybridEncoder neck (strips the SCDown `Sequential` wrapper index) and the
+FDR decoder (drops the training/derived `up`/`reg_scale`/`anchors`/`valid_mask`/denoising
+buffers, keeps `num_points_scale`) onto detrcpp 1:1. The architecture is reproduced to
+fp32 noise per component against the authors' own model (`HgNetV2Parity`,
+`DfHybridEncoderParity`, `DFINETransformerParity` — backbone exact, neck/decoder ~1e-5).
+The `-obj` entries are the same architecture loaded from the stronger Objects365→COCO
+weights. D-FINE-X is the one size whose neck (384) is wider than its decoder (256).
 
 The `rt-detrv2-*` weights are the **native PyTorch checkpoints from the original
 `lyuwenyu/RT-DETR` repo** (`rtdetrv2_r{18,34,50,101}vd_*.pth`, the headline grid-sampling
@@ -98,6 +119,10 @@ projector + two-stage deformable decoder), not the placeholder-ViT `rf-detr-{n..
 ImageNet-norm square, no `--aspect`) — it shares RF-DETR's projector + decoder with a
 windowed CAEv2-ViT backbone. tiny/small/medium are single-scale; large/xlarge add the
 multi-scale (P3+P5) projector (ViT-S / ViT-B backbone, `d_model` 384, 2 levels).
+**D-FINE** uses the **RT-DETR recipe** (contiguous 80 classes, square raw-`[0,1]` resize,
+no `--coco91`, no `--aspect`, `--imgsz 640`) — an HGNetv2 backbone + HybridEncoder neck +
+the FDR (Fine-grained Distribution Refinement) deformable decoder, in n/s/m/l/x and the
+`-obj` (Objects365→COCO) variants.
 
 ## Registered-but-not-yet-validated variants
 
