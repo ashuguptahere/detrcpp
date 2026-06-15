@@ -15,6 +15,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ### Changed
 
 ### Fixed
+- **DC5 ResNet dilation now matches torchvision.** A dilated stage (the DC5 variants'
+  `layer4`) was applying `dilation=2` to *every* block; torchvision applies the new
+  dilation only to the 2nd+ blocks, leaving the first block at dilation 1 while it
+  strides. The first block's 3x3 was therefore over-padding, corrupting the feature-map
+  borders (max |Δ| ~5 at the edges). Fixed in `MakeBottleneckLayer` / `MakeBasicLayer`;
+  the DC5 backbone is now byte-exact vs torchvision (verified via Anchor-DETR-DC5, whose
+  backbone feature matches to 0). Affects all `*-dc5` models (more faithful; non-DC5
+  models unchanged).
 
 ## [0.18.0] - 2026-06-15
 

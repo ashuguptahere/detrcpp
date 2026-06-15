@@ -115,7 +115,11 @@ TORCH_MODULE(BasicBlock);
 nn::Sequential MakeBottleneckLayer(int in, int planes, int blocks, int stride, int dilation = 1,
                                    bool avg_down = false) {
   nn::Sequential s;
-  s->push_back(Bottleneck(in, planes, stride, /*down=*/true, dilation, avg_down));
+  // Matching torchvision: a dilated stage (DC5) applies the new dilation only to the
+  // 2nd+ blocks — the first block keeps the previous (1) dilation while it strides/
+  // downsamples. Otherwise the first block's 3x3 would over-pad at the borders.
+  const int first_dilation = dilation > 1 ? 1 : dilation;
+  s->push_back(Bottleneck(in, planes, stride, /*down=*/true, first_dilation, avg_down));
   for (int i = 1; i < blocks; ++i) {
     s->push_back(Bottleneck(planes * 4, planes, 1, false, dilation));
   }
@@ -129,7 +133,8 @@ nn::Sequential MakeBasicLayer(int in, int planes, int blocks, int stride, int di
   // R18/R34 (basic-block) backbones — even res2, where in==out and stride==1 give a
   // plain 1x1 stride-1 projection (no avg-pool). avg_down marks that vd path.
   const bool first_down = avg_down || stride != 1 || in != planes;
-  s->push_back(BasicBlock(in, planes, stride, first_down, dilation, avg_down));
+  const int first_dilation = dilation > 1 ? 1 : dilation;  // see MakeBottleneckLayer
+  s->push_back(BasicBlock(in, planes, stride, first_down, first_dilation, avg_down));
   for (int i = 1; i < blocks; ++i) {
     s->push_back(BasicBlock(planes, planes, 1, false, dilation, avg_down));
   }
