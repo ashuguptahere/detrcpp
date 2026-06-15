@@ -31,6 +31,8 @@ struct UpstreamCase {
 
 // Grows as each family's UpstreamRemapper is implemented + its weights are linked.
 const UpstreamCase kCases[] = {
+    {"anchor-detr", "AnchorDETR_r50.pth"},
+    {"anchor-detr-dc5", "AnchorDETR_r50_dc5.pth"},
     {"deformable-detr", "r50_deformable_detr-checkpoint.pth"},
     {"detr-r50", "detr-r50-e632da11.pth"},
     {"detr-r101", "detr-r101-2c7b67e5.pth"},

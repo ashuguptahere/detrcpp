@@ -242,6 +242,21 @@ class AnchorDetrImpl : public IModel {
     return m;
   }
 
+  // Maps a native megvii-research/AnchorDETR checkpoint onto our module tree. Heads are
+  // shared across decoder layers, so the upstream's identical clones
+  // (transformer.{class,bbox}_embed.0..N) collapse onto our single head (keep clone 0).
+  weights::WeightRemapper UpstreamRemapper() const override {
+    weights::WeightRemapper r;
+    r.Drop("num_batches_tracked")
+        .ReplaceRegex("^backbone\\.body\\.", "backbone.")
+        .ReplaceRegex("^input_proj\\.0\\.0\\.", "input_proj.0.")
+        .ReplaceRegex("^input_proj\\.0\\.1\\.", "input_proj.1.")
+        .ReplaceRegex("^transformer\\.class_embed\\.0\\.", "transformer.class_embed.")
+        .ReplaceRegex("^transformer\\.bbox_embed\\.0\\.", "transformer.bbox_embed.")
+        .Drop("^transformer\\.(class_embed|bbox_embed)\\.[1-9][0-9]*\\.");
+    return r;
+  }
+
  private:
   AnchorTransformerConfig cfg_;
   std::string name_;

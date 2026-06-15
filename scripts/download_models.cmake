@@ -18,6 +18,9 @@ cmake_minimum_required(VERSION 3.24)
 # direct usercontent form "gdrive:<FILE_ID>" (resolved below) since the authors of
 # several repos publish only on Drive.
 set(MANIFEST
+  # Anchor-DETR (megvii-research/AnchorDETR) — R50 C5 / DC5, Google-Drive releases.
+  "anchor-detr|AnchorDETR_r50.pth|gdrive:1ktLJyw4PGdaXkOn61W537Z67WHcttXDs"
+  "anchor-detr-dc5|AnchorDETR_r50_dc5.pth|gdrive:1lJZWdIlHj6KKmAdU28Y01tTyO0hc6Jxs"
   # Deformable-DETR (fundamentalvision/Deformable-DETR) — standard multi-scale, Drive.
   "deformable-detr|r50_deformable_detr-checkpoint.pth|gdrive:1nDWZWHuRwtwGden77NLM9JoWe-YisJnA"
   # DETR (facebookresearch/detr) — official ResNet-50/101 (+ DC5) COCO checkpoints.
