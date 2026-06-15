@@ -117,15 +117,24 @@ struct DfRepNCSPELAN4Impl : nn::Module {
   DfConvNorm cv1{nullptr}, cv4{nullptr};
   nn::Sequential cv2{nullptr}, cv3{nullptr};
   int c_;
-  DfRepNCSPELAN4Impl(int c1, int c2, int c3, int c4, int n, bool csp2 = false) : c_(c3 / 2) {
+  // `csp2` selects DEIMv2's CSPLayer2 (else D-FINE's CSPLayer). `repelan5` drops the
+  // trailing 3x3 ConvNorm from each cv2/cv3 chain — the DEIMv2 RepNCSPELAN5 (version=deim,
+  // used by s/m/l/x); without it the chains keep the trailing conv (n / micro / D-FINE).
+  DfRepNCSPELAN4Impl(int c1, int c2, int c3, int c4, int n, bool csp2 = false, bool repelan5 = false)
+      : c_(c3 / 2) {
     cv1 = register_module("cv1", DfConvNorm(c1, c3, 1, 1, true));
-    if (csp2) {
-      cv2 = register_module("cv2", nn::Sequential(DfCSPLayer2(c3 / 2, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
-      cv3 = register_module("cv3", nn::Sequential(DfCSPLayer2(c4, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
-    } else {
-      cv2 = register_module("cv2", nn::Sequential(DfCSPLayer(c3 / 2, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
-      cv3 = register_module("cv3", nn::Sequential(DfCSPLayer(c4, c4, n), DfConvNorm(c4, c4, 3, 1, true)));
-    }
+    auto chain = [&](int cin, int cout) {
+      auto seq = nn::Sequential();
+      if (csp2) {
+        seq->push_back(DfCSPLayer2(cin, cout, n));
+      } else {
+        seq->push_back(DfCSPLayer(cin, cout, n));
+      }
+      if (!repelan5) seq->push_back(DfConvNorm(cout, cout, 3, 1, true));
+      return seq;
+    };
+    cv2 = register_module("cv2", chain(c3 / 2, c4));
+    cv3 = register_module("cv3", chain(c4, c4));
     cv4 = register_module("cv4", DfConvNorm(c3 + 2 * c4, c2, 1, 1, true));
   }
   torch::Tensor forward(torch::Tensor x) {
@@ -195,11 +204,17 @@ TORCH_MODULE(DfEncStack);
 struct DfInputProjImpl : nn::Module {
   nn::Conv2d conv{nullptr};
   nn::BatchNorm2d norm{nullptr};
-  DfInputProjImpl(int in, int out) {
-    conv = register_module("conv", nn::Conv2d(nn::Conv2dOptions(in, out, 1).bias(false)));
-    norm = register_module("norm", nn::BatchNorm2d(out));
+  bool identity_;
+  DfInputProjImpl(int in, int out) : identity_(in == out) {
+    // Upstream uses nn.Identity when the input already has the hidden width (DEIMv2 s/m/l/x).
+    if (!identity_) {
+      conv = register_module("conv", nn::Conv2d(nn::Conv2dOptions(in, out, 1).bias(false)));
+      norm = register_module("norm", nn::BatchNorm2d(out));
+    }
   }
-  torch::Tensor forward(torch::Tensor x) { return norm->forward(conv->forward(x)); }
+  torch::Tensor forward(torch::Tensor x) {
+    return identity_ ? x : norm->forward(conv->forward(x));
+  }
 };
 TORCH_MODULE(DfInputProj);
 
@@ -226,7 +241,7 @@ DfHybridEncoderImpl::DfHybridEncoderImpl(std::vector<int> in_channels, std::vect
                                          int hidden_dim, int nhead, int dim_feedforward,
                                          double expansion, double depth_mult,
                                          std::vector<int> use_encoder_idx, int num_encoder_layers,
-                                         double pe_temperature, bool deimv2)
+                                         double pe_temperature, bool deimv2, bool repelan5)
     : in_channels_(std::move(in_channels)),
       feat_strides_(std::move(feat_strides)),
       use_encoder_idx_(std::move(use_encoder_idx)),
@@ -253,13 +268,13 @@ DfHybridEncoderImpl::DfHybridEncoderImpl(std::vector<int> in_channels, std::vect
   fpn_blocks = register_module("fpn_blocks", nn::ModuleList());
   for (int i = 0; i < L - 1; ++i) {
     lateral_convs->push_back(DfConvNorm(hidden_dim, hidden_dim, 1, 1, false));
-    fpn_blocks->push_back(DfRepNCSPELAN4(fuse_in, hidden_dim, hidden_dim * 2, c4, nblk, deimv2));
+    fpn_blocks->push_back(DfRepNCSPELAN4(fuse_in, hidden_dim, hidden_dim * 2, c4, nblk, deimv2, repelan5));
   }
   downsample_convs = register_module("downsample_convs", nn::ModuleList());
   pan_blocks = register_module("pan_blocks", nn::ModuleList());
   for (int i = 0; i < L - 1; ++i) {
     downsample_convs->push_back(DfSCDown(hidden_dim, hidden_dim, 3, 2));
-    pan_blocks->push_back(DfRepNCSPELAN4(fuse_in, hidden_dim, hidden_dim * 2, c4, nblk, deimv2));
+    pan_blocks->push_back(DfRepNCSPELAN4(fuse_in, hidden_dim, hidden_dim * 2, c4, nblk, deimv2, repelan5));
   }
 }
 

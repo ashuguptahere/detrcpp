@@ -9,8 +9,16 @@
 namespace detr::models {
 
 DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
-  backbone_ = register_module("backbone", HgNetV2(cfg_.backbone, cfg_.use_lab, cfg_.return_idx));
-  const auto in_ch = backbone_->out_channels();
+  std::vector<int> in_ch;
+  if (cfg_.dinov3_sta) {
+    dino_backbone_ = register_module(
+        "backbone", DinoV3Sta(cfg_.vit_embed_dim, cfg_.vit_num_heads, cfg_.vit_depth, cfg_.vit_patch,
+                              cfg_.interaction_indexes, cfg_.sta_inplane, cfg_.hidden_dim));
+    in_ch = dino_backbone_->out_channels();
+  } else {
+    backbone_ = register_module("backbone", HgNetV2(cfg_.backbone, cfg_.use_lab, cfg_.return_idx));
+    in_ch = backbone_->out_channels();
+  }
   if (cfg_.lite_encoder) {
     lite_encoder_ = register_module(
         "encoder", DfLiteEncoder(in_ch[0], cfg_.hidden_dim, cfg_.expansion, cfg_.depth_mult));
@@ -18,7 +26,8 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
     encoder_ = register_module(
         "encoder", DfHybridEncoder(in_ch, cfg_.feat_strides, cfg_.hidden_dim, cfg_.nhead, cfg_.neck_ffn,
                                    cfg_.expansion, cfg_.depth_mult, cfg_.use_encoder_idx,
-                                   cfg_.num_encoder_layers, 10000.0, cfg_.decoder_deimv2));
+                                   cfg_.num_encoder_layers, 10000.0, cfg_.decoder_deimv2,
+                                   cfg_.neck_repelan5));
   }
   DfTransformerConfig dc;
   dc.num_classes = cfg_.num_classes;
@@ -41,7 +50,7 @@ DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
 }
 
 Detections DFineImpl::Forward(torch::Tensor images) {
-  auto feats = backbone_->forward(images);
+  auto feats = dino_backbone_ ? dino_backbone_->forward(images) : backbone_->forward(images);
   auto neck_outs = lite_encoder_ ? lite_encoder_->forward(feats) : encoder_->forward(feats);
   auto [logits, boxes] = decoder_->forward(neck_outs);
   Detections det;
@@ -56,8 +65,8 @@ ModelMeta DFineImpl::Meta() const {
   m.imgsz = cfg_.imgsz;
   m.num_classes = cfg_.num_classes;
   m.num_queries = cfg_.num_queries;
-  m.focal = true;             // sigmoid head, no no-object slot
-  m.imagenet_norm = false;    // raw [0,1], square resize (RT-DETR/D-FINE recipe)
+  m.focal = true;                       // sigmoid head, no no-object slot
+  m.imagenet_norm = cfg_.imagenet_norm;  // DINOv3-STA normalizes; HGNetv2 sizes use raw [0,1]
   m.license = "Apache-2.0";
   m.upstream = cfg_.upstream;
   return m;
@@ -175,6 +184,41 @@ void RegisterDFine() {
     v2.lite_encoder = true;
     v2.decoder_deimv2 = true;
     v2.decoder_gateway = false;  // micro models use a plain norm2, not the gate
+    RegisterOne(v2);
+  }
+  // DEIMv2 s/m: a DINOv3-STA backbone (distilled RoPE ViT-Tiny + Spatial-Tuning Adapter)
+  // feeding the DEIMv2 HybridEncoder neck (sum fusion + CSPLayer2) and decoder. 3 levels,
+  // ImageNet normalization, 640x640. (l/x use the larger Meta DINOv3 ViT — a follow-up.)
+  struct DinoSize {
+    const char* name;
+    int embed_dim, num_heads, hidden, neck_ffn;
+    double expansion, depth_mult;
+  };
+  for (const DinoSize& d : {DinoSize{"s", 192, 3, 192, 512, 0.34, 0.67},
+                            DinoSize{"m", 256, 4, 256, 512, 0.67, 1.0}}) {
+    DFineConfig v2;
+    v2.name = std::string("deimv2-") + d.name;
+    v2.upstream = "https://github.com/Intellindust-AI-Lab/DEIMv2";
+    v2.imgsz = 640;
+    v2.imagenet_norm = true;
+    v2.dinov3_sta = true;
+    v2.vit_embed_dim = d.embed_dim;
+    v2.vit_num_heads = d.num_heads;
+    v2.interaction_indexes = {3, 7, 11};
+    v2.sta_inplane = 16;
+    v2.hidden_dim = d.hidden;
+    v2.dec_hidden_dim = d.hidden;
+    v2.feat_strides = {8, 16, 32};
+    v2.num_levels = 3;
+    v2.neck_ffn = d.neck_ffn;
+    v2.expansion = d.expansion;
+    v2.depth_mult = d.depth_mult;
+    v2.use_encoder_idx = {2};
+    v2.num_points = {3, 6, 3};
+    v2.num_layers = 4;
+    v2.dec_ffn = 512;
+    v2.decoder_deimv2 = true;  // DEIMv2 neck (sum fusion) + decoder, gateway on
+    v2.neck_repelan5 = true;   // version=deim RepNCSPELAN5 fuse block
     RegisterOne(v2);
   }
 }

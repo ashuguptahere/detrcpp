@@ -34,6 +34,18 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   `deimv2-atto` **0.236** (official 0.238), `deimv2-femto` **0.308** (0.310),
   `deimv2-pico` **0.383** (0.385).
 
+- **DEIMv2 — s/m (`deimv2-s` / `deimv2-m`), validated on COCO.** The DINOv3-STA sizes:
+  a new **DINOv3-STA backbone** (`dinov3_sta.{hpp,cpp}`) — a RoPE ViT-Tiny (the DEIMv2
+  authors' distilled `vit_tiny`/`vit_tinyplus`, 2D rotary position embedding, cls token)
+  whose three intermediate patch-token maps are resampled to strides 8/16/32, fused with a
+  lite **SpatialPriorModule** (conv stem on the raw image) and a 1x1 conv + BatchNorm per
+  level. Feeds the DEIMv2 HybridEncoder neck (`version=deim` → **RepNCSPELAN5** fuse block,
+  Identity `input_proj` when in==hidden) and the DEIMv2 decoder (gateway, 3 levels). These
+  sizes use **ImageNet normalization** (unlike the raw-`[0,1]` HGNetv2 sizes). New backbone
+  parity test passes (max|diff| ~1e-5). COCO `val2017` vs official: `deimv2-s` **0.505**
+  (official 0.509), `deimv2-m` **0.528** (0.530). l/x (Meta DINOv3 ViT backbone) are a
+  follow-up.
+
 ### Changed
 
 ### Fixed
