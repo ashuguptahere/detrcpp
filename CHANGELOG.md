@@ -11,6 +11,18 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **Anchor-DETR (`anchor-detr` / `anchor-detr-dc5`), validated on COCO.** A from-scratch
+  port of megvii-research/AnchorDETR (Apache-2.0): a new model (`anchor_detr.{hpp,cpp}`)
+  whose object queries are **anchor points** — a learned set of 300 2D positions, each
+  instantiated with 3 content patterns (900 queries), with the box head predicting an
+  offset from the anchor. Its other novelty is **Row-Column Decoupled Attention (RCDA)**,
+  which factorizes the H*W self/cross-attention into a row (over W) and a column (over H)
+  softmax whose outer product weights the value — `out = Σ_{h,w} attn_col·attn_row·v`,
+  O(L*(H+W)) instead of O(L*H*W). Single feature level (C5 or DC5 ResNet-50), sigmoid-
+  focal head, ImageNet-norm aspect-preserving eval. Reuses the existing `ResNet` backbone.
+  End-to-end parity vs the native model is exact (logit max|diff| ~4e-5, box ~4e-6, loads
+  0 missing/0 unexpected). COCO `val2017` vs official: `anchor-detr` **0.419** (official
+  0.421), `anchor-detr-dc5` **0.440** (0.443). Eval: `--coco91 --aspect --imgsz 800`.
 
 ### Changed
 

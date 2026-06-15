@@ -160,7 +160,7 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **DETR**            | ✅ done (detection) | Apache-2.0 | facebookresearch/detr | R50, R101, R50-DC5, R101-DC5 (+3 *panoptic seg* models — need a mask head, not done) |
 | **Deformable-DETR** | ✅ done | Apache-2.0 | fundamentalvision/Deformable-DETR | R50 (+ single-scale / box-refine / two-stage) |
 | **Conditional-DETR**| ✅ done | Apache-2.0 | Atten4Vis/ConditionalDETR | R50, R101, R50-DC5, R101-DC5 |
-| **Anchor-DETR**     | ⬜ todo | Apache-2.0 | megvii-research/AnchorDETR | R50, R50-DC5 |
+| **Anchor-DETR**     | ✅ validated | Apache-2.0 | megvii-research/AnchorDETR | **R50 (C5) 0.419, R50-DC5 0.440** — anchor-point queries + Row-Column Decoupled Attention (RCDA) |
 | **DAB-DETR**        | ✅ done | Apache-2.0 | IDEA-Research/DAB-DETR | R50, R50-DC5, R101 (+ DAB-Deformable) |
 | **DN-DETR**         | ✅ done | Apache-2.0 | IDEA-Research/DN-DETR | R50, R50-DC5 |
 | **DINO**            | ✅ done | Apache-2.0 | IDEA-Research/DINO | R50 (4-scale/5-scale), Swin-L |
@@ -178,7 +178,7 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **RF-DETR**         | ✅ nano validated | Apache-2.0 | roboflow/rf-detr | **N/S/M/B/L/X** (nano faithful+validated; S/M/B/L/X = placeholder ViT) |
 
 Priority: classic line [DETR/Deformable/Conditional/DAB/DN/DINO ✅] → RT-DETR(v2) ✅ →
-RF-DETR ✅ → LW-DETR ✅ → D-FINE ✅ → DEIM ✅ → DEIMv2 ✅ → **Anchor/Sparse/Lite/Salience-DETR [next]**.
+RF-DETR ✅ → LW-DETR ✅ → D-FINE ✅ → DEIM ✅ → DEIMv2 ✅ → Anchor-DETR ✅ → **Sparse/Lite/Salience-DETR [next]**.
 (RT-DETRv3 stays blocked on weights; Efficient DETR dropped for lack of code.)
 
 ### TensorRT

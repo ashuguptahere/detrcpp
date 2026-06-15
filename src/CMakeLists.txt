@@ -221,6 +221,7 @@ if(DETR_ENABLE_TORCH)
     models/rf_detr_real.cpp
     models/detr.cpp
     models/detr_r50.cpp
+    models/anchor_detr.cpp
     models/deformable_detr.cpp
     models/rt_detr.cpp
     models/conditional_detr.cpp

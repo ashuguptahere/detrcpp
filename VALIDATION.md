@@ -13,6 +13,8 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `detr-r50`         | **0.419** | 0.623 | 0.444 | ~0.420 | `--coco91 --aspect --imgsz 800` |
 | `deformable-detr`  | **0.443** | 0.634 | 0.484 | ~0.445 | `--coco91 --aspect --imgsz 800` |
 | `conditional-detr` | **0.407** | 0.616 | 0.431 | ~0.409 | `--coco91 --aspect --imgsz 800` |
+| `anchor-detr`      | **0.419** | 0.626 | 0.449 | ~0.421 | `--coco91 --aspect --imgsz 800` (R50 C5) |
+| `anchor-detr-dc5`  | **0.440** | 0.644 | 0.474 | ~0.443 | `--coco91 --aspect --imgsz 800` (R50 DC5) |
 | `rt-detr-s`        | **0.463** | 0.635 | 0.502 | ~0.465 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detr-m`        | **0.487** | 0.665 | 0.526 | ~0.489 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detr-l`        | **0.530** | 0.710 | 0.576 | ~0.534 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
