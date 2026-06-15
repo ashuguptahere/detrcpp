@@ -11,6 +11,7 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | Model | mAP50-95 | mAP50 | mAP75 | Official | Eval flags |
 |-------|---------:|------:|------:|---------:|------------|
 | `detr-r50`         | **0.419** | 0.623 | 0.444 | ~0.420 | `--coco91 --aspect --imgsz 800` |
+| `detr-r50-dc5`     | **0.431** | 0.630 | 0.458 | ~0.433 | `--coco91 --aspect --imgsz 800` (loads the original `.pth` directly) |
 | `deformable-detr`  | **0.443** | 0.634 | 0.484 | ~0.445 | `--coco91 --aspect --imgsz 800` |
 | `conditional-detr` | **0.407** | 0.616 | 0.431 | ~0.409 | `--coco91 --aspect --imgsz 800` |
 | `anchor-detr`      | **0.419** | 0.626 | 0.449 | ~0.421 | `--coco91 --aspect --imgsz 800` (R50 C5) |
