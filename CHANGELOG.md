@@ -11,6 +11,11 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **Deformable-DETR loads its native `fundamentalvision/Deformable-DETR` checkpoint
+  directly** (switching off the prior Hugging Face source). New `UpstreamRemapper`:
+  `backbone.0.body.` -> `backbone.`, strip the `transformer.` wrapper, and collapse the
+  upstream's six identical shared head clones (`class_embed.0..5` / `bbox_embed.0..5`,
+  `with_box_refine=False`) onto our single head. Verified 0/0/0 (521 tensors).
 - **DEIM family loads its native `Intellindust-AI-Lab/DEIM` checkpoints directly.** The
   eight DEIM models reuse the D-FINE (`deim-{n,s,m,l,x}`) and RT-DETRv2
   (`deim-rt-{s,m,l}`) remappers unchanged — they share those graphs — so only the

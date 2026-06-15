@@ -18,6 +18,8 @@ cmake_minimum_required(VERSION 3.24)
 # direct usercontent form "gdrive:<FILE_ID>" (resolved below) since the authors of
 # several repos publish only on Drive.
 set(MANIFEST
+  # Deformable-DETR (fundamentalvision/Deformable-DETR) — standard multi-scale, Drive.
+  "deformable-detr|r50_deformable_detr-checkpoint.pth|gdrive:1nDWZWHuRwtwGden77NLM9JoWe-YisJnA"
   # DETR (facebookresearch/detr) — official ResNet-50/101 (+ DC5) COCO checkpoints.
   "detr-r50|detr-r50-e632da11.pth|https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth"
   "detr-r101|detr-r101-2c7b67e5.pth|https://dl.fbaipublicfiles.com/detr/detr-r101-2c7b67e5.pth"

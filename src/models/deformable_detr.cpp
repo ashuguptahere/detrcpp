@@ -289,6 +289,30 @@ class DeformableDetrImpl : public IModel {
     return m;
   }
 
+  // Maps a native fundamentalvision/Deformable-DETR checkpoint onto our module tree.
+  // The prediction heads are shared across decoder layers (with_box_refine=False), so
+  // the upstream's six identical clones (class_embed.0..5 / bbox_embed.0..5) collapse to
+  // our single head: keep clone 0, drop the rest.
+  weights::WeightRemapper UpstreamRemapper() const override {
+    weights::WeightRemapper r;
+    r.Drop("num_batches_tracked")
+        .ReplaceRegex("^backbone\\.0\\.body\\.", "backbone.")
+        .ReplaceRegex("^transformer\\.encoder\\.layers\\.", "encoder.")
+        .ReplaceRegex("^transformer\\.decoder\\.layers\\.", "decoder.")
+        .ReplaceRegex("^transformer\\.level_embed$", "level_embed")
+        .ReplaceRegex("^transformer\\.reference_points\\.", "reference_points.")
+        // Shared heads: clone 0 -> our single head (Linear / MLP at indices 0,2,4), drop 1..5.
+        .ReplaceRegex("^class_embed\\.0\\.", "class_embed.")
+        .Drop("^class_embed\\.[1-9][0-9]*\\.")
+        // Drop the clone MLPs (1..5) before renaming clone 0, and scope the drop to
+        // ".layers." so it can't catch the renamed bbox_embed.2/.4 targets.
+        .Drop("^bbox_embed\\.[1-9][0-9]*\\.layers\\.")
+        .ReplaceRegex("^bbox_embed\\.0\\.layers\\.0\\.", "bbox_embed.0.")
+        .ReplaceRegex("^bbox_embed\\.0\\.layers\\.1\\.", "bbox_embed.2.")
+        .ReplaceRegex("^bbox_embed\\.0\\.layers\\.2\\.", "bbox_embed.4.");
+    return r;
+  }
+
  private:
   Config cfg_;
   ResNet backbone_{nullptr};
