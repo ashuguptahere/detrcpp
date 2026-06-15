@@ -13,7 +13,7 @@
 #include "detr/models/registry.hpp"
 #include "detr/train/target.hpp"
 #include "detr/train/trainer.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
@@ -106,9 +106,9 @@ TEST_F(DetrR50Test, WeightsRoundTrip) {
   // ResNet-50 has many tensors (stem + 16 bottlenecks) + the transformer head.
   EXPECT_GT(sd.Size(), 100U);
 
-  const auto path = std::filesystem::temp_directory_path() / "detr_r50.safetensors";
-  ASSERT_TRUE(weights::SaveSafetensors(path, sd).has_value());
-  auto loaded = weights::LoadSafetensors(path);
+  const auto path = std::filesystem::temp_directory_path() / "detr_r50.pth";
+  ASSERT_TRUE(weights::SavePth(path, sd).has_value());
+  auto loaded = weights::LoadPth(path);
   ASSERT_TRUE(loaded.has_value()) << loaded.error().message;
 
   auto b = *Registry::Instance().Build("detr-r50", R50Tiny());

@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "detr/models/anchor_detr.hpp"
 #include "detr/models/conditional_detr.hpp"
 #include "detr/models/dab_detr.hpp"
 #include "detr/models/deformable_detr.hpp"
@@ -15,6 +16,7 @@
 #include "detr/models/dino.hpp"
 #include "detr/models/model.hpp"
 #include "detr/models/registry.hpp"
+#include "detr/models/dfine.hpp"
 #include "detr/models/rf_detr.hpp"
 #include "detr/models/rt_detr.hpp"
 
@@ -151,10 +153,12 @@ void RegisterBuiltins() {
   Registry::Instance().Register("conditional-detr", ConditionalDetrMeta({}), &MakeConditionalDetr);
   Registry::Instance().Register("dab-detr", DabDetrMeta({}), &MakeDabDetr);
   Registry::Instance().Register("dn-detr", DnDetrMeta({}), &MakeDnDetr);
+  RegisterAnchorDetr();  // anchor-detr (C5) + anchor-detr-dc5
   RegisterRfDetr();  // rf-detr (base) + rf-detr-cdn + the rf-detr-{n,s,m,l,x} matrix
   Registry::Instance().Register("dino", DinoMeta({}), &MakeDino);
   Registry::Instance().Register("dino-cdn", DinoCdnMeta({}), &MakeDinoCdn);
   RegisterRtDetr();
+  RegisterDFine();  // dfine-{n,s,m,l,x} (COCO) + dfine-{s,m,l,x}-obj (Objects365->COCO)
 }
 
 }  // namespace detr::models

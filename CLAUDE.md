@@ -11,8 +11,53 @@ anywhere** in the repo — tooling is C++ or CMake `-P` scripts; deps are vendor
 from source via CMake **FetchContent** (pinned tags; no package manager). LibTorch
 is the one exception (a prebuilt SDK located with `find_package(Torch)`).
 
+## Engineering principles (read first, applies to every change)
+
+These four rules override convenience. When they conflict with "just make it work",
+they win.
+
+1. **Think before coding** — state your assumptions out loud, ask when unsure, never
+   guess. Reading two files is cheaper than rewriting one.
+2. **Simplicity first** — write the minimum code that solves the problem, nothing extra.
+   No premature abstractions, no "while-we're-here" refactors.
+3. **Surgical changes** — every changed line must trace back to the user's request. If
+   you can't justify a hunk in a one-line PR comment, drop it from the diff.
+4. **Goal-driven** — turn vague instructions into verifiable success criteria before
+   starting. "Validate the model" is not a goal; "official weights load with 0 missing /
+   0 unexpected and the COCO mAP lands within ~0.4 of the published figure" is.
+
+### Language + style baseline
+
+- **C++ standard: C++20** (`CMAKE_CXX_STANDARD 20`). The codebase uses few C++20-only
+  features; treat C++17 as the de-facto floor and reach for C++20 features only when
+  they earn their keep (`std::span` over pointer+size, a `concept` over SFINAE if it
+  shortens the call site, etc.).
+- **RAII is non-negotiable.** No `new` / `delete` / `malloc` / `free` in `src/` or
+  `include/`. Resources go through `std::unique_ptr` / `std::shared_ptr` /
+  `std::ifstream` / `std::filesystem` / LibTorch refcounted tensors / the existing
+  scope-guard patterns (`torch::NoGradGuard`, `detr::log::Stopwatch`). A new resource
+  type gets a custom-deleter `unique_ptr` — never a raw owning pointer.
+- **Don't reinvent STL / LibTorch.** Before writing a helper, check `<algorithm>`,
+  `<numeric>`, `<ranges>`, `std::filesystem`, `torch::`, and `at::` first. Hand-rolled
+  clamp / min / sign / lerp / string-split / file-read utilities are rejected on review.
+  The legitimate exceptions are perf-critical or upstream-parity kernels (the legacy
+  pickle VM, the MS-deformable-attention sampler, the COCO mAP accumulator) — those stay
+  hand-written and are marked as such.
+- **SOLID + KISS.** Single-responsibility per file; the model registry + the shared
+  heads (`detr_head` / `cond_decoder` / `deform_head`) + the `WeightRemapper` are the
+  cross-cutting hooks for per-variant behavior. When a `.cpp` crosses ~800 lines, that's
+  a smell — split by responsibility, not by line count.
+
 ## Workflow conventions (IMPORTANT)
 
+- **NEVER use Hugging Face for model weights — original repo only.** When porting/
+  validating a model, download and convert ONLY the authors' own native release from
+  the ORIGINAL upstream repo (its GitHub releases / the Google-Drive links in its
+  README / the authors' own `.pth`). Do NOT use `huggingface_hub`, `hf_hub_download`,
+  `from_pretrained`, `transformers`, or any HF mirror/port — not for weights, not even
+  as a "reliable" fallback. HF is acceptable ONLY as a read-only architecture-parity
+  reference when the original repo is unavailable, and never as a weight source. This
+  is a hard, non-negotiable user rule.
 - **Commit after every fix or feature.** One logical change per commit; do not batch
   unrelated work into one commit. Branch off `main` first — never commit directly to
   `main`. End commit messages with a `Co-Authored-By:` trailer.
@@ -75,5 +120,5 @@ detrcpp --val -m <model> -w <weights> --data <coco-root> --coco91 --aspect [--im
 - **Deep supervision:** auxiliary per-decoder-layer losses are emitted by the heads
   only in training mode (empty at inference, so eval/postprocess are untouched).
 - **Untrusted inputs:** model files and dataset annotations are parsed defensively
-  (safetensors size/offset guards; COCO `file_name` path-traversal rejection).
+  (.pth zip/pickle parse guards; COCO `file_name` path-traversal rejection).
 - Validated-vs-official mAP is measured at `--imgsz 800`.

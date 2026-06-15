@@ -17,7 +17,7 @@
 #include <vector>
 
 #include "detr/onnxexport/detr_export.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/tensor.hpp"
 
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
   const auto arch = ArchFromYaml(cfg);
   const std::string model = (cfg && cfg["model"]) ? cfg["model"].as<std::string>() : "detr";
 
-  auto weights = detr::weights::LoadSafetensors(dir + "/weights.safetensors");
+  auto weights = detr::weights::LoadPth(dir + "/weights.pth");
   if (!weights) {
     std::fprintf(stderr, "weights: %s\n", weights.error().message.c_str());
     return 1;
@@ -103,10 +103,10 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  auto in_sd = detr::weights::LoadSafetensors(dir + "/input.safetensors");
-  auto gold = detr::weights::LoadSafetensors(dir + "/golden.safetensors");
+  auto in_sd = detr::weights::LoadPth(dir + "/input.pth");
+  auto gold = detr::weights::LoadPth(dir + "/golden.pth");
   if (!in_sd || !gold) {
-    std::fprintf(stderr, "missing input/golden safetensors\n");
+    std::fprintf(stderr, "missing input/golden .pth\n");
     return 1;
   }
   const auto* inp = in_sd->Find("input");

@@ -1,7 +1,7 @@
 // Copyright 2026 detrcpp authors. Apache-2.0.
 //
 // RawTensor: a LibTorch-independent owner of a tensor's dtype, shape, and raw
-// little-endian bytes. The weight-interchange layer (safetensors, .pth) speaks
+// little-endian bytes. The weight-interchange layer (.pth) speaks
 // in RawTensor so it can be built and tested with no LibTorch dependency; a thin
 // optional bridge (detr/weights/torch_bridge.hpp, compiled only with
 // DETR_ENABLE_TORCH) converts RawTensor <-> torch::Tensor.
@@ -17,7 +17,7 @@
 
 namespace detr::weights {
 
-// dtypes named exactly as the safetensors spec encodes them.
+// dtypes named with the canonical short tags (F32, I64, ...).
 enum class DType {
   F64,
   F32,
@@ -52,10 +52,10 @@ constexpr std::size_t DTypeSize(DType d) {
   return 0;
 }
 
-// safetensors dtype string, e.g. DType::F32 -> "F32".
+// Canonical dtype tag, e.g. DType::F32 -> "F32".
 std::string_view DTypeName(DType d);
 
-// Parse a safetensors dtype string. Returns InvalidArgument on unknown names.
+// Parse a canonical dtype tag. Returns InvalidArgument on unknown names.
 core::Result<DType> DTypeFromName(std::string_view name);
 
 struct RawTensor {

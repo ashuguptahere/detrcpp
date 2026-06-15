@@ -2,14 +2,9 @@
 
 #include "detr/weights/torch_bridge.hpp"
 
-#include "detr/weights/legacy_pickle.hpp"
-
-#include <caffe2/serialize/inline_container.h>
 #include <fmt/format.h>
-#include <torch/csrc/jit/serialization/import_read.h>
 
 #include <cstring>
-#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -172,47 +167,5 @@ Result<LoadReport> LoadStateDictInto(torch::nn::Module& module, const StateDict&
   return rep;
 }
 
-Result<StateDict> LoadPth(const std::filesystem::path& path) {
-  // Reads a Python torch.save(state_dict) zip in pure C++ (no Python) via
-  // LibTorch's own zip reader + unpickler — the same machinery torch::jit::load
-  // uses. The modern format stores the pickle at "data.pkl" and tensor storages
-  // under "data/<id>".
-  {
-    std::ifstream probe(path, std::ios::binary);
-    char head[2] = {0, 0};
-    probe.read(head, 2);
-    // Modern torch.save is a zip ("PK"). 0x80 is a raw pickle PROTO opcode = the
-    // legacy (pre-torch-1.6) format, which LibTorch C++ cannot load — use our own
-    // pure-C++ unpickler (which itself returns Unsupported on anything exotic).
-    if (static_cast<unsigned char>(head[0]) == 0x80) {
-      return LoadLegacyPth(path);
-    }
-  }
-  try {
-    caffe2::serialize::PyTorchStreamReader reader(path.string());
-    torch::IValue value = torch::jit::readArchiveAndTensors(
-        /*archive_name=*/"data", /*pickle_prefix=*/"", /*tensor_prefix=*/"data/",
-        /*type_resolver=*/std::nullopt, /*obj_loader=*/std::nullopt,
-        /*device=*/torch::kCPU, reader);
-
-    if (!value.isGenericDict()) {
-      return Err(ErrorCode::Unsupported, fmt::format("'{}' is not a state_dict (root is {})",
-                                                     path.string(), value.tagKind()));
-    }
-    StateDict sd;
-    for (const auto& entry : value.toGenericDict()) {
-      if (!entry.key().isString() || !entry.value().isTensor()) {
-        continue;
-      }
-      auto raw = FromTensor(entry.value().toTensor());
-      if (raw) {
-        sd.Set(entry.key().toStringRef(), std::move(*raw));
-      }
-    }
-    return sd;
-  } catch (const std::exception& e) {
-    return Err(ErrorCode::Io, fmt::format("reading '{}': {}", path.string(), e.what()));
-  }
-}
 
 }  // namespace detr::weights

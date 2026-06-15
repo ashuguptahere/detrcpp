@@ -2,7 +2,7 @@
 //
 // Parity helper (torch side). Builds a DETR from a YAML config, runs a fixed
 // seeded input through the eager LibTorch model, and writes the weights, the
-// input, and the reference outputs as .safetensors so the torch-free ONNX parity
+// input, and the reference outputs as .pth so the torch-free ONNX parity
 // tool can export the same weights and compare. Built with DETR_ENABLE_TORCH.
 
 #include <torch/torch.h>
@@ -14,7 +14,7 @@
 
 #include "detr/models/detr.hpp"
 #include "detr/models/registry.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/state_dict.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
@@ -48,14 +48,14 @@ int main(int argc, char** argv) {
   std::filesystem::create_directories(out, ec);
 
   auto weights = detr::weights::StateDictFromModule(*model);
-  if (auto r = detr::weights::SaveSafetensors(out + "/weights.safetensors", weights); !r) {
+  if (auto r = detr::weights::SavePth(out + "/weights.pth", weights); !r) {
     std::fprintf(stderr, "%s\n", r.error().message.c_str());
     return 1;
   }
 
   detr::weights::StateDict in_sd;
   in_sd.Set("input", *detr::weights::FromTensor(input));
-  if (auto r = detr::weights::SaveSafetensors(out + "/input.safetensors", in_sd); !r) {
+  if (auto r = detr::weights::SavePth(out + "/input.pth", in_sd); !r) {
     std::fprintf(stderr, "save input: %s\n", r.error().message.c_str());
     return 1;
   }
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
   detr::weights::StateDict golden;
   golden.Set("logits", *detr::weights::FromTensor(outputs.logits));
   golden.Set("boxes", *detr::weights::FromTensor(outputs.boxes));
-  if (auto r = detr::weights::SaveSafetensors(out + "/golden.safetensors", golden); !r) {
+  if (auto r = detr::weights::SavePth(out + "/golden.pth", golden); !r) {
     std::fprintf(stderr, "save golden: %s\n", r.error().message.c_str());
     return 1;
   }

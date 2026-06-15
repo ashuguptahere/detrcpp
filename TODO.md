@@ -48,11 +48,11 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] Format auto-detection (`DetectFormat`) + `LoadDataset` dispatch
 
 ### Weight interop (foundational — DONE, proven against LibTorch 2.5.1)
-- [x] safetensors reader/writer (Python-free, bidirectional with upstream)
+- [x] Torch-free .pth reader/writer (miniz + restricted pickle VM, bidirectional with torch.save)
 - [x] `StateDict` + `RawTensor` (LibTorch-independent)
 - [x] `WeightRemapper` (adapt upstream keys without changing models)
 - [x] torch bridge: `StateDictFromModule` / `LoadStateDictInto` (by name + report)
-- [ ] Direct `.pth` reader in pure C++ (currently a clear stub → use safetensors)
+- [x] Direct `.pth` reader/writer in pure C++ (miniz + pickle VM; safetensors removed)
 - [ ] Per-variant remappers validated against official checkpoints
 
 ### Models
@@ -116,7 +116,7 @@ ordered for shippability; items inside a phase can parallelize.
 - [x] `io::source` — file / directory / glob (url/rtsp/webcam = Phase 3)
 - [x] `io::image` (stb load/save/draw) + `infer::preprocess`/`postprocess`
 - [x] `detrcpp --predict` — infer, threshold, draw boxes, save annotated PNGs
-- [x] `detrcpp --export safetensors` — consolidated weights (Python-free)
+- [x] `detrcpp --export pth` — consolidated weights (Python-free)
 - [x] **Hand-written ONNX exporter** (no Python; user decision 2026-06-08):
   - [x] `onnxexport::GraphBuilder` over official onnx lib + `onnx::checker`
   - [x] `ExportDetr(arch, StateDict)` — full DETR graph (MHA decomposed, pos-enc
@@ -160,17 +160,17 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **DETR**            | ✅ done (detection) | Apache-2.0 | facebookresearch/detr | R50, R101, R50-DC5, R101-DC5 (+3 *panoptic seg* models — need a mask head, not done) |
 | **Deformable-DETR** | ✅ done | Apache-2.0 | fundamentalvision/Deformable-DETR | R50 (+ single-scale / box-refine / two-stage) |
 | **Conditional-DETR**| ✅ done | Apache-2.0 | Atten4Vis/ConditionalDETR | R50, R101, R50-DC5, R101-DC5 |
-| **Anchor-DETR**     | ⬜ todo | Apache-2.0 | megvii-research/AnchorDETR | R50, R50-DC5 |
+| **Anchor-DETR**     | ✅ validated | Apache-2.0 | megvii-research/AnchorDETR | **R50 (C5) 0.419, R50-DC5 0.440** — anchor-point queries + Row-Column Decoupled Attention (RCDA) |
 | **DAB-DETR**        | ✅ done | Apache-2.0 | IDEA-Research/DAB-DETR | R50, R50-DC5, R101 (+ DAB-Deformable) |
 | **DN-DETR**         | ✅ done | Apache-2.0 | IDEA-Research/DN-DETR | R50, R50-DC5 |
 | **DINO**            | ✅ done | Apache-2.0 | IDEA-Research/DINO | R50 (4-scale/5-scale), Swin-L |
 | **RT-DETR**         | ✅ validated | Apache-2.0 | lyuwenyu/RT-DETR | **S**=R18, **M**=R34, **L**=R50, **X**=R101 (+ our **N**=R18@128) |
 | **RT-DETRv2**       | ✅ validated | Apache-2.0 | lyuwenyu/RT-DETR | **S/M/L/X** (R18/R34/R50/R101) |
 | **RT-DETRv3**       | ⚠️ blocked | Apache-2.0 | clxia12/RT-DETRv3 | S/M/L/X — **no trained detector weights published** (Paddle; README .pdparams 404s) |
-| **LW-DETR**         | 🔄 in progress | Apache-2.0 | Atten4Vis/LW-DETR | **N**=tiny, **S**=small, **M**=medium, **L**=large, **X**=xlarge (backbone ✅; L/X = multi-scale projector) |
-| **D-FINE**          | ⬜ next | Apache-2.0 | Peterande/D-FINE | **N/S/M/L/X** (+ Obj365-pretrained) — FDR box head + GO-LSD |
-| **DEIM**            | ⬜ todo | Apache-2.0 | Intellindust-AI-Lab/DEIM | **S/M/L/X** — DEIM-D-FINE & DEIM-RT-DETRv2 (a *training* recipe over those graphs) |
-| **DEIMv2**          | ⬜ todo | Apache-2.0 | Intellindust-AI-Lab/DEIMv2 | **Atto/Femto/Pico/N/S/M/L/X** (DINOv3 backbone) |
+| **LW-DETR**         | ✅ validated | Apache-2.0 | Atten4Vis/LW-DETR | **N**=tiny, **S**=small, **M**=medium, **L**=large, **X**=xlarge (all 5 validated vs native weights) |
+| **D-FINE**          | ✅ validated | Apache-2.0 | Peterande/D-FINE | **N/S/M/L/X** + Obj365→COCO `-obj` (all 9 validated, FDR box head) |
+| **DEIM**            | ✅ validated | Apache-2.0 | Intellindust-AI-Lab/DEIM | **DEIM-D-FINE n/s/m/l/x** (`deim-*`, SiLU decoder) + **DEIM-RT-DETRv2 s/m/l** (`deim-rt-*`, SiLU + 3-layer query_pos_head) — all validated |
+| **DEIMv2**          | ✅ done | Apache-2.0 | Intellindust-AI-Lab/DEIMv2 | **All 8 ✅ validated**: `deimv2-n` (RMSNorm+SwiGLU decoder + sum/CSPLayer2 neck), `atto/femto/pico` (lite encoder + micro HGNetv2; 0.236/0.308/0.383 @ 320/416/640), `s/m` (DINOv3-STA RoPE ViT-Tiny; 0.505/0.528), `l/x` (Meta DINOv3 ViT-S/16 & S+/16 + register tokens/LayerScale/SwiGLU; 0.557/0.576). |
 | **Efficient DETR**  | ❌ no code | (paper-only) | — none — | R50/R101 in paper; **no public code/weights → cannot integrate** |
 | **Sparse DETR**     | ⬜ todo | Apache-2.0 | kakaobrain/sparse-detr | R50, Swin-T |
 | **Lite DETR**       | ⬜ todo | Apache-2.0 | IDEA-Research/Lite-DETR | R50, Swin-T, Swin-L |
@@ -178,7 +178,7 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **RF-DETR**         | ✅ nano validated | Apache-2.0 | roboflow/rf-detr | **N/S/M/B/L/X** (nano faithful+validated; S/M/B/L/X = placeholder ViT) |
 
 Priority: classic line [DETR/Deformable/Conditional/DAB/DN/DINO ✅] → RT-DETR(v2) ✅ →
-RF-DETR ✅ → **LW-DETR [🔄] → D-FINE [next] → DEIM/DEIMv2 → Anchor/Sparse/Lite/Salience-DETR**.
+RF-DETR ✅ → LW-DETR ✅ → D-FINE ✅ → DEIM ✅ → DEIMv2 ✅ → Anchor-DETR ✅ → **Sparse/Lite/Salience-DETR [next]**.
 (RT-DETRv3 stays blocked on weights; Efficient DETR dropped for lack of code.)
 
 ### TensorRT

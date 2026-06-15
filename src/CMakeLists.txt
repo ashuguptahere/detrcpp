@@ -27,14 +27,15 @@ set_target_properties(detr_core PROPERTIES
 
 add_library(detr::core ALIAS detr_core)
 
-# detr_weights — framework-independent weight interchange (safetensors, state
+# detr_weights — framework-independent weight interchange (.pth, state
 # dict, key remapping). No LibTorch dependency, so it builds and tests anywhere;
 # the optional torch bridge is added separately when DETR_ENABLE_TORCH is on.
 add_library(detr_weights STATIC
   weights/tensor.cpp
   weights/state_dict.cpp
-  weights/safetensors.cpp
   weights/legacy_pickle.cpp
+  weights/pth.cpp
+  weights/zip.cpp
   weights/remapper.cpp
 )
 
@@ -49,6 +50,7 @@ target_link_libraries(detr_weights
     detr_core
   PRIVATE
     simdjson::simdjson
+    miniz
     fmt::fmt
     detr_warnings
 )
@@ -158,8 +160,10 @@ if(DETR_ENABLE_ONNX)
       detr_core
       detr_weights
     PRIVATE
-      ONNX::onnx
-      ONNX::onnx_proto
+      # FetchContent's onnx exports the bare `onnx` / `onnx_proto` targets (the
+      # ONNX::* namespaced aliases only exist via an installed find_package config).
+      onnx
+      onnx_proto
       fmt::fmt
   )
   target_compile_definitions(detr_onnx
@@ -209,6 +213,11 @@ if(DETR_ENABLE_TORCH)
     models/deform_head.cpp
     models/cond_decoder.cpp
     models/resnet.cpp
+    models/hgnetv2.cpp
+    models/dfine_encoder.cpp
+    models/dfine_decoder.cpp
+    models/dinov3_sta.cpp
+    models/dfine.cpp
     models/vit.cpp
     models/dinov2_windowed.cpp
     models/lw_detr_vit.cpp
@@ -216,6 +225,7 @@ if(DETR_ENABLE_TORCH)
     models/rf_detr_real.cpp
     models/detr.cpp
     models/detr_r50.cpp
+    models/anchor_detr.cpp
     models/deformable_detr.cpp
     models/rt_detr.cpp
     models/conditional_detr.cpp

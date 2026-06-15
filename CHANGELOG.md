@@ -10,7 +10,158 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ## [Unreleased]
 
+### Changed
+- **Weight format is now PyTorch `.pth` everywhere; safetensors removed.** detrcpp
+  reads and writes the authors' native `.pth` (`torch.save`) directly — no safetensors,
+  no LibTorch for I/O, no Python. New torch-free reader/writer in the `detr_weights`
+  library: vendored **miniz** (MIT, the ZIP container `torch.save` uses) + a restricted
+  pickle VM (shared with the legacy reader via `weights/pickle_vm.hpp`) that emits/parses
+  the exact `_rebuild_tensor_v2` layout. `LoadPth` sniffs modern-zip vs legacy-pickle;
+  `SavePth` output is byte-loadable by Python `torch.load(weights_only=True)`. Migrated
+  every call site: the CLI `--weights` / `--export pth`, training checkpoints
+  (`<tag>.pth` / `<tag>.model.pth`; train-state scalars ride as reserved rank-0 tensors),
+  and the torch-free ONNX exporter / parity tools. Removed `weights/safetensors.{hpp,cpp}`
+  and the LibTorch-only `.pth` reader from `torch_bridge.cpp`. The reader stays safe on
+  untrusted files (the VM errors on unknown opcodes; never executes arbitrary pickle).
+
 ### Added
+- **Anchor-DETR (`anchor-detr` / `anchor-detr-dc5`), validated on COCO.** A from-scratch
+  port of megvii-research/AnchorDETR (Apache-2.0): a new model (`anchor_detr.{hpp,cpp}`)
+  whose object queries are **anchor points** — a learned set of 300 2D positions, each
+  instantiated with 3 content patterns (900 queries), with the box head predicting an
+  offset from the anchor. Its other novelty is **Row-Column Decoupled Attention (RCDA)**,
+  which factorizes the H*W self/cross-attention into a row (over W) and a column (over H)
+  softmax whose outer product weights the value — `out = Σ_{h,w} attn_col·attn_row·v`,
+  O(L*(H+W)) instead of O(L*H*W). Single feature level (C5 or DC5 ResNet-50), sigmoid-
+  focal head, ImageNet-norm aspect-preserving eval. Reuses the existing `ResNet` backbone.
+  End-to-end parity vs the native model is exact (logit max|diff| ~4e-5, box ~4e-6, loads
+  0 missing/0 unexpected). COCO `val2017` vs official: `anchor-detr` **0.419** (official
+  0.421), `anchor-detr-dc5` **0.440** (0.443). Eval: `--coco91 --aspect --imgsz 800`.
+
+### Changed
+
+### Fixed
+- **DC5 ResNet dilation now matches torchvision.** A dilated stage (the DC5 variants'
+  `layer4`) was applying `dilation=2` to *every* block; torchvision applies the new
+  dilation only to the 2nd+ blocks, leaving the first block at dilation 1 while it
+  strides. The first block's 3x3 was therefore over-padding, corrupting the feature-map
+  borders (max |Δ| ~5 at the edges). Fixed in `MakeBottleneckLayer` / `MakeBasicLayer`;
+  the DC5 backbone is now byte-exact vs torchvision (verified via Anchor-DETR-DC5, whose
+  backbone feature matches to 0). Affects all `*-dc5` models (more faithful; non-DC5
+  models unchanged).
+
+## [0.18.0] - 2026-06-15
+
+### Added
+- **DEIMv2 — the N variant (`deimv2-n`), validated on COCO.** First milestone of the
+  DEIMv2 (Intellindust-AI-Lab/DEIMv2) port. DEIMv2 evolves D-FINE with a new decoder
+  and neck fusion; the N size reuses D-FINE-N's HGNetv2-B0 backbone. The DEIMv2 decoder
+  (a `deimv2` mode on `DFINETransformer`) swaps LayerNorm→**RMSNorm** and the FFN→
+  **SwiGLU** (`swish_ffn`), drops the `enc_output` projection (memory is scored
+  directly), and uses a 3-layer `query_pos_head` — the FDR distribution math, deformable
+  cross-attention, LQE and query selection are unchanged. The DEIMv2 neck (a `deimv2`
+  mode on `DfHybridEncoder`) **sums** upsample+feat_low instead of concatenating
+  (RepNCSPELAN4 `c1 = hidden`) and uses **CSPLayer2** (RepC3-style). New modules
+  `DfRMSNorm` / `DfSwiGLU` / `DfCSPLayer2`, all flags default off (D-FINE/DEIM unchanged;
+  6 D-FINE parity tests pass). `deimv2-n` loads 590/590 and scores **0.427** on COCO
+  `val2017` (official 0.430). s/m/l/x (ViT-Tiny / DINOv3-STA backbone) are follow-ups.
+- **DEIMv2 — the micro variants (`deimv2-atto` / `deimv2-femto` / `deimv2-pico`),
+  validated on COCO.** The ultra-light DEIMv2 sizes: a 3-stage **micro HGNetv2**
+  (Atto/Femto/Pico) feeding a single feature into the new **`DfLiteEncoder`** (a 1→2-scale
+  bi-fusion neck: input proj → downsample → GAP fusion → FPN/PAN blocks) and the DEIMv2
+  decoder running with `use_gateway=false` (plain RMSNorm `norm2` instead of the gate) and
+  per-level `num_points=[4,2]`. Each evaluates at its own native resolution (`atto` 320,
+  `femto` 416, `pico` 640). New backbone + lite-encoder + decoder parity tests pass with
+  `max|diff| = 0` (backbone/encoder) and ~1e-6 (decoder). Scores on COCO `val2017`:
+  `deimv2-atto` **0.236** (official 0.238), `deimv2-femto` **0.308** (0.310),
+  `deimv2-pico` **0.383** (0.385).
+
+- **DEIMv2 — s/m (`deimv2-s` / `deimv2-m`), validated on COCO.** The DINOv3-STA sizes:
+  a new **DINOv3-STA backbone** (`dinov3_sta.{hpp,cpp}`) — a RoPE ViT-Tiny (the DEIMv2
+  authors' distilled `vit_tiny`/`vit_tinyplus`, 2D rotary position embedding, cls token)
+  whose three intermediate patch-token maps are resampled to strides 8/16/32, fused with a
+  lite **SpatialPriorModule** (conv stem on the raw image) and a 1x1 conv + BatchNorm per
+  level. Feeds the DEIMv2 HybridEncoder neck (`version=deim` → **RepNCSPELAN5** fuse block,
+  Identity `input_proj` when in==hidden) and the DEIMv2 decoder (gateway, 3 levels). These
+  sizes use **ImageNet normalization** (unlike the raw-`[0,1]` HGNetv2 sizes). New backbone
+  parity test passes (max|diff| ~1e-5). COCO `val2017` vs official: `deimv2-s` **0.505**
+  (official 0.509), `deimv2-m` **0.528** (0.530).
+- **DEIMv2 — l/x (`deimv2-l` / `deimv2-x`), validated on COCO.** The DINOv3-STA large sizes
+  add a **Meta DINOv3 ViT** backbone (`DinoV3Vit`) to `dinov3_sta`: ViT-S/16 (`deimv2-l`) and
+  ViT-S+/16 (`deimv2-x`) with 2D RoPE, **4 register/storage tokens**, **LayerScale**, a
+  masked-K-bias qkv (folded into the bias at conversion), a final LayerNorm on each returned
+  intermediate, and a **SwiGLU** FFN for x (GELU MLP for l). Same STA adapter + DEIMv2 neck +
+  decoder as s/m. Backbone parity tests pass (max|diff| ~2-4e-5). COCO `val2017` vs official:
+  `deimv2-l` **0.557** (official 0.560), `deimv2-x` **0.576** (0.578). This completes the
+  DEIMv2 family (n, atto/femto/pico, s/m/l/x).
+
+### Changed
+
+### Fixed
+- **DEIMv2 decoder: compute `query_pos_embed` once, not per layer.** The DEIMv2
+  `DEIMTransformer` derives the query position embedding from the *initial* reference
+  points once before the decoder loop and reuses it for every layer; base D-FINE/DEIM
+  recompute it each layer from the refined references. The C++ decoder was recomputing it
+  for all `deimv2` models — invisible on the well-converged `deimv2-n` but catastrophic on
+  the micro sizes (`deimv2-atto` 0.048→0.236). Gated on `cfg.deimv2`; D-FINE/DEIM unchanged.
+
+## [0.17.0] - 2026-06-15
+
+### Added
+- **DEIM-RT-DETRv2 (`deim-rt-{s,m,l}`), validated on COCO.** The second DEIM family —
+  the RT-DETRv2 graph trained with the DEIM recipe. Beyond the SiLU decoder activation
+  (as in DEIM-D-FINE), DEIM widens the RT-DETRv2 `query_pos_head` to a 3-layer
+  `MLP(4,d,d,3)` (vs RT-DETR's 2-layer `MLP(4,2d,d,2)`). Both are flipped by a `deim`
+  flag on the shared deformable head (`BuildDeformDetectHead` / `Mlp` /
+  `DeformDecoderLayer`), default off so rt-detr / rt-detrv2 / rt-detrv3 / rf-detr / dino
+  are byte-unchanged. `deim-rt-{s,m,l}` (R18/R34/R50) load DEIM-RT-DETRv2 checkpoints
+  via the RT-DETRv2 native converter; COCO `val2017` vs the native DEIM weights (0
+  missing/unexpected): `deim-rt-s` **0.489** (official 0.490), `deim-rt-m` **0.507**
+  (0.509), `deim-rt-l` **0.541** (0.543). See `VALIDATION.md`.
+- **DEIM (`deim-{n,s,m,l,x}`), validated on COCO.** DEIM
+  (Intellindust-AI-Lab/DEIM) is a training recipe over the D-FINE graph, so its
+  DEIM-D-FINE checkpoints load into the existing D-FINE model. The one architectural
+  change the DEIM recipe makes is the decoder **activation: SiLU** (D-FINE uses ReLU)
+  — across the decoder FFN, the LQE head, and every bbox/query MLP head; this is now a
+  `silu` flag threaded through `DFINETransformer` (`DfMLP`/`DfDecLayer`/`DfLQE`) and a
+  `decoder_silu` config knob (D-FINE keeps ReLU). Registered `deim-{n,s,m,l,x}` (the
+  per-size D-FINE config with `decoder_silu=true`), reusing the D-FINE converter and
+  eval recipe. COCO `val2017` vs the native DEIM weights (all 0 missing/unexpected),
+  each within ~0.3 AP of the published figure: `deim-n` **0.427** (off 0.430),
+  `deim-s` **0.487** (0.487), `deim-m` **0.525** (0.527), `deim-l` **0.545** (0.547),
+  `deim-x` **0.563** (0.565) — ~0.4 AP over the matching base D-FINE size. See
+  `VALIDATION.md`.
+
+### Changed
+
+### Fixed
+
+## [0.16.0] - 2026-06-15
+
+### Added
+- **D-FINE — the full size matrix (`dfine-{n,s,m,l,x}` + `dfine-{s,m,l,x}-obj`),
+  validated on COCO.** A from-scratch port of Peterande/D-FINE (Apache-2.0): an HGNetv2
+  backbone (`models::HgNetV2`, PPHGNetV2 B0/B2/B4/B5 — stem + HG stages with light/plain
+  blocks, squeeze-excite aggregation, optional LearnableAffineBlock) → a HybridEncoder
+  neck (`models::DfHybridEncoder` — AIFI + CCFM FPN/PAN, with YOLOv9 `RepNCSPELAN4`
+  fusion and `SCDown` downsample) → the FDR decoder (`models::DFINETransformer`). The
+  decoder's novelty, Fine-grained Distribution Refinement, is reproduced exactly: each
+  layer predicts a per-edge softmax distribution over `reg_max+1` bins, integrated
+  against the non-uniform weighting `W(n)` into edge distances and decoded with
+  `distance2bbox`, refined residually across layers, with a gated self/cross-attention
+  fusion and an LQE localization-quality term; the deformable cross-attention is
+  D-FINE's stripped form (sampling offsets + weights only, value pre-split). Each
+  component reproduces the authors' own model to fp32 noise (`HgNetV2Parity` exact,
+  `DfHybridEncoderParity` / `DFINETransformerParity` ~1e-5; both the n (2-level, uniform
+  points) and l (3-level, `[3,6,3]`) topologies). RT-DETR-style eval recipe (contiguous
+  80-class sigmoid head, raw-`[0,1]` square resize, no ImageNet norm, `--imgsz 640`).
+  COCO `val2017` vs the **native** `Peterande/D-FINE` `.pth` (all 0 missing/unexpected),
+  every size within ~0.3 AP of the published figure: `dfine-n` **0.426** (off 0.428),
+  `dfine-s` **0.483** (0.485), `dfine-m` **0.520** (0.523), `dfine-l` **0.537** (0.540),
+  `dfine-x` **0.555** (0.558); the Objects365→COCO `-obj` variants `dfine-s-obj`
+  **0.504** (0.507), `dfine-m-obj` **0.549** (0.551), `dfine-l-obj` **0.570** (0.573),
+  `dfine-x-obj` **0.591** (0.593). D-FINE-X is the one size whose neck (384) is wider
+  than its decoder (256), re-projected by the decoder's `input_proj`. See `VALIDATION.md`.
 - **LW-DETR ViT backbone (`models::LwDetrViT`)** — first stage of the faithful
   LW-DETR port (Atten4Vis/LW-DETR). A plain windowed ViT (CAEv2-style): conv
   patch-embed + bicubic absolute pos-embed (no cls token), interleaved
@@ -27,7 +178,30 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   for RF-DETR, BatchNorm for LW-DETR). The whole LW-DETR-medium model loads the
   official weights 1:1 (329/329, 0 missing/unexpected) and reproduces the HF reference
   to fp32 noise — token-aligned 300/300, box/logit p90 2.4e-5 / 1.0e-4, max 1.4e-3
-  (`LwDetrViTParity.FullMediumEndToEnd`). Registry + COCO validation next.
+  (`LwDetrViTParity.FullMediumEndToEnd`).
+- **LW-DETR single-scale matrix registered + COCO-validated** — `lw-detr-{tiny,small,
+  medium}` registered (each a `RfDetrRealConfig`: tiny = ViT-Ti / 6 layers / 3 features
+  / 100 queries; small = ViT-Ti / 10 layers; medium = ViT-S / 10 layers) and validated
+  on full COCO `val2017` against the **native `xbsu/LW-DETR` `.pth`** (the authors' own
+  weights, 0 missing/unexpected): `lw-detr-tiny` **0.428** (official 0.426),
+  `lw-detr-small` **0.479** (0.480), `lw-detr-medium` **0.523** (0.525) — all within
+  ~0.2 AP. Native converter `lwdetr_convert_native.py` (splits the fused backbone qkv +
+  decoder in_proj). Eval: `--coco91 --imgsz 640` (ImageNet-norm square, no `--aspect`).
+  See `VALIDATION.md`.
+- **LW-DETR large/xlarge (multi-scale projector) registered + COCO-validated** —
+  `lw-detr-{large,xlarge}` add the multi-scale projector (`LwDetrMultiScaleProjector`):
+  per output scale (P3 via 2× `ConvTranspose` upsample, P5 via stride-2 `ConvX`
+  downsample) each backbone feature is resampled, concatenated, and fused by a C2f +
+  channel-LayerNorm. The two-stage query selection now spans the concatenated levels
+  with the invalid-grid-anchor masking (proposals outside `(0.01, 0.99)` zero their
+  object query / proposal and force their class score to `-inf` — needed once the P3
+  80×80 grid reaches the image edge), the deformable cross-attention runs over both
+  levels (`d_model` 384, 2 levels × 4 points, sa/ca heads 12/24), and the decoder
+  reference points replicate across levels. large = ViT-S / xlarge = ViT-B backbone.
+  Validated on full COCO `val2017` against the **native `xbsu/LW-DETR` `.pth`** (0
+  missing/unexpected): `lw-detr-large` **0.558** (official 0.561), `lw-detr-xlarge`
+  **0.582** (0.583). End-to-end fp32 parity vs the authors' own model (token-aligned
+  300/300, box p90 ≤ 4e-4): `LwDetrViTParity.Full{Large,XLarge}EndToEnd`.
 
 ### Changed
 

@@ -91,14 +91,14 @@ and run with `--device cuda:0`.
 
 ```sh
 detrcpp --train   -m rt-detr-l -s 42 --data path/to/coco -e 12 [-d cuda:0]
-detrcpp --val     -m detr-r50  -w weights.safetensors --data coco --coco91 --aspect
-detrcpp --predict -m detr-r50  -w weights.safetensors -i image.jpg --conf 0.7
-detrcpp --export  onnx -m detr -w weights.safetensors      # via detrcpp-export
+detrcpp --val     -m detr-r50  -w weights.pth --data coco --coco91 --aspect
+detrcpp --predict -m detr-r50  -w weights.pth -i image.jpg --conf 0.7
+detrcpp --export  onnx -m detr -w weights.pth      # via detrcpp-export
 detrcpp --list-models | --version | --help
 ```
 
-- `-w` accepts `.safetensors` or modern `.pth` (auto-detected). Legacy (pre-1.6)
-  `.pth` is detected and reported (no C++ loader exists yet).
+- `-w` accepts a PyTorch `.pth`/`.pt` — both the modern `torch.save` zip and the
+  legacy (pre-1.6) pickle, auto-detected and read in pure C++ (no LibTorch, no Python).
 - `--coco91` evaluates with raw COCO-91 class ids (for official DETR weights);
   `--aspect` uses DETR's aspect-preserving eval resize.
 - Eval reports `mAP50-95`, `mAP50`, `mAP75`, and the small/medium/large breakdown.
@@ -124,8 +124,9 @@ detrcpp --list-models | --version | --help
 - **Shared building blocks**: a torchvision-compatible ResNet (BasicBlock +
   Bottleneck), the DETR transformer head, multi-scale deformable attention, and a
   softmax-or-sigmoid/focal classification path selected per model.
-- **Weights**: `.safetensors` as the Python-free interchange, with an
-  `UpstreamRemapper` per model to load original-repo checkpoints 1:1.
+- **Weights**: PyTorch `.pth` as the Python-free interchange — read/written without
+  LibTorch via vendored miniz (the zip container `torch.save` uses) and a restricted
+  pickle VM, with an `UpstreamRemapper` per model to load original-repo checkpoints 1:1.
 - **ONNX**: a hand-written C++ emitter (no `torch.onnx`, no Python) gated by a
   numeric onnxruntime parity test.
 

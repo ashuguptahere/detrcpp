@@ -5,7 +5,7 @@
 // positional encoding (baked as a constant), transformer encoder/decoder with
 // multi-head attention decomposed into MatMul/Softmax/Transpose/Reshape, learned
 // object queries, and the class/box heads. Weights come from a StateDict (loaded
-// from .safetensors) — no LibTorch, no Python. Compiled with DETR_ENABLE_ONNX.
+// from a .pth) — no LibTorch, no Python. Compiled with DETR_ENABLE_ONNX.
 
 #pragma once
 

@@ -2,7 +2,7 @@
 //
 // StateDict: an insertion-ordered map of parameter-name -> RawTensor, plus
 // optional string metadata. This is the in-memory form of a model's weights,
-// independent of any framework. Loaders (safetensors, .pth) produce one;
+// independent of any framework. Loaders (.pth — modern zip or legacy pickle) produce one;
 // savers consume one; the torch bridge converts it to/from a live module.
 //
 // Insertion order is preserved so that round-tripping weights is deterministic
@@ -37,7 +37,7 @@ class StateDict {
   std::size_t Size() const { return order_.size(); }
   bool Empty() const { return order_.empty(); }
 
-  // String metadata (round-trips through safetensors' "__metadata__").
+  // String metadata (an in-memory side-channel; .pth does not serialize it).
   void SetMeta(std::string key, std::string value);
   std::optional<std::string> GetMeta(std::string_view key) const;
   const std::map<std::string, std::string>& Meta() const { return meta_; }

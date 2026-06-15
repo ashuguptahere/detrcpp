@@ -41,6 +41,7 @@ struct Config {
   int imgsz{640};
   int dense_o2m_k{0};        // RT-DETRv3 hierarchical dense supervision (0 = off)
   bool discrete_sample{false};  // RT-DETRv2 round-to-nearest deformable sampling
+  bool deim{false};  // DEIM-RT-DETRv2 head: SiLU activation + 3-layer query_pos_head
 };
 
 struct BackboneSpec {
@@ -84,6 +85,7 @@ Config ReadConfig(const YAML::Node& c) {
   x.imgsz = Get(c, "imgsz", x.imgsz);
   x.dense_o2m_k = Get(c, "dense_o2m_k", x.dense_o2m_k);
   x.discrete_sample = Get(c, "discrete_sample", x.discrete_sample);
+  x.deim = Get(c, "deim", x.deim);
   return x;
 }
 
@@ -241,7 +243,7 @@ class RtDetrImpl : public IModel {
     // Shared query selection + deformable decoder.
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
-                                  cfg.num_queries, cfg.discrete_sample);
+                                  cfg.num_queries, cfg.discrete_sample, cfg.deim);
     if (denoising_) {
       // RT-DETR-CDN: content embedding for denoising queries (+1 unused row).
       // Registered only for rt-detr-cdn, so plain rt-detr stays byte-identical.
@@ -399,8 +401,9 @@ constexpr SizeSpec kSizes[] = {
 constexpr const char* kVersions[] = {"rt-detr", "rt-detrv2", "rt-detrv3"};
 constexpr int kDenseV3 = 6;  // RT-DETRv3 one-to-many top-k per GT
 
-void RegisterOne(const std::string& name, const SizeSpec& sz, int dense_k, bool discrete) {
-  auto build = [name, sz, dense_k, discrete](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
+void RegisterOne(const std::string& name, const SizeSpec& sz, int dense_k, bool discrete,
+                 bool deim = false) {
+  auto build = [name, sz, dense_k, discrete, deim](const YAML::Node& cfg) -> std::shared_ptr<IModel> {
     Config c = ReadConfig(cfg);
     if (!(cfg && cfg["backbone"])) {
       c.backbone = sz.backbone;
@@ -426,6 +429,9 @@ void RegisterOne(const std::string& name, const SizeSpec& sz, int dense_k, bool 
     if (!(cfg && cfg["discrete_sample"])) {
       c.discrete_sample = discrete;
     }
+    if (!(cfg && cfg["deim"])) {
+      c.deim = deim;
+    }
     c.name = name;
     return std::make_shared<RtDetrImpl>(c);
   };
@@ -434,8 +440,10 @@ void RegisterOne(const std::string& name, const SizeSpec& sz, int dense_k, bool 
   meta.num_classes = 80;
   meta.num_queries = 300;
   meta.focal = true;
+  meta.imagenet_norm = false;
   meta.license = "Apache-2.0";
-  meta.upstream = "https://github.com/lyuwenyu/RT-DETR";
+  meta.upstream = deim ? "https://github.com/Intellindust-AI-Lab/DEIM"
+                       : "https://github.com/lyuwenyu/RT-DETR";
   Registry::Instance().Register(name, meta, std::move(build));
 }
 
@@ -455,6 +463,16 @@ void RegisterRtDetr() {
     }
     // Plain version = the -l (R50) config.
     RegisterOne(ver, {"", "r50", 256, 6, 256, 1024, 1.0}, dense_k, discrete);
+  }
+
+  // DEIM-RT-DETRv2 (Intellindust-AI-Lab/DEIM): the RT-DETRv2 graph trained with the
+  // DEIM recipe — SiLU decoder activation + a 3-layer query_pos_head. S=R18, M=R34,
+  // L=R50. Loads the DEIM-RT-DETRv2 checkpoints into the shared deformable head.
+  for (const auto& sz : kSizes) {
+    if (std::string(sz.tag) == "s" || std::string(sz.tag) == "m" || std::string(sz.tag) == "l") {
+      RegisterOne(std::string("deim-rt-") + sz.tag, sz, /*dense_k=*/0, /*discrete=*/false,
+                  /*deim=*/true);
+    }
   }
 
   // RT-DETR-CDN: RT-DETR (the -l config) + contrastive denoising training. Like

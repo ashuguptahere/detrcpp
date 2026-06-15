@@ -11,8 +11,11 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | Model | mAP50-95 | mAP50 | mAP75 | Official | Eval flags |
 |-------|---------:|------:|------:|---------:|------------|
 | `detr-r50`         | **0.419** | 0.623 | 0.444 | ~0.420 | `--coco91 --aspect --imgsz 800` |
+| `detr-r50-dc5`     | **0.431** | 0.630 | 0.458 | ~0.433 | `--coco91 --aspect --imgsz 800` (loads the original `.pth` directly) |
 | `deformable-detr`  | **0.443** | 0.634 | 0.484 | ~0.445 | `--coco91 --aspect --imgsz 800` |
 | `conditional-detr` | **0.407** | 0.616 | 0.431 | ~0.409 | `--coco91 --aspect --imgsz 800` |
+| `anchor-detr`      | **0.419** | 0.626 | 0.449 | ~0.421 | `--coco91 --aspect --imgsz 800` (R50 C5) |
+| `anchor-detr-dc5`  | **0.440** | 0.644 | 0.474 | ~0.443 | `--coco91 --aspect --imgsz 800` (R50 DC5) |
 | `rt-detr-s`        | **0.463** | 0.635 | 0.502 | ~0.465 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detr-m`        | **0.487** | 0.665 | 0.526 | ~0.489 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detr-l`        | **0.530** | 0.710 | 0.576 | ~0.534 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
@@ -22,11 +25,43 @@ the measured AP matches the published figure within ~0.4. Run on the GPU build
 | `rt-detrv2-l`      | **0.532** | 0.712 | 0.573 | ~0.534 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rt-detrv2-x`      | **0.542** | 0.725 | 0.585 | ~0.543 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
 | `rf-detr-nano`     | **0.482** | 0.672 | 0.516 | 0.484 (AP50 67.6) | `--coco91 --imgsz 384` (no `--aspect`) |
+| `lw-detr-tiny`     | **0.428** | 0.606 | 0.459 | ~0.426 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `lw-detr-small`    | **0.479** | 0.666 | 0.516 | ~0.480 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `lw-detr-medium`   | **0.523** | 0.717 | 0.564 | ~0.525 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `lw-detr-large`    | **0.558** | 0.742 | 0.608 | ~0.561 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `lw-detr-xlarge`   | **0.582** | 0.766 | 0.632 | ~0.583 | `--coco91 --imgsz 640` (no `--aspect`) |
+| `dfine-n`          | **0.426** | 0.598 | 0.453 | ~0.428 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-s`          | **0.483** | 0.651 | 0.524 | ~0.485 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-m`          | **0.520** | 0.695 | 0.561 | ~0.523 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-l`          | **0.537** | 0.713 | 0.581 | ~0.540 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-x`          | **0.555** | 0.734 | 0.601 | ~0.558 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-s-obj`      | **0.504** | 0.672 | 0.548 | ~0.507 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-m-obj`      | **0.549** | 0.723 | 0.596 | ~0.551 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-l-obj`      | **0.570** | 0.745 | 0.620 | ~0.573 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `dfine-x-obj`      | **0.591** | 0.764 | 0.645 | ~0.593 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-n`           | **0.427** | 0.600 | 0.460 | ~0.430 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-s`           | **0.487** | 0.655 | 0.528 | ~0.487 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-m`           | **0.525** | 0.697 | 0.571 | ~0.527 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-l`           | **0.545** | 0.720 | 0.594 | ~0.547 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-x`           | **0.563** | 0.737 | 0.613 | ~0.565 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-rt-s`        | **0.489** | 0.657 | 0.532 | ~0.490 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-rt-m`        | **0.507** | 0.680 | 0.551 | ~0.509 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deim-rt-l`        | **0.541** | 0.720 | 0.585 | ~0.543 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deimv2-n`         | **0.427** | 0.598 | 0.459 | ~0.430 | `--imgsz 640` (no `--coco91`, no `--aspect`) |
+| `deimv2-atto`      | **0.236** | 0.363 | 0.249 | ~0.238 | `--imgsz 320` (model default; no `--coco91`, no `--aspect`) |
+| `deimv2-femto`     | **0.308** | 0.457 | 0.329 | ~0.310 | `--imgsz 416` (model default; no `--coco91`, no `--aspect`) |
+| `deimv2-pico`      | **0.383** | 0.550 | 0.411 | ~0.385 | `--imgsz 640` (model default; no `--coco91`, no `--aspect`) |
+| `deimv2-s`         | **0.505** | 0.677 | 0.547 | ~0.509 | `--imgsz 640` (DINOv3-STA; ImageNet-norm SQUARE; no `--coco91`, no `--aspect`) |
+| `deimv2-m`         | **0.528** | 0.698 | 0.573 | ~0.530 | `--imgsz 640` (DINOv3-STA; ImageNet-norm SQUARE; no `--coco91`, no `--aspect`) |
+| `deimv2-l`         | **0.557** | 0.730 | 0.607 | ~0.560 | `--imgsz 640` (DINOv3 ViT-S/16; ImageNet-norm SQUARE; no `--coco91`, no `--aspect`) |
+| `deimv2-x`         | **0.576** | 0.750 | 0.631 | ~0.578 | `--imgsz 640` (DINOv3 ViT-S+/16; ImageNet-norm SQUARE; no `--coco91`, no `--aspect`) |
 
-`detr-r50` is loaded from its **legacy (pre-1.6) `.pth`** directly by detrcpp's
-pure-C++ unpickler (no Python, no conversion): the load reports `458 tensors,
-0 missing / 0 unexpected / 0 shape-mismatched`. The other three load from
-safetensors converted from the official Hugging Face checkpoints.
+`detr-r50` / `detr-r50-dc5` load from their **original `.pth`** directly by detrcpp's
+pure-C++ readers (no Python, no conversion): the load reports `458 tensors,
+0 missing / 0 unexpected / 0 shape-mismatched`. The other models load from a
+key-renamed `.pth` produced by a `/tmp` converter from the authors' original weights.
+All weight files detrcpp reads or writes are PyTorch `.pth` (torch.save); there is no
+safetensors anywhere in the pipeline.
 
 > The remaining ~0.1–0.4 AP gap to the published numbers is the stb-vs-PIL image
 > resize interpolation difference (the eval is otherwise pycocotools-faithful:
@@ -41,14 +76,38 @@ are scratch — regenerate them from the Hugging Face source with the listed con
 | Model | Official source | Converter (`python <script>`) | Converted weights (detrcpp-named) |
 |-------|-----------------|-------------------------------|-----------------------------------|
 | `detr-r50`         | facebookresearch DETR (legacy `.pth`)        | none — read directly by the C++ legacy unpickler | `/home/origo/detr-tools/detr-r50-official.pth` |
-| `deformable-detr`  | `SenseTime/deformable-detr` `model.safetensors` | `/tmp/convert_defdetr.py` (in: `/tmp/hf_defdetr.safetensors`) | `/tmp/defdetr_official.safetensors` |
-| `conditional-detr` | `microsoft/conditional-detr-resnet-50`       | `/tmp/convert_cond.py`    | `/tmp/cond_official.safetensors` |
-| `rt-detr-s`        | `PekingU/rtdetr_r18vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r18vd.safetensors` (509 tensors) |
-| `rt-detr-m`        | `PekingU/rtdetr_r34vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r34vd.safetensors` (619 tensors) |
-| `rt-detr-l`        | `PekingU/rtdetr_r50vd`                        | `/tmp/convert_rtdetr.py` (in: `/tmp/hf_rtdetr.safetensors`) | `/tmp/rtdetr_official.safetensors` |
-| `rt-detr-x`        | `PekingU/rtdetr_r101vd`                       | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r101vd.safetensors` (990 tensors) |
-| `rt-detrv2-{s,m,l,x}` | **native** `lyuwenyu/RT-DETR` `.pth` (GitHub releases — see `rtdetrv2_pytorch/README.md`) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/rtdetrv2_{s,m,l,x}_detr.safetensors` (509/619/735/990) |
-| `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.safetensors` (328 tensors) |
+| `deformable-detr`  | `SenseTime/deformable-detr` `model.pth` | `/tmp/convert_defdetr.py` (in: `/tmp/hf_defdetr.pth`) | `/tmp/defdetr_official.pth` |
+| `conditional-detr` | `microsoft/conditional-detr-resnet-50`       | `/tmp/convert_cond.py`    | `/tmp/cond_official.pth` |
+| `rt-detr-s`        | `PekingU/rtdetr_r18vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r18vd.pth` (509 tensors) |
+| `rt-detr-m`        | `PekingU/rtdetr_r34vd`                        | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r34vd.pth` (619 tensors) |
+| `rt-detr-l`        | `PekingU/rtdetr_r50vd`                        | `/tmp/convert_rtdetr.py` (in: `/tmp/hf_rtdetr.pth`) | `/tmp/rtdetr_official.pth` |
+| `rt-detr-x`        | `PekingU/rtdetr_r101vd`                       | `/tmp/convert_rtdetr_size.py <in> <out>` | `/tmp/rtdetr_r101vd.pth` (990 tensors) |
+| `rt-detrv2-{s,m,l,x}` | **native** `lyuwenyu/RT-DETR` `.pth` (GitHub releases — see `rtdetrv2_pytorch/README.md`) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/rtdetrv2_{s,m,l,x}_detr.pth` (509/619/735/990) |
+| `rf-detr-nano`     | `stevenbucaille/rf-detr-nano` (HF mirror of the Roboflow `.pth`) | `/tmp/convert_rfdetr_full.py` | `/tmp/rfdetr_full.pth` (328 tensors) |
+| `lw-detr-{tiny,small,medium}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_*_60e_coco.pth`, the authors') | `/tmp/lwdetr_convert_native.py <in> <out> <num_queries>` | `/tmp/lwdetr_{tiny,small,medium}_native.pth` (261/329/329) |
+| `lw-detr-{large,xlarge}` | **native** `xbsu/LW-DETR` `.pth` (`LWDETR_{large,xlarge}_60e_coco.pth`) | `/tmp/lwdetr_convert_native_full.py <in> <out> <num_queries>` | `/tmp/lwdetr_{large,xlarge}_full_native.pth` (411/435) |
+| `dfine-{n,s,m,l,x}` | **native** `Peterande/D-FINE` `.pth` (GitHub releases `dfine_{n,s,m,l,x}_coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{n,s,m,l,x}_coco.pth` (625/745/986/1166/1434) |
+| `dfine-{s,m,l,x}-obj` | **native** `Peterande/D-FINE` `.pth` (`dfine_{s,m}_obj2coco.pth`, `dfine_l_obj2coco_e25.pth`, `dfine_x_obj2coco.pth`) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/dfine_{s,m,l,x}_obj2coco.pth` |
+| `deim-{n,s,m,l,x}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-D-FINE; Google Drive, see DEIM README) | `/tmp/dfine_convert_full.py <in> <out>` | `/tmp/deim_dfine_{n,s,m,l,x}.pth` (625/745/986/1166/1434) |
+| `deim-rt-{s,m,l}` | **native** `Intellindust-AI-Lab/DEIM` `.pth` (DEIM-RT-DETRv2 R18/R34/R50; Google Drive) | `/tmp/convert_rtdetr_native.py <in> <out>` | `/tmp/deim_rt_r{18,34,50}.pth` (511/621/737) |
+
+`lw-detr-*` uses the authors' own native PyTorch `.pth` (the original Atten4Vis/LW-DETR
+naming); `lwdetr_convert_native.py` (single-scale) and `lwdetr_convert_native_full.py`
+(adds the multi-scale `stages_sampling` + `stages.{C2f,LayerNorm}` projector for
+large/xlarge) split the fused backbone `qkv` and decoder `in_proj` into separate q/k/v
+and map the PResNet-free ViT + C2f projector + two-stage decoder onto detrcpp. Parity
+is checked against the authors' own model run on CPU (the native repo's pure-PyTorch
+deformable path), reproduced to fp32 noise by `LwDetrViTParity.Full*EndToEnd`.
+
+`dfine-*` uses the authors' own native `.pth` (the `Peterande/D-FINE` GitHub releases).
+`dfine_convert_full.py` maps the HGNetv2 backbone (drops `num_batches_tracked` for the
+FrozenBN), the HybridEncoder neck (strips the SCDown `Sequential` wrapper index) and the
+FDR decoder (drops the training/derived `up`/`reg_scale`/`anchors`/`valid_mask`/denoising
+buffers, keeps `num_points_scale`) onto detrcpp 1:1. The architecture is reproduced to
+fp32 noise per component against the authors' own model (`HgNetV2Parity`,
+`DfHybridEncoderParity`, `DFINETransformerParity` — backbone exact, neck/decoder ~1e-5).
+The `-obj` entries are the same architecture loaded from the stronger Objects365→COCO
+weights. D-FINE-X is the one size whose neck (384) is wider than its decoder (256).
 
 The `rt-detrv2-*` weights are the **native PyTorch checkpoints from the original
 `lyuwenyu/RT-DETR` repo** (`rtdetrv2_r{18,34,50,101}vd_*.pth`, the headline grid-sampling
@@ -61,10 +120,10 @@ The `rt-detr-{s,m,x}` checkpoints share one I/O-parameterized converter
 (`convert_rtdetr_size.py`); it is backbone-agnostic (BasicBlock R18/R34 vs Bottleneck
 R101) and counts the decoder depth (3/4/6) from the source.
 
-A converter downloads (or reads) the HF safetensors, renames keys to detrcpp's
-module tree (and concatenates split `q/k/v` projections into the
-`nn::MultiheadAttention` `in_proj`), and writes a detrcpp-named safetensors that
-loads with an identity remapper.
+A converter reads the original checkpoint, renames keys to detrcpp's module tree
+(and concatenates split `q/k/v` projections into the `nn::MultiheadAttention`
+`in_proj`), and writes a detrcpp-named `.pth` (`torch.save`) that loads with an
+identity remapper.
 
 ## Command
 
@@ -79,6 +138,19 @@ classes (no `--coco91`), square raw-`[0,1]` resize (no `--aspect`,
 (`--coco91`), ImageNet-normalized **square** resize at the native `--imgsz 384`
 (no `--aspect`) — the faithful `rf-detr-nano` model (DINOv2-windowed backbone + C2f
 projector + two-stage deformable decoder), not the placeholder-ViT `rf-detr-{n..x}`.
+**LW-DETR** uses the same recipe as RF-DETR but at `--imgsz 640` (`--coco91`,
+ImageNet-norm square, no `--aspect`) — it shares RF-DETR's projector + decoder with a
+windowed CAEv2-ViT backbone. tiny/small/medium are single-scale; large/xlarge add the
+multi-scale (P3+P5) projector (ViT-S / ViT-B backbone, `d_model` 384, 2 levels).
+**D-FINE** uses the **RT-DETR recipe** (contiguous 80 classes, square raw-`[0,1]` resize,
+no `--coco91`, no `--aspect`, `--imgsz 640`) — an HGNetv2 backbone + HybridEncoder neck +
+the FDR (Fine-grained Distribution Refinement) deformable decoder, in n/s/m/l/x and the
+`-obj` (Objects365→COCO) variants. **DEIM** (`deim-{n,s,m,l,x}`) is the same D-FINE graph
+trained with the DEIM recipe — architecturally just the decoder's SiLU activation (vs
+D-FINE's ReLU) — so it shares the D-FINE eval recipe and converter and scores ~0.4 AP
+higher than the base D-FINE per size. **DEIM-RT-DETRv2** (`deim-rt-{s,m,l}`) is the
+RT-DETRv2 graph with the DEIM recipe — SiLU plus a 3-layer query_pos_head — so it uses
+the RT-DETR eval recipe and the RT-DETRv2 converter.
 
 ## Registered-but-not-yet-validated variants
 

@@ -62,6 +62,19 @@ FetchContent_Declare(simdjson
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(simdjson)
 
+# ---- miniz (the ZIP container behind torch.save's .pth; exports the `miniz` target) ----
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_FUZZERS OFF CACHE BOOL "" FORCE)
+set(BUILD_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(AMALGAMATE_SOURCES OFF CACHE BOOL "" FORCE)
+set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(miniz
+  GIT_REPOSITORY https://github.com/richgel999/miniz.git
+  GIT_TAG 3.0.2
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(miniz)
+
 # ---- yaml-cpp (latest release tag is 0.8.0; exports yaml-cpp::yaml-cpp) ----
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
@@ -101,11 +114,16 @@ endif()
 
 # ---- protobuf + ONNX (only for the torch-free ONNX exporter) ----
 # protobuf 3.21.12 is the last release before the abseil dependency, so the
-# source build stays self-contained. ONNX links it as ONNX::onnx / ONNX::onnx_proto.
+# source build stays self-contained. detrcpp links the bare `onnx` / `onnx_proto`
+# targets (FetchContent exposes those; the ONNX::* aliases are install-only).
 if(DETR_ENABLE_ONNX)
   set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-  set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+  # ONNX's (unconditional) install(EXPORT ONNXTargets) exports onnx_proto, which
+  # PUBLIC-links libprotobuf — so libprotobuf must belong to an export set or the
+  # export is rejected. Keep protobuf_INSTALL ON to give it one; detrcpp is built
+  # from source and never `cmake --install`ed, so the install rules are inert.
+  set(protobuf_INSTALL ON CACHE BOOL "" FORCE)
   set(protobuf_ABSL_PROVIDER "module" CACHE STRING "" FORCE)
   FetchContent_Declare(protobuf
     GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git

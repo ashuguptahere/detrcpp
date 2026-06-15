@@ -3,7 +3,7 @@
 // Bridge between the framework-independent weight layer (RawTensor / StateDict)
 // and live LibTorch modules. Compiled only when DETR_ENABLE_TORCH is on. This is
 // where weight interoperability becomes concrete: a StateDict loaded from a
-// .safetensors produced by the original repo is copied, by parameter name, into
+// .pth produced by the original repo is copied, by parameter name, into
 // our module — and a trained module is serialized back out to the same
 // name space so the original repo can load it.
 
@@ -46,10 +46,5 @@ struct LoadReport {
                                                          const StateDict& source,
                                                          const WeightRemapper& remap = {},
                                                          bool strict = false);
-
-// Reads a PyTorch .pth/.pt produced by torch.save into a StateDict, in pure C++
-// (no Python). Supported for the modern zip serialization; returns a helpful
-// error otherwise suggesting the .safetensors interchange.
-[[nodiscard]] core::Result<StateDict> LoadPth(const std::filesystem::path& path);
 
 }  // namespace detr::weights

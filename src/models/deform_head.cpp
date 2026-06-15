@@ -44,8 +44,10 @@ struct DeformDecoderLayerImpl : nn::Module {
   MSDeformAttn cross_attn{nullptr};
   nn::LayerNorm norm1{nullptr}, norm2{nullptr}, norm3{nullptr};
   nn::Linear linear1{nullptr}, linear2{nullptr};
+  bool silu_;
   DeformDecoderLayerImpl(int d, int levels, int heads, int points, int ff,
-                         bool discrete_sample = false) {
+                         bool discrete_sample = false, bool silu = false)
+      : silu_(silu) {
     self_attn = register_module(
         "self_attn", nn::MultiheadAttention(nn::MultiheadAttentionOptions(d, heads).dropout(0.0)));
     cross_attn =
@@ -68,7 +70,8 @@ struct DeformDecoderLayerImpl : nn::Module {
     tgt = norm1->forward(tgt + sa);
     auto ca = cross_attn->forward(tgt + query_pos, ref, memory, shapes);
     tgt = norm2->forward(tgt + ca);
-    auto ff = linear2->forward(torch::relu(linear1->forward(tgt)));
+    auto h = linear1->forward(tgt);
+    auto ff = linear2->forward(silu_ ? torch::silu(h) : torch::relu(h));
     return norm3->forward(tgt + ff);
   }
 };
@@ -76,7 +79,7 @@ TORCH_MODULE(DeformDecoderLayer);
 
 }  // namespace
 
-MlpImpl::MlpImpl(int in, int hidden, int out, int n) : n_(n) {
+MlpImpl::MlpImpl(int in, int hidden, int out, int n, bool silu) : n_(n), silu_(silu) {
   layers = register_module("layers", nn::ModuleList());
   int prev = in;
   for (int i = 0; i < n; ++i) {
@@ -89,7 +92,7 @@ torch::Tensor MlpImpl::forward(torch::Tensor x) {
   for (int i = 0; i < n_; ++i) {
     x = layers[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(x);
     if (i + 1 < n_) {
-      x = torch::relu(x);
+      x = silu_ ? torch::silu(x) : torch::relu(x);
     }
   }
   return x;
@@ -97,7 +100,7 @@ torch::Tensor MlpImpl::forward(torch::Tensor x) {
 
 DeformDetectHead BuildDeformDetectHead(nn::Module& m, int d, int levels, int heads, int points,
                                        int ff, int dec_layers, int num_classes, int num_queries,
-                                       bool discrete_sample) {
+                                       bool discrete_sample, bool deim) {
   DeformDetectHead h;
   h.num_levels = levels;
   h.num_queries = num_queries;
@@ -105,15 +108,17 @@ DeformDetectHead BuildDeformDetectHead(nn::Module& m, int d, int levels, int hea
   h.enc_output_norm =
       m.register_module("enc_output_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
   h.enc_score_head = m.register_module("enc_score_head", nn::Linear(d, num_classes));
-  h.enc_bbox_head = m.register_module("enc_bbox_head", Mlp(d, d, 4, 3));
-  h.query_pos_head = m.register_module("query_pos_head", Mlp(4, 2 * d, d, 2));
+  h.enc_bbox_head = m.register_module("enc_bbox_head", Mlp(d, d, 4, 3, deim));
+  // DEIM-RT-DETRv2 uses a 3-layer query_pos_head MLP(4,d,d,3); RT-DETR uses MLP(4,2d,d,2).
+  h.query_pos_head = m.register_module(
+      "query_pos_head", deim ? Mlp(4, d, d, 3, true) : Mlp(4, 2 * d, d, 2));
   h.decoder = m.register_module("decoder", nn::ModuleList());
   h.dec_score = m.register_module("dec_score_head", nn::ModuleList());
   h.dec_bbox = m.register_module("dec_bbox_head", nn::ModuleList());
   for (int i = 0; i < dec_layers; ++i) {
-    h.decoder->push_back(DeformDecoderLayer(d, levels, heads, points, ff, discrete_sample));
+    h.decoder->push_back(DeformDecoderLayer(d, levels, heads, points, ff, discrete_sample, deim));
     h.dec_score->push_back(nn::Linear(d, num_classes));
-    h.dec_bbox->push_back(Mlp(d, d, 4, 3));
+    h.dec_bbox->push_back(Mlp(d, d, 4, 3, deim));
   }
   return h;
 }

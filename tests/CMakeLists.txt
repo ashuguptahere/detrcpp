@@ -5,7 +5,7 @@ include(GoogleTest)
 add_executable(detr_unit_tests
   unit/test_device.cpp
   unit/test_log.cpp
-  unit/test_safetensors.cpp
+  unit/test_pth.cpp
   unit/test_remapper.cpp
   unit/test_dataset.cpp
   unit/test_assignment.cpp
@@ -53,6 +53,11 @@ if(DETR_ENABLE_TORCH)
     unit/test_rf_detr_cdn.cpp
     unit/test_dinov2_windowed.cpp
     unit/test_lw_detr_vit.cpp
+    unit/test_hgnetv2.cpp
+    unit/test_dfine_encoder.cpp
+    unit/test_dfine_decoder.cpp
+    unit/test_dinov3_sta.cpp
+    unit/test_anchor_detr.cpp
     unit/test_dino.cpp
     unit/test_dino_cdn.cpp
     unit/test_train.cpp

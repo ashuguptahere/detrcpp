@@ -20,7 +20,7 @@
 #include "detr/models/dinov2_windowed.hpp"
 #include "detr/models/rf_detr_projector.hpp"
 #include "detr/models/rf_detr_real.hpp"
-#include "detr/weights/safetensors.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/torch_bridge.hpp"
 
 namespace detr::models {
@@ -32,8 +32,8 @@ torch::Tensor RawToTorch(const weights::RawTensor* rt) {
 }
 
 TEST(Dinov2WindowedParity, MatchesRfDetrNanoBackbone) {
-  const std::string wpath = "/tmp/rfdetr_backbone.safetensors";
-  const std::string ppath = "/tmp/rfdetr_parity/parity.safetensors";
+  const std::string wpath = "/tmp/rfdetr_backbone.pth";
+  const std::string ppath = "/tmp/rfdetr_parity/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "parity fixtures absent (run /tmp/rfdetr_dump_parity.py + convert)";
   }
@@ -41,7 +41,7 @@ TEST(Dinov2WindowedParity, MatchesRfDetrNanoBackbone) {
   // registers, features at stages [3,6,9,12], windowed blocks [0,1,2,4,5,7,8,10,11].
   auto bb = Dinov2Windowed(384, 12, 6, 16, 2, 24, 0, std::vector<int>{3, 6, 9, 12},
                            std::vector<int>{0, 1, 2, 4, 5, 7, 8, 10, 11});
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*bb, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -50,7 +50,7 @@ TEST(Dinov2WindowedParity, MatchesRfDetrNanoBackbone) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   bb->eval();
   torch::NoGradGuard ng;
@@ -66,13 +66,13 @@ TEST(Dinov2WindowedParity, MatchesRfDetrNanoBackbone) {
 }
 
 TEST(Dinov2WindowedParity, ProjectorMatchesReference) {
-  const std::string wpath = "/tmp/rfdetr_projector.safetensors";
-  const std::string ppath = "/tmp/rfdetr_parity/parity.safetensors";
+  const std::string wpath = "/tmp/rfdetr_projector.pth";
+  const std::string ppath = "/tmp/rfdetr_parity/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "parity fixtures absent";
   }
   auto proj = RfDetrProjector(4, 384, 256, 3);  // 4 features x 384 -> C2f -> 256, n=3
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*proj, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -81,7 +81,7 @@ TEST(Dinov2WindowedParity, ProjectorMatchesReference) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   std::vector<torch::Tensor> feats;
   for (int i = 0; i < 4; ++i) {
     feats.push_back(RawToTorch(psd.Find("feat" + std::to_string(i))));
@@ -97,13 +97,13 @@ TEST(Dinov2WindowedParity, ProjectorMatchesReference) {
 }
 
 TEST(Dinov2WindowedParity, FullRfDetrEndToEnd) {
-  const std::string wpath = "/tmp/rfdetr_full.safetensors";
-  const std::string ppath = "/tmp/rfdetr_parity/parity.safetensors";
+  const std::string wpath = "/tmp/rfdetr_full.pth";
+  const std::string ppath = "/tmp/rfdetr_parity/parity.pth";
   if (!std::filesystem::exists(wpath) || !std::filesystem::exists(ppath)) {
     GTEST_SKIP() << "parity fixtures absent";
   }
   auto model = std::make_shared<RfDetrRealImpl>();  // nano defaults (384px, DINOv2-S, 2 win, 2 dec)
-  auto wsd = weights::LoadSafetensors(wpath);
+  auto wsd = weights::LoadPth(wpath);
   ASSERT_TRUE(wsd.has_value()) << wsd.error().message;
   auto rep = weights::LoadStateDictInto(*model, *wsd);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
@@ -115,7 +115,7 @@ TEST(Dinov2WindowedParity, FullRfDetrEndToEnd) {
   EXPECT_EQ(rep->missing.size(), 0U);
   EXPECT_EQ(rep->unexpected.size(), 0U);
 
-  auto psd = *weights::LoadSafetensors(ppath);
+  auto psd = *weights::LoadPth(ppath);
   auto input = RawToTorch(psd.Find("input"));
   model->eval();
   torch::NoGradGuard ng;
