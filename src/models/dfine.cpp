@@ -11,9 +11,19 @@ namespace detr::models {
 DFineImpl::DFineImpl(DFineConfig cfg) : cfg_(std::move(cfg)) {
   std::vector<int> in_ch;
   if (cfg_.dinov3_sta) {
-    dino_backbone_ = register_module(
-        "backbone", DinoV3Sta(cfg_.vit_embed_dim, cfg_.vit_num_heads, cfg_.vit_depth, cfg_.vit_patch,
-                              cfg_.interaction_indexes, cfg_.sta_inplane, cfg_.hidden_dim));
+    DinoStaConfig dsc;
+    dsc.embed_dim = cfg_.vit_embed_dim;
+    dsc.num_heads = cfg_.vit_num_heads;
+    dsc.depth = cfg_.vit_depth;
+    dsc.patch_size = cfg_.vit_patch;
+    dsc.conv_inplane = cfg_.sta_inplane;
+    dsc.hidden_dim = cfg_.hidden_dim;
+    dsc.interaction_indexes = cfg_.interaction_indexes;
+    dsc.dinov3_vit = cfg_.vit_dinov3;
+    dsc.ffn_ratio = cfg_.vit_ffn_ratio;
+    dsc.swiglu = cfg_.vit_swiglu;
+    dsc.n_storage = cfg_.vit_n_storage;
+    dino_backbone_ = register_module("backbone", DinoV3Sta(dsc));
     in_ch = dino_backbone_->out_channels();
   } else {
     backbone_ = register_module("backbone", HgNetV2(cfg_.backbone, cfg_.use_lab, cfg_.return_idx));
@@ -186,16 +196,21 @@ void RegisterDFine() {
     v2.decoder_gateway = false;  // micro models use a plain norm2, not the gate
     RegisterOne(v2);
   }
-  // DEIMv2 s/m: a DINOv3-STA backbone (distilled RoPE ViT-Tiny + Spatial-Tuning Adapter)
-  // feeding the DEIMv2 HybridEncoder neck (sum fusion + CSPLayer2) and decoder. 3 levels,
-  // ImageNet normalization, 640x640. (l/x use the larger Meta DINOv3 ViT — a follow-up.)
+  // DEIMv2 s/m/l/x: a DINOv3-STA backbone (a RoPE ViT + Spatial-Tuning Adapter) feeding
+  // the DEIMv2 HybridEncoder neck (sum fusion + RepNCSPELAN5) and decoder. 3 levels,
+  // ImageNet normalization, 640x640. s/m use the distilled ViT-Tiny; l/x the Meta DINOv3
+  // ViT-S/16 (+register tokens, LayerScale; x adds a SwiGLU FFN).
   struct DinoSize {
     const char* name;
-    int embed_dim, num_heads, hidden, neck_ffn;
-    double expansion, depth_mult;
+    int embed_dim, num_heads, hidden, neck_ffn, dec_ffn, num_layers, conv_inplane, n_storage;
+    double expansion, depth_mult, ffn_ratio;
+    bool dinov3_vit, swiglu;
   };
-  for (const DinoSize& d : {DinoSize{"s", 192, 3, 192, 512, 0.34, 0.67},
-                            DinoSize{"m", 256, 4, 256, 512, 0.67, 1.0}}) {
+  for (const DinoSize& d :
+       {DinoSize{"s", 192, 3, 192, 512, 512, 4, 16, 0, 0.34, 0.67, 4.0, false, false},
+        DinoSize{"m", 256, 4, 256, 512, 512, 4, 16, 0, 0.67, 1.0, 4.0, false, false},
+        DinoSize{"l", 384, 6, 224, 896, 1792, 4, 32, 4, 1.0, 1.0, 4.0, true, false},
+        DinoSize{"x", 384, 6, 256, 1024, 2048, 6, 64, 4, 1.25, 1.37, 6.0, true, true}}) {
     DFineConfig v2;
     v2.name = std::string("deimv2-") + d.name;
     v2.upstream = "https://github.com/Intellindust-AI-Lab/DEIMv2";
@@ -204,8 +219,12 @@ void RegisterDFine() {
     v2.dinov3_sta = true;
     v2.vit_embed_dim = d.embed_dim;
     v2.vit_num_heads = d.num_heads;
-    v2.interaction_indexes = {3, 7, 11};
-    v2.sta_inplane = 16;
+    v2.vit_dinov3 = d.dinov3_vit;
+    v2.vit_ffn_ratio = d.ffn_ratio;
+    v2.vit_swiglu = d.swiglu;
+    v2.vit_n_storage = d.n_storage;
+    v2.interaction_indexes = d.dinov3_vit ? std::vector<int>{5, 8, 11} : std::vector<int>{3, 7, 11};
+    v2.sta_inplane = d.conv_inplane;
     v2.hidden_dim = d.hidden;
     v2.dec_hidden_dim = d.hidden;
     v2.feat_strides = {8, 16, 32};
@@ -215,8 +234,8 @@ void RegisterDFine() {
     v2.depth_mult = d.depth_mult;
     v2.use_encoder_idx = {2};
     v2.num_points = {3, 6, 3};
-    v2.num_layers = 4;
-    v2.dec_ffn = 512;
+    v2.num_layers = d.num_layers;
+    v2.dec_ffn = d.dec_ffn;
     v2.decoder_deimv2 = true;  // DEIMv2 neck (sum fusion) + decoder, gateway on
     v2.neck_repelan5 = true;   // version=deim RepNCSPELAN5 fuse block
     RegisterOne(v2);

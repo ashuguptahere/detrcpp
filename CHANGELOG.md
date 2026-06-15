@@ -43,8 +43,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   Identity `input_proj` when in==hidden) and the DEIMv2 decoder (gateway, 3 levels). These
   sizes use **ImageNet normalization** (unlike the raw-`[0,1]` HGNetv2 sizes). New backbone
   parity test passes (max|diff| ~1e-5). COCO `val2017` vs official: `deimv2-s` **0.505**
-  (official 0.509), `deimv2-m` **0.528** (0.530). l/x (Meta DINOv3 ViT backbone) are a
-  follow-up.
+  (official 0.509), `deimv2-m` **0.528** (0.530).
+- **DEIMv2 — l/x (`deimv2-l` / `deimv2-x`), validated on COCO.** The DINOv3-STA large sizes
+  add a **Meta DINOv3 ViT** backbone (`DinoV3Vit`) to `dinov3_sta`: ViT-S/16 (`deimv2-l`) and
+  ViT-S+/16 (`deimv2-x`) with 2D RoPE, **4 register/storage tokens**, **LayerScale**, a
+  masked-K-bias qkv (folded into the bias at conversion), a final LayerNorm on each returned
+  intermediate, and a **SwiGLU** FFN for x (GELU MLP for l). Same STA adapter + DEIMv2 neck +
+  decoder as s/m. Backbone parity tests pass (max|diff| ~2-4e-5). COCO `val2017` vs official:
+  `deimv2-l` **0.557** (official 0.560), `deimv2-x` **0.576** (0.578). This completes the
+  DEIMv2 family (n, atto/femto/pico, s/m/l/x).
 
 ### Changed
 

@@ -37,6 +37,11 @@ struct DFineConfig {
   bool dinov3_sta = false;
   int vit_embed_dim = 192, vit_num_heads = 3, vit_depth = 12, vit_patch = 16, sta_inplane = 16;
   std::vector<int> interaction_indexes = {3, 7, 11};
+  // Meta DINOv3 ViT backbone (l/x) vs the distilled ViT-Tiny (s/m).
+  bool vit_dinov3 = false;
+  double vit_ffn_ratio = 4.0;
+  bool vit_swiglu = false;
+  int vit_n_storage = 0;
   // Backbone/neck width and the decoder's (possibly narrower) internal width — they
   // differ only for D-FINE-X (neck 384, decoder 256), which then projects in the decoder.
   int hidden_dim = 256;
