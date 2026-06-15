@@ -50,6 +50,14 @@ they win.
 
 ## Workflow conventions (IMPORTANT)
 
+- **NEVER use Hugging Face for model weights — original repo only.** When porting/
+  validating a model, download and convert ONLY the authors' own native release from
+  the ORIGINAL upstream repo (its GitHub releases / the Google-Drive links in its
+  README / the authors' own `.pth`). Do NOT use `huggingface_hub`, `hf_hub_download`,
+  `from_pretrained`, `transformers`, or any HF mirror/port — not for weights, not even
+  as a "reliable" fallback. HF is acceptable ONLY as a read-only architecture-parity
+  reference when the original repo is unavailable, and never as a weight source. This
+  is a hard, non-negotiable user rule.
 - **Commit after every fix or feature.** One logical change per commit; do not batch
   unrelated work into one commit. Branch off `main` first — never commit directly to
   `main`. End commit messages with a `Co-Authored-By:` trailer.
