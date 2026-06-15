@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.16.0] - 2026-06-15
+
+### Added
 - **D-FINE — the full size matrix (`dfine-{n,s,m,l,x}` + `dfine-{s,m,l,x}-obj`),
   validated on COCO.** A from-scratch port of Peterande/D-FINE (Apache-2.0): an HGNetv2
   backbone (`models::HgNetV2`, PPHGNetV2 B0/B2/B4/B5 — stem + HG stages with light/plain
