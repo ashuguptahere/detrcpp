@@ -42,16 +42,20 @@ Result<std::string> FindPrefix(const ZipReader& zip) {
 }
 
 // The (name -> tensor) pairs: the top-level dict, or — for a wrapped training
-// checkpoint — the nested "model"/"state_dict" (else the richest nested dict).
+// checkpoint — the nested weights. Recurses so multi-level wrappers resolve (e.g.
+// the EMA checkpoints these repos ship as {"ema": {"module": <weights>, ...}}).
+// A canonical child name ("model"/"state_dict"/"ema"/"module") is preferred over the
+// merely-richest dict, so optimizer state never wins over the model weights.
 std::vector<std::pair<std::string, Value>> PickTensors(const Value& root) {
   std::vector<std::pair<std::string, Value>> tensors = NamedTensors(root);
   if (!tensors.empty()) return tensors;
   std::size_t best = 0;
   for (const auto& [k, v] : root.entries) {
     if (v.kind != Value::Kind::Dict) continue;
-    auto nested = NamedTensors(v);
+    auto nested = PickTensors(v);  // recurse: handles ema.module and deeper wrappers
     const bool canonical = k.kind == Value::Kind::Str &&
-                           (k.s == "model" || k.s == "state_dict" || k.s == "model_state_dict");
+                           (k.s == "model" || k.s == "state_dict" || k.s == "model_state_dict" ||
+                            k.s == "ema" || k.s == "module");
     if (canonical && !nested.empty()) return nested;
     if (nested.size() > best) {
       best = nested.size();
@@ -78,9 +82,6 @@ Result<StateDict> LoadModern(const ZipReader& zip) {
 
   StateDict sd;
   for (const auto& [name, t] : tensors) {
-    if (!detail::IsContiguous(t.shape, t.stride)) {
-      return Err(ErrorCode::Unsupported, fmt::format(".pth tensor '{}' is non-contiguous", name));
-    }
     std::int64_t prod = 1;
     for (const std::int64_t d : t.shape) {
       if (d < 0 || prod > kMaxItems) {
@@ -91,16 +92,39 @@ Result<StateDict> LoadModern(const ZipReader& zip) {
     auto storage = zip.Read(*prefix + "data/" + t.s);
     if (!storage) return Err(ErrorCode::ParseError, fmt::format(".pth tensor '{}' missing storage", name));
     const std::size_t elsize = DTypeSize(t.dt);
-    const std::size_t begin = static_cast<std::size_t>(t.i) * elsize;
     const std::size_t span_bytes = static_cast<std::size_t>(prod) * elsize;
-    if (begin + span_bytes > storage->size()) {
-      return Err(ErrorCode::ParseError, fmt::format(".pth tensor '{}' slice out of range", name));
-    }
     RawTensor rt;
     rt.dtype = t.dt;
     rt.shape = t.shape;
-    rt.data.assign(storage->begin() + static_cast<std::ptrdiff_t>(begin),
-                   storage->begin() + static_cast<std::ptrdiff_t>(begin + span_bytes));
+    if (detail::IsContiguous(t.shape, t.stride)) {
+      const std::size_t begin = static_cast<std::size_t>(t.i) * elsize;
+      if (begin + span_bytes > storage->size()) {
+        return Err(ErrorCode::ParseError, fmt::format(".pth tensor '{}' slice out of range", name));
+      }
+      rt.data.assign(storage->begin() + static_cast<std::ptrdiff_t>(begin),
+                     storage->begin() + static_cast<std::ptrdiff_t>(begin + span_bytes));
+    } else {
+      // Non-contiguous storage (e.g. a transposed/permuted weight saved as a view):
+      // gather elements into C-contiguous row-major order per (storage_offset, stride).
+      const auto nd = t.shape.size();
+      rt.data.resize(span_bytes);
+      std::vector<std::int64_t> idx(nd, 0);
+      for (std::int64_t lin = 0; lin < prod; ++lin) {
+        std::int64_t src = t.i;  // storage_offset, in elements
+        for (std::size_t k = 0; k < nd; ++k) src += idx[k] * t.stride[k];
+        const std::size_t src_bytes = static_cast<std::size_t>(src) * elsize;
+        if (src < 0 || src_bytes + elsize > storage->size()) {
+          return Err(ErrorCode::ParseError, fmt::format(".pth tensor '{}' stride out of range", name));
+        }
+        std::copy(storage->begin() + static_cast<std::ptrdiff_t>(src_bytes),
+                  storage->begin() + static_cast<std::ptrdiff_t>(src_bytes + elsize),
+                  rt.data.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(lin) * elsize));
+        for (std::size_t k = nd; k-- > 0;) {  // row-major increment, last dim fastest
+          if (++idx[k] < t.shape[k]) break;
+          idx[k] = 0;
+        }
+      }
+    }
     sd.Set(name, std::move(rt));
   }
   return sd;

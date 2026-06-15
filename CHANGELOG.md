@@ -11,6 +11,15 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **RT-DETR / RT-DETRv2 load their native `lyuwenyu/RT-DETR` checkpoints directly.** A
+  new `RtDetrImpl::UpstreamRemapper()` maps the original PResNet + HybridEncoder +
+  RTDETRTransformer naming onto our flat module tree (PResNet vd stem / `res_layers` /
+  `branch2{a,b,c}` / avg-down shortcut -> torchvision ResNet; strip the `encoder.` /
+  `decoder.` wrappers; v1 `.0/.1` and v2 `.conv/.norm` projection forms). All eight
+  `rt-detr-{s,m,l,x}` (v1) and `rt-detrv2-{s,m,l,x}` checkpoints verified loading from the
+  authors' GitHub release assets — **0 unexpected / 0 mismatched** (paddle-converted v1
+  weights omit the inference-irrelevant `num_batches_tracked` BN counters). This shared
+  remapper also covers RT-DETRv3 and DEIM-RT. URLs added to the downloader manifest.
 - **`models/` model zoo + Python-free downloader; D-FINE loads its original `.pth`
   directly.** New `scripts/download_models.cmake` (pure CMake `file(DOWNLOAD)`, no Python /
   no package manager) fetches the **authors' own native checkpoints from the original
@@ -24,6 +33,13 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   documents the no-HF policy and the downloader.
 
 ### Fixed
+- **`.pth` reader handles EMA-wrapped and non-contiguous checkpoints.** `LoadPth` now
+  recurses through multi-level training wrappers, so the EMA checkpoints these repos ship
+  as `{"ema": {"module": <weights>}}` resolve to the model weights (preferring
+  `model`/`state_dict`/`ema`/`module` over optimizer state). It also materializes
+  non-contiguous tensors — a transposed/permuted weight saved as a view (e.g. RT-DETR's
+  paddle-converted `in_proj_weight`) is now gathered into row-major order instead of being
+  rejected.
 - **D-FINE-S input projection now matches the upstream checkpoint.** The HybridEncoder's
   `input_proj` substituted `nn.Identity` whenever in-channels equalled the hidden width —
   correct for DEIMv2, but D-FINE-S ships a trained 1x1 `ConvNorm` there. Gated the

@@ -35,6 +35,14 @@ const UpstreamCase kCases[] = {
     {"detr-r101", "detr-r101-2c7b67e5.pth"},
     {"detr-r50-dc5", "detr-r50-dc5-f0fb7ef5.pth"},
     {"detr-r101-dc5", "detr-r101-dc5-a2e86def.pth"},
+    {"rt-detr-s", "rtdetr_r18vd_dec3_6x_coco_from_paddle.pth"},
+    {"rt-detr-m", "rtdetr_r34vd_dec4_6x_coco_from_paddle.pth"},
+    {"rt-detr-l", "rtdetr_r50vd_6x_coco_from_paddle.pth"},
+    {"rt-detr-x", "rtdetr_r101vd_6x_coco_from_paddle.pth"},
+    {"rt-detrv2-s", "rtdetrv2_r18vd_120e_coco_rerun_48.1.pth"},
+    {"rt-detrv2-m", "rtdetrv2_r34vd_120e_coco_ema.pth"},
+    {"rt-detrv2-l", "rtdetrv2_r50vd_6x_coco_ema.pth"},
+    {"rt-detrv2-x", "rtdetrv2_r101vd_6x_coco_from_paddle.pth"},
     {"dfine-n", "dfine_n_coco.pth"},
     {"dfine-s", "dfine_s_coco.pth"},
     {"dfine-m", "dfine_m_coco.pth"},
@@ -64,6 +72,15 @@ TEST_P(UpstreamLoad, LoadsNativeCheckpointZeroZero) {
   auto rep = weights::LoadStateDictInto(**model, *sd, (*model)->UpstreamRemapper(), false);
   ASSERT_TRUE(rep.has_value()) << rep.error().message;
 
+  // num_batches_tracked is a training-only BN counter (unused at inference); some
+  // upstream checkpoints (e.g. RT-DETR's paddle-converted weights) omit it. Don't
+  // count it as a real load discrepancy.
+  auto significant = [](const std::vector<std::string>& keys) {
+    std::size_t n = 0;
+    for (const auto& k : keys)
+      if (k.find("num_batches_tracked") == std::string::npos) ++n;
+    return n;
+  };
   for (const auto& mk : rep->missing) std::cout << "  MISSING " << mk << "\n";
   for (const auto& uk : rep->unexpected) std::cout << "  UNEXPECTED " << uk << "\n";
   for (const auto& sk : rep->mismatched) std::cout << "  MISMATCH " << sk << "\n";
@@ -71,8 +88,8 @@ TEST_P(UpstreamLoad, LoadsNativeCheckpointZeroZero) {
             << " unexpected " << rep->unexpected.size() << " mismatched " << rep->mismatched.size()
             << "\n";
   EXPECT_GT(rep->loaded, 0U);
-  EXPECT_EQ(rep->missing.size(), 0U);
-  EXPECT_EQ(rep->unexpected.size(), 0U);
+  EXPECT_EQ(significant(rep->missing), 0U);
+  EXPECT_EQ(significant(rep->unexpected), 0U);
   EXPECT_EQ(rep->mismatched.size(), 0U);
 }
 

@@ -23,6 +23,16 @@ set(MANIFEST
   "detr-r101|detr-r101-2c7b67e5.pth|https://dl.fbaipublicfiles.com/detr/detr-r101-2c7b67e5.pth"
   "detr-r50-dc5|detr-r50-dc5-f0fb7ef5.pth|https://dl.fbaipublicfiles.com/detr/detr-r50-dc5-f0fb7ef5.pth"
   "detr-r101-dc5|detr-r101-dc5-a2e86def.pth|https://dl.fbaipublicfiles.com/detr/detr-r101-dc5-a2e86def.pth"
+  # RT-DETR (v1, lyuwenyu/RT-DETR) — native COCO checkpoints, GitHub release assets.
+  "rt-detr-s|rtdetr_r18vd_dec3_6x_coco_from_paddle.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r18vd_dec3_6x_coco_from_paddle.pth"
+  "rt-detr-m|rtdetr_r34vd_dec4_6x_coco_from_paddle.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r34vd_dec4_6x_coco_from_paddle.pth"
+  "rt-detr-l|rtdetr_r50vd_6x_coco_from_paddle.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r50vd_6x_coco_from_paddle.pth"
+  "rt-detr-x|rtdetr_r101vd_6x_coco_from_paddle.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetr_r101vd_6x_coco_from_paddle.pth"
+  # RT-DETRv2 (lyuwenyu/RT-DETR) — native EMA checkpoints, GitHub release assets.
+  "rt-detrv2-s|rtdetrv2_r18vd_120e_coco_rerun_48.1.pth|https://github.com/lyuwenyu/storage/releases/download/v0.2/rtdetrv2_r18vd_120e_coco_rerun_48.1.pth"
+  "rt-detrv2-m|rtdetrv2_r34vd_120e_coco_ema.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r34vd_120e_coco_ema.pth"
+  "rt-detrv2-l|rtdetrv2_r50vd_6x_coco_ema.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r50vd_6x_coco_ema.pth"
+  "rt-detrv2-x|rtdetrv2_r101vd_6x_coco_from_paddle.pth|https://github.com/lyuwenyu/storage/releases/download/v0.1/rtdetrv2_r101vd_6x_coco_from_paddle.pth"
   # D-FINE (Peterande/D-FINE) — COCO + Objects365->COCO, GitHub release assets.
   "dfine-n|dfine_n_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth"
   "dfine-s|dfine_s_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_coco.pth"

@@ -360,6 +360,67 @@ class RtDetrImpl : public IModel {
   // RT-DETRv3: one-to-many dense positive supervision (k>0 only for the v3 matrix).
   int DenseSupervisionK() const override { return cfg_.dense_o2m_k; }
 
+  // Maps a native lyuwenyu RT-DETR / RT-DETRv2 (and DEIM-RT-DETRv2) checkpoint — the
+  // original PResNet + HybridEncoder + RTDETRTransformer naming — onto our flat module
+  // tree so the authors' own EMA `.pth` loads 1:1.
+  weights::WeightRemapper UpstreamRemapper() const override {
+    weights::WeightRemapper r;
+    // Training/derived buffers our module recomputes or folds inline.
+    r.Drop("num_points_scale")
+        .Drop("denoising_class_embed")
+        .Drop("^decoder\\.(anchors|valid_mask)$")
+        .Drop("^backbone\\..*num_batches_tracked$");  // backbone is FrozenBatchNorm2d
+
+    // --- Backbone: PResNet (vd deep stem + res_layers) -> torchvision-style ResNet. ---
+    r.ReplaceRegex("^backbone\\.conv1\\.conv1_1\\.conv\\.", "backbone.stem.0.0.")
+        .ReplaceRegex("^backbone\\.conv1\\.conv1_1\\.norm\\.", "backbone.stem.0.1.")
+        .ReplaceRegex("^backbone\\.conv1\\.conv1_2\\.conv\\.", "backbone.stem.1.0.")
+        .ReplaceRegex("^backbone\\.conv1\\.conv1_2\\.norm\\.", "backbone.stem.1.1.")
+        .ReplaceRegex("^backbone\\.conv1\\.conv1_3\\.conv\\.", "backbone.stem.2.0.")
+        .ReplaceRegex("^backbone\\.conv1\\.conv1_3\\.norm\\.", "backbone.stem.2.1.");
+    // Bottleneck/BasicBlock branches: branch2{a,b,c} -> conv{1,2,3}/bn{1,2,3}.
+    r.ReplaceRegex("\\.branch2a\\.conv\\.", ".conv1.")
+        .ReplaceRegex("\\.branch2a\\.norm\\.", ".bn1.")
+        .ReplaceRegex("\\.branch2b\\.conv\\.", ".conv2.")
+        .ReplaceRegex("\\.branch2b\\.norm\\.", ".bn2.")
+        .ReplaceRegex("\\.branch2c\\.conv\\.", ".conv3.")
+        .ReplaceRegex("\\.branch2c\\.norm\\.", ".bn3.");
+    // Avg-down shortcut (ResNet-vd): short.conv.{conv,norm} -> downsample.{1,2}; the
+    // nested form must run before the plain short.{conv,norm} fallback.
+    r.ReplaceRegex("\\.short\\.conv\\.conv\\.", ".downsample.1.")
+        .ReplaceRegex("\\.short\\.conv\\.norm\\.", ".downsample.2.")
+        .ReplaceRegex("\\.short\\.conv\\.", ".downsample.0.")
+        .ReplaceRegex("\\.short\\.norm\\.", ".downsample.1.");
+    // res_layers.S.blocks.B -> layer{S+1}.B (index arithmetic -> enumerate the 4 stages).
+    r.ReplaceRegex("^backbone\\.res_layers\\.0\\.blocks\\.", "backbone.layer1.")
+        .ReplaceRegex("^backbone\\.res_layers\\.1\\.blocks\\.", "backbone.layer2.")
+        .ReplaceRegex("^backbone\\.res_layers\\.2\\.blocks\\.", "backbone.layer3.")
+        .ReplaceRegex("^backbone\\.res_layers\\.3\\.blocks\\.", "backbone.layer4.");
+
+    // --- Neck (HybridEncoder): strip the "encoder." wrapper onto our flat children. ---
+    // v2 projects with a ConvNormLayer (.conv/.norm); v1 with an nn.Sequential (.0/.1).
+    r.ReplaceRegex("^encoder\\.input_proj\\.([0-9]+)\\.conv\\.", "input_proj.$1.0.")
+        .ReplaceRegex("^encoder\\.input_proj\\.([0-9]+)\\.norm\\.", "input_proj.$1.1.")
+        .ReplaceRegex("^encoder\\.input_proj\\.", "input_proj.")  // v1 .0/.1 already indexed
+        .ReplaceRegex("^encoder\\.encoder\\.([0-9]+)\\.layers\\.[0-9]+\\.", "aifi.$1.")
+        .ReplaceRegex("^encoder\\.(lateral_convs|fpn_blocks|downsample_convs|pan_blocks)\\.",
+                      "$1.");
+
+    // --- Decoder (RTDETRTransformer): layers + heads + enc_output. ---
+    r.ReplaceRegex("^decoder\\.decoder\\.layers\\.([0-9]+)\\.", "decoder.$1.")
+        .ReplaceRegex("^decoder\\.input_proj\\.([0-9]+)\\.conv\\.", "decoder_input_proj.$1.0.")
+        .ReplaceRegex("^decoder\\.input_proj\\.([0-9]+)\\.norm\\.", "decoder_input_proj.$1.1.")
+        .ReplaceRegex("^decoder\\.enc_output\\.proj\\.", "enc_output.")     // v2: Linear .proj
+        .ReplaceRegex("^decoder\\.enc_output\\.norm\\.", "enc_output_norm.")  // v2: LayerNorm .norm
+        .ReplaceRegex("^decoder\\.enc_output\\.0\\.", "enc_output.")        // v1: Sequential(Linear,
+        .ReplaceRegex("^decoder\\.enc_output\\.1\\.", "enc_output_norm.")   //     LayerNorm)
+        .ReplaceRegex(
+            "^decoder\\.(dec_score_head|dec_bbox_head|enc_score_head|enc_bbox_head|query_pos_head)"
+            "\\.",
+            "$1.");
+    return r;
+  }
+
  private:
   Config cfg_;
   bool denoising_{false};
