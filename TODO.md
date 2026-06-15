@@ -169,7 +169,7 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **RT-DETRv3**       | ⚠️ blocked | Apache-2.0 | clxia12/RT-DETRv3 | S/M/L/X — **no trained detector weights published** (Paddle; README .pdparams 404s) |
 | **LW-DETR**         | ✅ validated | Apache-2.0 | Atten4Vis/LW-DETR | **N**=tiny, **S**=small, **M**=medium, **L**=large, **X**=xlarge (all 5 validated vs native weights) |
 | **D-FINE**          | ✅ validated | Apache-2.0 | Peterande/D-FINE | **N/S/M/L/X** + Obj365→COCO `-obj` (all 9 validated, FDR box head) |
-| **DEIM**            | 🔄 partial | Apache-2.0 | Intellindust-AI-Lab/DEIM | **DEIM-D-FINE N/S/M/L/X ✅ validated** (SiLU decoder over the D-FINE graph); DEIM-RT-DETRv2 (R18/R34/R50) ⬜ next |
+| **DEIM**            | ✅ validated | Apache-2.0 | Intellindust-AI-Lab/DEIM | **DEIM-D-FINE n/s/m/l/x** (`deim-*`, SiLU decoder) + **DEIM-RT-DETRv2 s/m/l** (`deim-rt-*`, SiLU + 3-layer query_pos_head) — all validated |
 | **DEIMv2**          | ⬜ todo | Apache-2.0 | Intellindust-AI-Lab/DEIMv2 | **Atto/Femto/Pico/N/S/M/L/X** (DINOv3 backbone) |
 | **Efficient DETR**  | ❌ no code | (paper-only) | — none — | R50/R101 in paper; **no public code/weights → cannot integrate** |
 | **Sparse DETR**     | ⬜ todo | Apache-2.0 | kakaobrain/sparse-detr | R50, Swin-T |
@@ -178,7 +178,7 @@ Sizes: families scale either as **N/S/M/L/X** (real-time line) or by **backbone*
 | **RF-DETR**         | ✅ nano validated | Apache-2.0 | roboflow/rf-detr | **N/S/M/B/L/X** (nano faithful+validated; S/M/B/L/X = placeholder ViT) |
 
 Priority: classic line [DETR/Deformable/Conditional/DAB/DN/DINO ✅] → RT-DETR(v2) ✅ →
-RF-DETR ✅ → LW-DETR ✅ → D-FINE ✅ → **DEIM [next] → DEIMv2 → Anchor/Sparse/Lite/Salience-DETR**.
+RF-DETR ✅ → LW-DETR ✅ → D-FINE ✅ → DEIM ✅ → **DEIMv2 [next] → Anchor/Sparse/Lite/Salience-DETR**.
 (RT-DETRv3 stays blocked on weights; Efficient DETR dropped for lack of code.)
 
 ### TensorRT

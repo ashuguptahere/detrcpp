@@ -11,6 +11,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DEIM-RT-DETRv2 (`deim-rt-{s,m,l}`), validated on COCO.** The second DEIM family —
+  the RT-DETRv2 graph trained with the DEIM recipe. Beyond the SiLU decoder activation
+  (as in DEIM-D-FINE), DEIM widens the RT-DETRv2 `query_pos_head` to a 3-layer
+  `MLP(4,d,d,3)` (vs RT-DETR's 2-layer `MLP(4,2d,d,2)`). Both are flipped by a `deim`
+  flag on the shared deformable head (`BuildDeformDetectHead` / `Mlp` /
+  `DeformDecoderLayer`), default off so rt-detr / rt-detrv2 / rt-detrv3 / rf-detr / dino
+  are byte-unchanged. `deim-rt-{s,m,l}` (R18/R34/R50) load DEIM-RT-DETRv2 checkpoints
+  via the RT-DETRv2 native converter; COCO `val2017` vs the native DEIM weights (0
+  missing/unexpected): `deim-rt-s` **0.489** (official 0.490), `deim-rt-m` **0.507**
+  (0.509), `deim-rt-l` **0.541** (0.543). See `VALIDATION.md`.
 - **DEIM (`deim-{n,s,m,l,x}`), validated on COCO.** DEIM
   (Intellindust-AI-Lab/DEIM) is a training recipe over the D-FINE graph, so its
   DEIM-D-FINE checkpoints load into the existing D-FINE model. The one architectural
