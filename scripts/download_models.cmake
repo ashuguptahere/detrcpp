@@ -18,6 +18,11 @@ cmake_minimum_required(VERSION 3.24)
 # direct usercontent form "gdrive:<FILE_ID>" (resolved below) since the authors of
 # several repos publish only on Drive.
 set(MANIFEST
+  # DETR (facebookresearch/detr) — official ResNet-50/101 (+ DC5) COCO checkpoints.
+  "detr-r50|detr-r50-e632da11.pth|https://dl.fbaipublicfiles.com/detr/detr-r50-e632da11.pth"
+  "detr-r101|detr-r101-2c7b67e5.pth|https://dl.fbaipublicfiles.com/detr/detr-r101-2c7b67e5.pth"
+  "detr-r50-dc5|detr-r50-dc5-f0fb7ef5.pth|https://dl.fbaipublicfiles.com/detr/detr-r50-dc5-f0fb7ef5.pth"
+  "detr-r101-dc5|detr-r101-dc5-a2e86def.pth|https://dl.fbaipublicfiles.com/detr/detr-r101-dc5-a2e86def.pth"
   # D-FINE (Peterande/D-FINE) — COCO + Objects365->COCO, GitHub release assets.
   "dfine-n|dfine_n_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth"
   "dfine-s|dfine_s_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_coco.pth"
