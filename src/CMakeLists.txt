@@ -217,6 +217,7 @@ if(DETR_ENABLE_TORCH)
     models/dfine_encoder.cpp
     models/dfine_decoder.cpp
     models/dinov3_sta.cpp
+    models/swin.cpp
     models/dfine.cpp
     models/vit.cpp
     models/dinov2_windowed.cpp
