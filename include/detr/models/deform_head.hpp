@@ -15,11 +15,12 @@
 
 namespace detr::models {
 
-// n-layer MLP with ReLU between (shared by the detection heads).
+// n-layer MLP with ReLU (or SiLU, for DEIM) between (shared by the detection heads).
 struct MlpImpl : torch::nn::Module {
   torch::nn::ModuleList layers{nullptr};
   int n_;
-  MlpImpl(int in, int hidden, int out, int n);
+  bool silu_;
+  MlpImpl(int in, int hidden, int out, int n, bool silu = false);
   torch::Tensor forward(torch::Tensor x);
 };
 TORCH_MODULE(Mlp);
@@ -38,9 +39,12 @@ struct DeformDetectHead {
   int num_queries{0};
 };
 
+// `deim`: the DEIM-RT-DETRv2 variant of the head — SiLU activation throughout and a
+// 3-layer query_pos_head MLP(4,d,d,3) (vs RT-DETR's ReLU + 2-layer MLP(4,2d,d,2)).
 DeformDetectHead BuildDeformDetectHead(torch::nn::Module& model, int d, int levels, int heads,
                                        int points, int ff, int dec_layers, int num_classes,
-                                       int num_queries, bool discrete_sample = false);
+                                       int num_queries, bool discrete_sample = false,
+                                       bool deim = false);
 
 // Optional contrastive-denoising prefix (DINO-CDN). When active, num_dn denoising
 // queries are PREPENDED to the topk matching queries and the joint decoder runs
