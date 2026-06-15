@@ -10,6 +10,27 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 
 ## [Unreleased]
 
+### Added
+- **`models/` model zoo + Python-free downloader; D-FINE loads its original `.pth`
+  directly.** New `scripts/download_models.cmake` (pure CMake `file(DOWNLOAD)`, no Python /
+  no package manager) fetches the **authors' own native checkpoints from the original
+  upstream repo** — never a Hugging Face mirror — into `models/`
+  (`cmake -P scripts/download_models.cmake -- <model>|all|list`). The D-FINE family
+  (`dfine-{n,s,m,l,x}` + `-obj`, from `Peterande/D-FINE` GitHub release assets) now loads
+  the native `.pth` **directly via `DFineImpl::UpstreamRemapper()`** — `0 missing /
+  0 unexpected / 0 shape-mismatched`, no `/tmp` Python converter. New data-driven
+  regression `test_upstream_load.cpp` builds each model from the registry and asserts its
+  original checkpoint loads cleanly (skipped when the file is absent). `models/README.md`
+  documents the no-HF policy and the downloader.
+
+### Fixed
+- **D-FINE-S input projection now matches the upstream checkpoint.** The HybridEncoder's
+  `input_proj` substituted `nn.Identity` whenever in-channels equalled the hidden width —
+  correct for DEIMv2, but D-FINE-S ships a trained 1x1 `ConvNorm` there. Gated the
+  identity shortcut on the DEIMv2 path; standard D-FINE/DEIM always projects, so
+  `dfine-s`/`dfine-s-obj` now load their native weights with the real projection
+  (745 tensors, was dropping 6) instead of an untrained identity.
+
 ### Changed
 - **Weight format is now PyTorch `.pth` everywhere; safetensors removed.** detrcpp
   reads and writes the authors' native `.pth` (`torch.save`) directly — no safetensors,
@@ -25,6 +46,18 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
   untrusted files (the VM errors on unknown opcodes; never executes arbitrary pickle).
 
 ### Added
+- **Swin Transformer backbone, validated against the official microsoft pretrain.** A
+  from-scratch port (`swin.{hpp,cpp}`) of the mmdet / Swin-Transformer-Object-Detection
+  layout used by Lite-DETR and Salience-DETR (MIT): a 4x4 patch embed, four stages of
+  windowed self-attention alternating W-MSA / shifted SW-MSA with a learned relative-
+  position bias, PatchMerging downsampling, and a per-stage output LayerNorm
+  (`norm0`..`norm3`). `relative_position_index` is a persistent buffer (matches upstream,
+  moves across devices); the SW-MSA shift mask is computed per stage. Parameterised for
+  Swin-T/S/B/L (`SwinConfigFor`), with the `dilation` (stride-16) variant supported.
+  Loads the official `swin_tiny_patch4_window7_224.pth` body **0 missing / 0 unexpected**
+  (189 tensors) and reproduces all four stage feature maps to float epsilon
+  (max|diff| ~3e-5). This is the shared backbone that unlocks the Lite-DETR / Salience-DETR
+  ports; not yet wired to a registry entry (no detector consumes it yet).
 - **Anchor-DETR (`anchor-detr` / `anchor-detr-dc5`), validated on COCO.** A from-scratch
   port of megvii-research/AnchorDETR (Apache-2.0): a new model (`anchor_detr.{hpp,cpp}`)
   whose object queries are **anchor points** — a learned set of 300 2D positions, each

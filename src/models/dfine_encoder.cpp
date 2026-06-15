@@ -205,8 +205,9 @@ struct DfInputProjImpl : nn::Module {
   nn::Conv2d conv{nullptr};
   nn::BatchNorm2d norm{nullptr};
   bool identity_;
-  DfInputProjImpl(int in, int out) : identity_(in == out) {
-    // Upstream uses nn.Identity when the input already has the hidden width (DEIMv2 s/m/l/x).
+  DfInputProjImpl(int in, int out, bool allow_identity) : identity_(allow_identity && in == out) {
+    // DEIMv2 (s/m/l/x) uses nn.Identity when the input already has the hidden width; standard
+    // D-FINE / DEIM always projects with a 1x1 ConvNorm even when in == out.
     if (!identity_) {
       conv = register_module("conv", nn::Conv2d(nn::Conv2dOptions(in, out, 1).bias(false)));
       norm = register_module("norm", nn::BatchNorm2d(out));
@@ -258,7 +259,7 @@ DfHybridEncoderImpl::DfHybridEncoderImpl(std::vector<int> in_channels, std::vect
 
   input_proj = register_module("input_proj", nn::ModuleList());
   for (int ch : in_channels_) {
-    input_proj->push_back(DfInputProj(ch, hidden_dim));
+    input_proj->push_back(DfInputProj(ch, hidden_dim, /*allow_identity=*/deimv2));
   }
   encoder = register_module("encoder", nn::ModuleList());
   for (std::size_t i = 0; i < use_encoder_idx_.size(); ++i) {
@@ -328,7 +329,7 @@ DfLiteEncoderImpl::DfLiteEncoderImpl(int in_channel, int hidden_dim, double expa
   const int c4 = static_cast<int>(std::floor(expansion * hidden_dim / 2.0));
   const int nblk = static_cast<int>(std::lround(3.0 * depth_mult));
   input_proj = register_module("input_proj", nn::ModuleList());
-  input_proj->push_back(DfInputProj(in_channel, hidden_dim));
+  input_proj->push_back(DfInputProj(in_channel, hidden_dim, /*allow_identity=*/true));
   down_sample1 = register_module("down_sample1", MakeLiteDown(hidden_dim));
   down_sample2 = register_module("down_sample2", MakeLiteDown(hidden_dim));
   auto bf = DfGapFusion(hidden_dim);

@@ -57,6 +57,8 @@ if(DETR_ENABLE_TORCH)
     unit/test_dfine_encoder.cpp
     unit/test_dfine_decoder.cpp
     unit/test_dinov3_sta.cpp
+    unit/test_swin.cpp
+    unit/test_upstream_load.cpp
     unit/test_anchor_detr.cpp
     unit/test_dino.cpp
     unit/test_dino_cdn.cpp
