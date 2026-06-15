@@ -62,6 +62,19 @@ FetchContent_Declare(simdjson
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(simdjson)
 
+# ---- miniz (the ZIP container behind torch.save's .pth; exports the `miniz` target) ----
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_FUZZERS OFF CACHE BOOL "" FORCE)
+set(BUILD_HEADER_ONLY OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(AMALGAMATE_SOURCES OFF CACHE BOOL "" FORCE)
+set(INSTALL_PROJECT OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(miniz
+  GIT_REPOSITORY https://github.com/richgel999/miniz.git
+  GIT_TAG 3.0.2
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(miniz)
+
 # ---- yaml-cpp (latest release tag is 0.8.0; exports yaml-cpp::yaml-cpp) ----
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)

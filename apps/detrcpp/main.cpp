@@ -55,6 +55,7 @@
 #include "detr/models/registry.hpp"
 #include "detr/train/checkpoint.hpp"
 #include "detr/train/trainer.hpp"
+#include "detr/weights/pth.hpp"
 #include "detr/weights/safetensors.hpp"
 #include "detr/weights/torch_bridge.hpp"
 #endif

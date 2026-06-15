@@ -47,9 +47,4 @@ struct LoadReport {
                                                          const WeightRemapper& remap = {},
                                                          bool strict = false);
 
-// Reads a PyTorch .pth/.pt produced by torch.save into a StateDict, in pure C++
-// (no Python). Supported for the modern zip serialization; returns a helpful
-// error otherwise suggesting the .safetensors interchange.
-[[nodiscard]] core::Result<StateDict> LoadPth(const std::filesystem::path& path);
-
 }  // namespace detr::weights

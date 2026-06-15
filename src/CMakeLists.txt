@@ -35,6 +35,8 @@ add_library(detr_weights STATIC
   weights/state_dict.cpp
   weights/safetensors.cpp
   weights/legacy_pickle.cpp
+  weights/pth.cpp
+  weights/zip.cpp
   weights/remapper.cpp
 )
 
@@ -49,6 +51,7 @@ target_link_libraries(detr_weights
     detr_core
   PRIVATE
     simdjson::simdjson
+    miniz
     fmt::fmt
     detr_warnings
 )

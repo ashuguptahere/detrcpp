@@ -23,6 +23,7 @@ set(DETR_DEP_LICENSES
     "cli11=BSD-3-Clause"
     "expected=CC0-1.0"
     "simdjson=Apache-2.0"
+    "miniz=MIT"
     "yaml-cpp=MIT"
     "googletest=BSD-3-Clause"
     "benchmark=Apache-2.0"
