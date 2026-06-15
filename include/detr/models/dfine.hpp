@@ -68,6 +68,7 @@ class DFineImpl : public IModel {
   explicit DFineImpl(DFineConfig cfg);
   Detections Forward(torch::Tensor images) override;
   ModelMeta Meta() const override;
+  weights::WeightRemapper UpstreamRemapper() const override;
 
  private:
   DFineConfig cfg_;

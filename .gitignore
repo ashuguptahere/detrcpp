@@ -30,6 +30,13 @@ runs/
 weights/*.pt
 weights/*.onnx
 weights/*.engine
+# Downloaded model checkpoints (scripts/download_models.cmake -> models/). Keep the
+# directory + README, ignore the weights themselves.
+models/*.pth
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.safetensors
 *.tracy
 *.nsys-rep
 *.qdrep

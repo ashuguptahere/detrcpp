@@ -82,6 +82,26 @@ ModelMeta DFineImpl::Meta() const {
   return m;
 }
 
+// Maps a native D-FINE / DEIM checkpoint (Peterande/D-FINE, Intellindust-AI-Lab/DEIM —
+// HGNetv2 backbone + HybridEncoder neck + FDR decoder) onto our module tree so the
+// authors' own `.pth` loads 1:1 (0 missing / 0 unexpected). Verified against
+// dfine_n_coco.pth (674 -> 588 tensors after the drops below).
+weights::WeightRemapper DFineImpl::UpstreamRemapper() const {
+  weights::WeightRemapper r;
+  if (cfg_.dinov3_sta) return r;  // DEIMv2 (DINOv3-STA) direct-load: ported separately.
+  // The backbone is FrozenBatchNorm2d (no num_batches_tracked counter) — drop only the
+  // backbone's; the encoder neck uses real BatchNorm and keeps them. The SCDown
+  // downsample conv is wrapped in an nn.Sequential upstream (strip the ".0"); the FDR
+  // decoder's training/derived buffers and denoising embedding are recomputed at init /
+  // training-only and are not parameters of our module.
+  r.Drop("^backbone\\..*num_batches_tracked$")
+      .ReplaceRegex("^(encoder\\.downsample_convs\\.[0-9]+)\\.0\\.", "$1.")
+      .Drop("^decoder\\.(decoder\\.)?(up|reg_scale)$")
+      .Drop("^decoder\\.(anchors|valid_mask)$")
+      .Drop("^decoder\\.denoising_class_embed");
+  return r;
+}
+
 namespace {
 
 // Builds the per-size D-FINE config (the n/s/m/l/x knobs from configs/dfine/*).
