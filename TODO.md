@@ -33,9 +33,11 @@ module).
 - [x] **app auto-download on run** — `-m <model>` with no `--weights` resolves the zoo
       checkpoint and fetches it into `models/` if absent.
 - [x] **deimv2 ×8** — masked-K-bias applied in the module (`DinoV3Block.bias_mask`).
-- [ ] Tier C remaining (obtainable, need module/remapper work): lw-detr ×5 (fused qkv),
-      rt-detrv3 ×6 (paddle-format checkpoints), conditional-detr (Atten4Vis SharePoint
-      needs auth).
+- [x] **lw-detr ×5** — fused-qkv / fused-in_proj split + group-DETR query slice via new
+      `WeightRemapper::SplitRows`/`SliceRows`. (Weights are HF-only upstream, so not in the
+      auto-download manifest — pass `--weights`.)
+- [ ] Tier C remaining: rt-detrv3 ×6 (paddle-format checkpoints), conditional-detr
+      (Atten4Vis SharePoint needs auth).
 
 ## Phase 0 — Skeleton ✅
 
