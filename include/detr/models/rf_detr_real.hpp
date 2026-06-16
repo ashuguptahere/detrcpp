@@ -61,6 +61,7 @@ class RfDetrRealImpl : public IModel {
 
   Detections Forward(torch::Tensor images) override;
   ModelMeta Meta() const override;
+  weights::WeightRemapper UpstreamRemapper() const override;
 
   // The encoder-token indices chosen by two-stage query selection on the last
   // Forward, [B, num_queries]. Exposed for parity tests that align the query order

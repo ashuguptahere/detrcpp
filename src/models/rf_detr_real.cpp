@@ -203,4 +203,72 @@ ModelMeta RfDetrRealImpl::Meta() const {
   return m;
 }
 
+// Maps a native Atten4Vis/LW-DETR checkpoint onto our RfDetrReal(LW-DETR) tree. RF-DETR
+// (DINOv2 backbone) shares this graph but is left identity (its native weights aren't
+// reachable to verify here). The fused-qkv / fused-in_proj projections are split at load
+// (SplitRows); the group-DETR query embeddings are sliced to num_queries (SliceRows).
+weights::WeightRemapper RfDetrRealImpl::UpstreamRemapper() const {
+  weights::WeightRemapper r;
+  if (cfg_.backbone != RfDetrRealConfig::kLwDetrViT) return r;  // RF-DETR: separately.
+
+  // --- Backbone (ViT): backbone.0.encoder.* -> backbone.*; attn.* flattened. ---
+  r.ReplaceRegex("^backbone\\.0\\.encoder\\.patch_embed\\.proj\\.", "backbone.patch_embed.")
+      .ReplaceRegex("^backbone\\.0\\.encoder\\.pos_embed$", "backbone.pos_embed")
+      .ReplaceRegex("^backbone\\.0\\.encoder\\.blocks\\.", "backbone.blocks.")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.attn\\.q_bias$", "$1.q.bias")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.attn\\.v_bias$", "$1.v.bias")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.attn\\.proj\\.", "$1.o.")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.mlp\\.fc1\\.", "$1.fc1.")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.mlp\\.fc2\\.", "$1.fc2.")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.gamma_1$", "$1.gamma1")
+      .ReplaceRegex("(backbone\\.blocks\\.[0-9]+)\\.gamma_2$", "$1.gamma2")
+      .SplitRows("^(backbone\\.blocks\\.[0-9]+)\\.attn\\.qkv\\.weight$",
+                 {"$1.q.weight", "$1.k.weight", "$1.v.weight"});
+
+  // --- Projector: single-scale (tiny/small/medium) or multi-scale (large/xlarge). ---
+  if (cfg_.scale_factors.empty()) {
+    r.ReplaceRegex("^backbone\\.0\\.projector\\.stages\\.0\\.0\\.", "projector.stage.")
+        .ReplaceRegex("^backbone\\.0\\.projector\\.stages\\.0\\.1\\.", "projector.norm.");
+  } else {
+    r.ReplaceRegex("^backbone\\.0\\.projector\\.stages_sampling\\.([0-9]+)\\.([0-9]+)\\.",
+                   "projector.scale_layers.$1.sampling.$2.layers.")
+        .ReplaceRegex("^backbone\\.0\\.projector\\.stages\\.([0-9]+)\\.0\\.",
+                      "projector.scale_layers.$1.stage.")
+        .ReplaceRegex("^backbone\\.0\\.projector\\.stages\\.([0-9]+)\\.1\\.",
+                      "projector.scale_layers.$1.norm.");
+  }
+
+  // --- Two-stage heads + decoder norm + query selection. The enc heads are group-DETR
+  // ModuleLists (one per training group); inference uses group 0, drop the rest. ---
+  r.Drop("^transformer\\.enc_output\\.[1-9]")
+      .Drop("^transformer\\.enc_output_norm\\.[1-9]")
+      .Drop("^transformer\\.enc_out_class_embed\\.[1-9]")
+      .Drop("^transformer\\.enc_out_bbox_embed\\.[1-9]")
+      .ReplaceRegex("^transformer\\.enc_output\\.0\\.", "enc_output.")
+      .ReplaceRegex("^transformer\\.enc_output_norm\\.0\\.", "enc_output_norm.")
+      .ReplaceRegex("^transformer\\.enc_out_class_embed\\.0\\.", "enc_out_class.")
+      .ReplaceRegex("^transformer\\.enc_out_bbox_embed\\.0\\.", "enc_out_bbox.")
+      .ReplaceRegex("^transformer\\.decoder\\.norm\\.", "dec_layernorm.")
+      .ReplaceRegex("^transformer\\.decoder\\.ref_point_head\\.", "ref_point_head.")
+      .ReplaceRegex("^refpoint_embed\\.weight$", "reference_point_embed")
+      .ReplaceRegex("^query_feat\\.weight$", "query_feat")
+      // group-DETR stores [num_groups*nq, *]; inference uses the leading num_queries rows.
+      .SliceRows("^reference_point_embed$", cfg_.num_queries)
+      .SliceRows("^query_feat$", cfg_.num_queries);
+
+  // --- Decoder layers: transformer.decoder.layers.N -> decoder.N; in_proj split. ---
+  r.ReplaceRegex("^transformer\\.decoder\\.layers\\.", "decoder.")
+      .ReplaceRegex("(decoder\\.[0-9]+)\\.self_attn\\.out_proj\\.", "$1.o_proj.")
+      .ReplaceRegex("(decoder\\.[0-9]+)\\.norm1\\.", "$1.self_attn_layer_norm.")
+      .ReplaceRegex("(decoder\\.[0-9]+)\\.norm2\\.", "$1.cross_attn_layer_norm.")
+      .ReplaceRegex("(decoder\\.[0-9]+)\\.norm3\\.", "$1.layer_norm.")
+      .ReplaceRegex("(decoder\\.[0-9]+)\\.linear1\\.", "$1.fc1.")
+      .ReplaceRegex("(decoder\\.[0-9]+)\\.linear2\\.", "$1.fc2.")
+      .SplitRows("^(decoder\\.[0-9]+)\\.self_attn\\.in_proj_weight$",
+                 {"$1.q_proj.weight", "$1.k_proj.weight", "$1.v_proj.weight"})
+      .SplitRows("^(decoder\\.[0-9]+)\\.self_attn\\.in_proj_bias$",
+                 {"$1.q_proj.bias", "$1.k_proj.bias", "$1.v_proj.bias"});
+  return r;
+}
+
 }  // namespace detr::models

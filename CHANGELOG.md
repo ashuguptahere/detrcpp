@@ -11,6 +11,19 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **LW-DETR family (×5) loads its native `Atten4Vis/LW-DETR` checkpoints directly, and
+  `WeightRemapper` gained tensor-reshaping ops.** Two new remapper rules handle structural
+  (not just naming) differences without touching the model or the stored weights:
+  `SplitRows(pattern, {names})` splits a fused tensor along dim 0 (the fused-`qkv` ViT
+  attention and the fused decoder `self_attn.in_proj`), and `SliceRows(pattern, count)`
+  keeps the leading rows (LW-DETR's group-DETR query embeddings ship `[1300, *]`, of which
+  inference uses the first num_queries). `RfDetrRealImpl::UpstreamRemapper()` maps the
+  authors' checkpoint onto our tree (ViT `backbone.0.encoder.*`, single- or multi-scale
+  projector, two-stage group-DETR heads, decoder), verified loading all five
+  `lw-detr-{tiny,small,medium,large,xlarge}` 0/0/0 (261/329/329/411/435 tensors). The
+  loaded weights are byte-identical to the previously-validated converted path. Note: the
+  authors publish these weights only on Hugging Face, so they are NOT in the auto-download
+  manifest (no compliant non-HF source) — point `--weights` at the authors' `.pth`.
 - **DEIMv2 family (×8) loads its native `Intellindust-AI-Lab/DEIMv2` checkpoints
   directly.** `DFineImpl::UpstreamRemapper` now shares the neck/decoder rules across
   D-FINE / DEIM / DEIMv2 and adds a DINOv3-STA branch (keep the backbone BatchNorm

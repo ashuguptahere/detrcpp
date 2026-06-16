@@ -72,6 +72,11 @@ const UpstreamCase kCases[] = {
     {"deimv2-m", "deimv2_m.pth"},
     {"deimv2-l", "deimv2_l.pth"},
     {"deimv2-x", "deimv2_x.pth"},
+    {"lw-detr-tiny", "lwdetr_tiny.pth"},
+    {"lw-detr-small", "lwdetr_small.pth"},
+    {"lw-detr-medium", "lwdetr_medium.pth"},
+    {"lw-detr-large", "lwdetr_large.pth"},
+    {"lw-detr-xlarge", "lwdetr_xlarge.pth"},
 };
 
 class UpstreamLoad : public ::testing::TestWithParam<UpstreamCase> {};

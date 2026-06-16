@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -46,6 +47,19 @@ class WeightRemapper {
 
   // Drops any key matching the std::regex |pattern|.
   WeightRemapper& Drop(std::string pattern);
+
+  // Splits one tensor into N along dim 0 (rows). A key matching |pattern| (after the
+  // rename rules) is replaced by |replacements|.size() keys — replacement[i] is the
+  // regex substitution naming part i, which receives an equal contiguous slice of the
+  // rows. Handles the fused-qkv / fused-`in_proj_weight` checkpoints that store q,k,v
+  // (or q_proj/k_proj/v_proj) stacked in one tensor, vs our separate projections.
+  WeightRemapper& SplitRows(std::string pattern, std::vector<std::string> replacements);
+
+  // Keeps only the first |count| rows (dim 0) of a tensor whose key matches |pattern|
+  // (after the rename rules). For checkpoints that store more entries than our module
+  // uses — e.g. LW-DETR's group-DETR query embeddings ([1300, *], of which inference
+  // uses the leading num_queries rows).
+  WeightRemapper& SliceRows(std::string pattern, std::int64_t count);
 
   // Maps one key. Returns nullopt if the key is dropped.
   std::optional<std::string> Map(std::string_view key) const;
