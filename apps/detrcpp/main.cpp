@@ -38,8 +38,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <filesystem>
 #include <limits>
+#include <memory>
+#include <regex>
 
 #include "detr/data/dataset.hpp"
 #include "detr/data/loader.hpp"
@@ -172,6 +175,88 @@ ExitCode NotImplemented(std::string_view verb) {
 // in pure C++ — the reader sniffs the format from the file's first bytes.
 detr::core::Result<detr::weights::StateDict> LoadWeightsAuto(const std::string& path) {
   return detr::weights::LoadPth(path);
+}
+
+// Locate scripts/download_models.cmake: $DETRCPP_HOME, the cwd, or up from the running
+// executable (/proc/self/exe). Empty if not found.
+std::string FindDownloaderScript() {
+  namespace fs = std::filesystem;
+  std::vector<fs::path> roots;
+  if (const char* home = std::getenv("DETRCPP_HOME")) roots.emplace_back(home);
+  std::error_code ec;
+  roots.emplace_back(fs::current_path(ec));
+  if (auto exe = fs::read_symlink("/proc/self/exe", ec); !ec) {
+    for (fs::path d = exe.parent_path(); !d.empty() && d != d.root_path(); d = d.parent_path()) {
+      roots.push_back(d);
+    }
+  }
+  for (const auto& r : roots) {
+    auto p = r / "scripts" / "download_models.cmake";
+    if (fs::exists(p, ec)) return fs::weakly_canonical(p, ec).string();
+  }
+  return {};
+}
+
+// Runs the downloader's `path <model>` query and returns the resolved models/<file>
+// path (the MODELPATH= line), or "" if cmake / the model is unavailable.
+std::string QueryModelWeightPath(const std::string& script, const std::string& model) {
+  const std::string cmd = "cmake -P \"" + script + "\" -- path \"" + model + "\" 2>&1";
+  std::unique_ptr<std::FILE, int (*)(std::FILE*)> pipe(::popen(cmd.c_str(), "r"), ::pclose);
+  if (!pipe) return {};
+  std::string out;
+  std::array<char, 4096> buf{};
+  while (std::fgets(buf.data(), static_cast<int>(buf.size()), pipe.get())) {
+    std::string s(buf.data());
+    if (auto pos = s.find("MODELPATH="); pos != std::string::npos) {
+      out = s.substr(pos + 10);
+      while (!out.empty() && (out.back() == '\n' || out.back() == '\r' || out.back() == ' ')) {
+        out.pop_back();
+      }
+    }
+  }
+  return out;
+}
+
+// When --weights is omitted, resolve the model's default checkpoint from the model zoo
+// and download it into models/ if absent (the Python-free CMake downloader). Returns ""
+// when the model isn't in the manifest or the download fails.
+std::string AutoResolveWeights(const std::string& model, detr::log::Logger& lg) {
+  static const std::regex kName("^[A-Za-z0-9._-]+$");  // never shell out on odd names
+  if (!std::regex_match(model, kName)) return {};
+  const std::string script = FindDownloaderScript();
+  if (script.empty()) return {};
+  const std::string path = QueryModelWeightPath(script, model);
+  if (path.empty()) return {};
+  std::error_code ec;
+  if (std::filesystem::exists(path, ec)) return path;
+  lg.info("no --weights given; fetching '{}' into models/ via the model zoo", model);
+  const int rc = std::system(("cmake -P \"" + script + "\" -- \"" + model + "\"").c_str());
+  if (rc == 0 && std::filesystem::exists(path, ec)) return path;
+  lg.warn("auto-download of '{}' failed (exit {}); pass --weights or run the downloader", model,
+          rc);
+  return {};
+}
+
+// Resolve the weights to load: the explicit --weights, else the model's zoo checkpoint
+// (auto-downloaded into models/). Loads it; logs and returns nullopt on any failure.
+// `used` receives the resolved path (for the load report).
+std::optional<detr::weights::StateDict> ResolveAndLoadWeights(const Options& o,
+                                                              detr::log::Logger& lg,
+                                                              std::string& used) {
+  used = o.weights.empty() ? AutoResolveWeights(o.model, lg) : o.weights;
+  if (used.empty()) {
+    lg.error(
+        "no weights for '{}': pass --weights, or pick a model from the zoo "
+        "(cmake -P scripts/download_models.cmake -- list)",
+        o.model);
+    return std::nullopt;
+  }
+  auto sd = LoadWeightsAuto(used);
+  if (!sd) {
+    lg.error("weights '{}': {}", used, sd.error().message);
+    return std::nullopt;
+  }
+  return std::move(*sd);
 }
 
 torch::Device ToTorchDevice(const detr::core::Device& d) {
@@ -411,9 +496,9 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
   }
   auto model = *model_r;
 
-  auto sd = LoadWeightsAuto(o.weights);
+  std::string wpath;
+  auto sd = ResolveAndLoadWeights(o, lg, wpath);
   if (!sd) {
-    lg.error("weights '{}': {}", o.weights, sd.error().message);
     return ExitCode::UsageError;
   }
   auto rep = detr::weights::LoadStateDictInto(*model, *sd, model->UpstreamRemapper(), false);
@@ -421,7 +506,7 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
     lg.error("load weights: {}", rep.error().message);
     return ExitCode::UsageError;
   }
-  if (!ReportWeightsOk(lg, o.weights, *rep)) {
+  if (!ReportWeightsOk(lg, wpath, *rep)) {
     return ExitCode::UsageError;
   }
 
@@ -462,7 +547,7 @@ ExitCode RunEvalTorch(const Options& o, const detr::core::Device& dev, std::stri
 
 ExitCode RunEval(const Options& o, std::string_view verb) {
   auto& lg = detr::log::Get("cli.eval");
-  if (!Require(!o.model.empty(), "model", verb) || !Require(!o.weights.empty(), "weights", verb)) {
+  if (!Require(!o.model.empty(), "model", verb)) {  // --weights optional: zoo auto-download
     return ExitCode::UsageError;
   }
   lg.info("{}: model={} weights={}", verb, o.model, o.weights);
@@ -516,9 +601,9 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     return ExitCode::UsageError;
   }
   auto model = *model_r;
-  auto sd = LoadWeightsAuto(o.weights);
+  std::string wpath;
+  auto sd = ResolveAndLoadWeights(o, lg, wpath);
   if (!sd) {
-    lg.error("weights '{}': {}", o.weights, sd.error().message);
     return ExitCode::UsageError;
   }
   auto rep = detr::weights::LoadStateDictInto(*model, *sd, model->UpstreamRemapper(), false);
@@ -526,7 +611,7 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
     lg.error("load weights: {}", rep.error().message);
     return ExitCode::UsageError;
   }
-  if (!ReportWeightsOk(lg, o.weights, *rep)) {
+  if (!ReportWeightsOk(lg, wpath, *rep)) {
     return ExitCode::UsageError;
   }
 
@@ -608,8 +693,7 @@ ExitCode RunPredictTorch(const Options& o, const detr::core::Device& dev) {
 
 ExitCode RunPredict(const Options& o) {
   auto& lg = detr::log::Get("cli.predict");
-  if (!Require(!o.model.empty(), "model", "predict") ||
-      !Require(!o.weights.empty(), "weights", "predict") ||
+  if (!Require(!o.model.empty(), "model", "predict") ||  // --weights optional: zoo auto-download
       !Require(!o.source.empty(), "source", "predict")) {
     return ExitCode::UsageError;
   }
@@ -656,9 +740,9 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
     return ExitCode::UsageError;
   }
   auto model = *model_r;
-  auto sd_in = LoadWeightsAuto(o.weights);
+  std::string wpath;
+  auto sd_in = ResolveAndLoadWeights(o, lg, wpath);
   if (!sd_in) {
-    lg.error("weights '{}': {}", o.weights, sd_in.error().message);
     return ExitCode::UsageError;
   }
   auto rep = detr::weights::LoadStateDictInto(*model, *sd_in, model->UpstreamRemapper(), false);
@@ -666,7 +750,7 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
     lg.error("load weights: {}", rep.error().message);
     return ExitCode::UsageError;
   }
-  if (!ReportWeightsOk(lg, o.weights, *rep)) {
+  if (!ReportWeightsOk(lg, wpath, *rep)) {
     return ExitCode::UsageError;
   }
 
@@ -707,8 +791,7 @@ ExitCode RunExportTorch(const Options& o, const detr::core::Device& /*dev*/) {
 
 ExitCode RunExport(const Options& o) {
   auto& lg = detr::log::Get("cli.export");
-  if (!Require(!o.model.empty(), "model", "export") ||
-      !Require(!o.weights.empty(), "weights", "export")) {
+  if (!Require(!o.model.empty(), "model", "export")) {  // --weights optional: zoo auto-download
     return ExitCode::UsageError;
   }
   lg.info("export: format={} model={} weights={} precision={}", o.export_format, o.model, o.weights,

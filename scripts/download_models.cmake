@@ -64,22 +64,44 @@ set(MANIFEST
 
 # ---- Arg parsing ----------------------------------------------------------------
 # Everything after the literal "--" is our argument; CMake puts script args in
-# CMAKE_ARGV{N}. Find the token after "--".
+# CMAKE_ARGV{N}. Capture the token after "--" (REQUEST) and the one after it (ARG2,
+# used by the `path` query: `-- path <model>`).
 set(REQUEST "")
+set(ARG2 "")
 math(EXPR _last "${CMAKE_ARGC}-1")
 foreach(i RANGE 0 ${_last})
   if(DEFINED CMAKE_ARGV${i} AND "${CMAKE_ARGV${i}}" STREQUAL "--")
     math(EXPR _next "${i}+1")
+    math(EXPR _next2 "${i}+2")
     if(DEFINED CMAKE_ARGV${_next})
       set(REQUEST "${CMAKE_ARGV${_next}}")
+    endif()
+    if(DEFINED CMAKE_ARGV${_next2})
+      set(ARG2 "${CMAKE_ARGV${_next2}}")
     endif()
   endif()
 endforeach()
 if(REQUEST STREQUAL "")
-  message(FATAL_ERROR "usage: cmake -P scripts/download_models.cmake -- <model-name|all|list>")
+  message(FATAL_ERROR "usage: cmake -P scripts/download_models.cmake -- <model|all|list|path <model>>")
 endif()
 
 get_filename_component(MODELS_DIR "${CMAKE_CURRENT_LIST_DIR}/../models" ABSOLUTE)
+
+# `path <model>`: print the resolved models/<file> path for a model on a single line
+# prefixed with MODELPATH= (for the app's auto-download), then exit. Empty if unknown.
+if(REQUEST STREQUAL "path")
+  foreach(row ${MANIFEST})
+    string(REPLACE "|" ";" parts "${row}")
+    list(GET parts 0 name)
+    list(GET parts 1 file)
+    if(name STREQUAL "${ARG2}")
+      message(STATUS "MODELPATH=${MODELS_DIR}/${file}")
+      return()
+    endif()
+  endforeach()
+  message(STATUS "MODELPATH=")
+  return()
+endif()
 
 # ---- Resolve a possibly-Drive URL to something file(DOWNLOAD) can fetch ----------
 function(resolve_url raw out)

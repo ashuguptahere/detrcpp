@@ -11,6 +11,14 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **Auto-download on run: `--weights` is now optional for zoo models.** When you run a
+  registered model without `--weights` (`detrcpp --val -m dfine-l --data ...`), the CLI
+  resolves the model's original checkpoint from the model zoo and downloads it into
+  `models/` if absent (via the Python-free `scripts/download_models.cmake`), then loads
+  it through the model's `UpstreamRemapper`. The downloader gained a `path <model>` query
+  (the single source for the filename); the app locates the script via `$DETRCPP_HOME`,
+  the cwd, or the executable path. Explicit `--weights` is unchanged; a model with no zoo
+  entry gives a clear "pass --weights or pick a model from the zoo" error.
 - **DINO (`dino`) made faithful to native DINO-4scale and validated to float epsilon.**
   The shared `deform_head` gained a gated DINO path (RT-DETR / RF-DETR untouched): a
   learned `tgt_embed` content query (vs memory-gather), a query position conditioned on
