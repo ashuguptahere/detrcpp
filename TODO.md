@@ -15,9 +15,11 @@ ordered for shippability; items inside a phase can parallelize.
 ## Native checkpoint loading (model zoo) — 2026-06-16
 
 `models/` dir + `scripts/download_models.cmake` (GitHub + Google-Drive) +
-`test_upstream_load.cpp`. **33 models load their original-author `.pth` directly via
-`UpstreamRemapper` (0/0/0):** DETR ×4, D-FINE ×9, RT-DETR ×8, DEIM ×8, Deformable-DETR,
-Anchor ×2, **DINO** (faithful 4-scale port, parity to float epsilon).
+`test_upstream_load.cpp` + **auto-download on run** (`--weights` optional). **41 models
+load their original-author `.pth` directly via `UpstreamRemapper` (0/0/0):** DETR ×4,
+D-FINE ×9, RT-DETR ×8, DEIM ×8, Deformable-DETR, Anchor ×2, **DINO** (faithful 4-scale
+port, parity to float epsilon), **DEIMv2 ×8** (HGNetv2 + DINOv3-STA; masked-K-bias in the
+module).
 
 - [ ] **rf-detr (×8) — BLOCKED here, finish later.** Weights are GCS-only
       (`storage.googleapis.com/rfdetr/`) and the sandbox FortiGuard firewall blocks that
@@ -28,11 +30,12 @@ Anchor ×2, **DINO** (faithful 4-scale port, parity to float epsilon).
 - [ ] **dn-detr / dab-detr — BLOCKED (upstream).** IDEA-Research's Google-Drive folders
       404 (removed; DINO's folder is 200, every DN-DETR folder is 404); DAB README has no
       links. Need a live original source, then write+verify the conditional-decoder remapper.
-- [ ] **app auto-download on run** — when `-m <model>` runs and `models/<file>` is absent,
-      fetch it via the downloader (currently manual `cmake -P scripts/download_models.cmake`).
-- [ ] Tier C (obtainable, need module/remapper work): deimv2 ×8 (masked-K-bias qkv fold),
-      lw-detr ×5 (fused qkv), rt-detrv3 ×6 (paddle-format checkpoints), conditional-detr
-      (Atten4Vis SharePoint needs auth).
+- [x] **app auto-download on run** — `-m <model>` with no `--weights` resolves the zoo
+      checkpoint and fetches it into `models/` if absent.
+- [x] **deimv2 ×8** — masked-K-bias applied in the module (`DinoV3Block.bias_mask`).
+- [ ] Tier C remaining (obtainable, need module/remapper work): lw-detr ×5 (fused qkv),
+      rt-detrv3 ×6 (paddle-format checkpoints), conditional-detr (Atten4Vis SharePoint
+      needs auth).
 
 ## Phase 0 — Skeleton ✅
 
