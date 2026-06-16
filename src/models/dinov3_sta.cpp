@@ -163,6 +163,9 @@ DinoV3BlockImpl::DinoV3BlockImpl(int dim, int num_heads, double ffn_ratio, bool 
   norm2 = register_module("norm2", nn::LayerNorm(nn::LayerNormOptions({dim}).eps(1e-5)));
   auto attn = register_module("attn", std::make_shared<nn::Module>());
   qkv = attn->register_module("qkv", nn::Linear(dim, dim * 3));
+  // DINOv3 masks the K third of the qkv bias to zero (no learned key bias). The mask is
+  // a persistent buffer on the qkv Linear (key `attn.qkv.bias_mask`); applied in forward.
+  bias_mask = qkv->register_buffer("bias_mask", torch::ones({dim * 3}));
   proj = attn->register_module("proj", nn::Linear(dim, dim));
   ls1 = register_module("ls1", DinoLayerScale(dim));
   ls2 = register_module("ls2", DinoLayerScale(dim));
@@ -184,7 +187,9 @@ torch::Tensor DinoV3BlockImpl::forward(torch::Tensor x, const torch::Tensor& sin
                                        const torch::Tensor& cos, int prefix) {
   auto y = norm1->forward(x);
   const auto B = y.size(0), N = y.size(1), C = y.size(2);
-  auto qkv_out = qkv->forward(y).reshape({B, N, 3, num_heads_, C / num_heads_}).permute({2, 0, 3, 1, 4});
+  auto qkv_out = F::linear(y, qkv->weight, qkv->bias * bias_mask)
+                     .reshape({B, N, 3, num_heads_, C / num_heads_})
+                     .permute({2, 0, 3, 1, 4});
   auto q = qkv_out[0], k = qkv_out[1], v = qkv_out[2];
   auto qp = ApplyRope(q.slice(2, prefix, N), sin, cos);
   auto kp = ApplyRope(k.slice(2, prefix, N), sin, cos);

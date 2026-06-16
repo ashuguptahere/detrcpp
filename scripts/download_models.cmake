@@ -50,6 +50,16 @@ set(MANIFEST
   "deim-rt-s|deim_rt_r18.pth|gdrive:153_JKff6EpFgiLKaqkJsoDcLal_0ux_F"
   "deim-rt-m|deim_rt_r34.pth|gdrive:1O9RjZF6kdFWGv1Etn1Toml4r-YfdMDMM"
   "deim-rt-l|deim_rt_r50.pth|gdrive:1mWknAXD5JYknUQ94WCEvPfXz13jcNOTI"
+  # DEIMv2 (Intellindust-AI-Lab/DEIMv2) — HGNetv2 (atto/femto/pico/n) + DINOv3-STA
+  # (s/m/l/x), the authors' Google-Drive releases.
+  "deimv2-atto|deimv2_atto.pth|gdrive:18sRJXX3FBUigmGJ1y5Oo_DPC5C3JCgYc"
+  "deimv2-femto|deimv2_femto.pth|gdrive:16hh6l9Oln9TJng4V0_HNf_Z7uYb7feds"
+  "deimv2-pico|deimv2_pico.pth|gdrive:1PXpUxYSnQO-zJHtzrCPqQZ3KKatZwzFT"
+  "deimv2-n|deimv2_n.pth|gdrive:1G_Q80EVO4T7LZVPfHwZ3sT65FX5egp9K"
+  "deimv2-s|deimv2_s.pth|gdrive:1MDOh8UXD39DNSew6rDzGFp1tAVpSGJdL"
+  "deimv2-m|deimv2_m.pth|gdrive:1nPKDHrotusQ748O1cQXJfi5wdShq6bKp"
+  "deimv2-l|deimv2_l.pth|gdrive:1dRJfVHr9HtpdvaHlnQP460yPVHynMray"
+  "deimv2-x|deimv2_x.pth|gdrive:1pTiQaBGt8hwtO0mbYlJ8nE-HGztGafS7"
   # D-FINE (Peterande/D-FINE) — COCO + Objects365->COCO, GitHub release assets.
   "dfine-n|dfine_n_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_n_coco.pth"
   "dfine-s|dfine_s_coco.pth|https://github.com/Peterande/storage/releases/download/dfinev1.0/dfine_s_coco.pth"

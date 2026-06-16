@@ -83,6 +83,7 @@ struct DinoV3BlockImpl : nn::Module {
   bool swiglu_;
   nn::LayerNorm norm1{nullptr}, norm2{nullptr};
   nn::Linear qkv{nullptr}, proj{nullptr};
+  torch::Tensor bias_mask;  // qkv.bias_mask buffer: zeros the K third of the qkv bias
   DinoLayerScale ls1{nullptr}, ls2{nullptr};
   nn::Linear fc1{nullptr}, fc2{nullptr};      // GELU MLP (ViT-S)
   nn::Linear w1{nullptr}, w2{nullptr}, w3{nullptr};  // SwiGLU (ViT-S+)

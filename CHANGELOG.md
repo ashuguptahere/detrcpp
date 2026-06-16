@@ -11,6 +11,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DEIMv2 family (×8) loads its native `Intellindust-AI-Lab/DEIMv2` checkpoints
+  directly.** `DFineImpl::UpstreamRemapper` now shares the neck/decoder rules across
+  D-FINE / DEIM / DEIMv2 and adds a DINOv3-STA branch (keep the backbone BatchNorm
+  counters; drop the inference-unused `mask_token`). The HGNetv2 sizes
+  (`deimv2-{atto,femto,pico,n}`) reuse the existing rules; the DINOv3-STA sizes
+  (`deimv2-{s,m,l,x}`) load their ViT backbone. For the Meta DINOv3 ViT (l/x), the
+  per-block masked-K qkv bias is now applied in the module — `DinoV3Block` registers the
+  `attn.qkv.bias_mask` buffer and computes `qkv.bias * bias_mask` in forward (numerically
+  identical to the prior pre-folded path) — so the native bias + mask load 1:1. All eight
+  verified 0/0/0; Google-Drive URLs added to the manifest.
 - **Auto-download on run: `--weights` is now optional for zoo models.** When you run a
   registered model without `--weights` (`detrcpp --val -m dfine-l --data ...`), the CLI
   resolves the model's original checkpoint from the model zoo and downloads it into
