@@ -118,7 +118,8 @@ class DinoImpl : public IModel {
     }
     head_ = BuildDeformDetectHead(*this, d, cfg.num_levels, cfg.nheads, cfg.num_points,
                                   cfg.dim_feedforward, cfg.dec_layers, cfg.num_classes,
-                                  cfg.num_queries);
+                                  cfg.num_queries, /*discrete_sample=*/false, /*deim=*/false,
+                                  /*dino=*/true);
     if (denoising_) {
       // DINO-CDN: per-class content embedding for denoising queries (+1 unused
       // "unknown" row). Registered only for dino-cdn, so plain dino stays
@@ -163,6 +164,36 @@ class DinoImpl : public IModel {
     return m;
   }
 
+  // Maps a native IDEA-Research/DINO checkpoint onto our module tree. The decoder heads
+  // are shared with the two-stage enc heads upstream (dec_pred_*_embed_share), and the
+  // top-level class_embed/bbox_embed are duplicate references to the decoder copies —
+  // keep the transformer.decoder.* set, drop the duplicates. label_enc is training-only
+  // denoising (dropped for plain dino; dino-cdn registers it and keeps it).
+  weights::WeightRemapper UpstreamRemapper() const override {
+    weights::WeightRemapper r;
+    r.Drop("num_batches_tracked")
+        .Drop("^(class_embed|bbox_embed)\\.")  // duplicate refs of the decoder heads
+        .ReplaceRegex("^backbone\\.0\\.body\\.", "backbone.")
+        .ReplaceRegex("^transformer\\.encoder\\.layers\\.", "encoder.")
+        .ReplaceRegex("^transformer\\.decoder\\.class_embed\\.", "dec_score_head.")
+        .ReplaceRegex("^transformer\\.decoder\\.bbox_embed\\.", "dec_bbox_head.")
+        .ReplaceRegex("^transformer\\.decoder\\.ref_point_head\\.", "query_pos_head.")
+        .ReplaceRegex("^transformer\\.decoder\\.norm\\.", "decoder_norm.")
+        // DINO normalizes self-attn with norm2 and cross-attn with norm1 (the opposite of
+        // our shared deform layer's RT-DETR order) — swap them so each lands on its norm.
+        .ReplaceRegex("^transformer\\.decoder\\.layers\\.([0-9]+)\\.norm1\\.", "decoder.$1.norm2.")
+        .ReplaceRegex("^transformer\\.decoder\\.layers\\.([0-9]+)\\.norm2\\.", "decoder.$1.norm1.")
+        .ReplaceRegex("^transformer\\.decoder\\.layers\\.", "decoder.")
+        .ReplaceRegex("^transformer\\.enc_output_norm\\.", "enc_output_norm.")
+        .ReplaceRegex("^transformer\\.enc_output\\.", "enc_output.")
+        .ReplaceRegex("^transformer\\.enc_out_class_embed\\.", "enc_score_head.")
+        .ReplaceRegex("^transformer\\.enc_out_bbox_embed\\.", "enc_bbox_head.")
+        .ReplaceRegex("^transformer\\.tgt_embed\\.", "tgt_embed.")
+        .ReplaceRegex("^transformer\\.level_embed$", "level_embed");
+    if (!denoising_) r.Drop("^label_enc\\.");  // dino-cdn keeps its label embedding
+    return r;
+  }
+
  private:
   struct Encoded {
     torch::Tensor memory;  // [B, Sum(HW), d]
@@ -189,7 +220,8 @@ class DinoImpl : public IModel {
     for (int l = 0; l < cfg_.num_levels; ++l) {
       auto s = srcs[static_cast<std::size_t>(l)];
       shapes.emplace_back(s.size(2), s.size(3));
-      auto pos = SinePos(b, d, s.size(2), s.size(3), s.options()).flatten(2).transpose(1, 2);
+      // DINO's PositionEmbeddingSineHW uses temperature 20 (not the DETR default 10000).
+      auto pos = SinePos(b, d, s.size(2), s.size(3), s.options(), 20.0).flatten(2).transpose(1, 2);
       src_flat.push_back(s.flatten(2).transpose(1, 2));
       pos_flat.push_back(pos + level_embed_[l].view({1, 1, -1}));
     }

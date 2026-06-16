@@ -11,6 +11,17 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **DINO (`dino`) made faithful to native DINO-4scale and validated to float epsilon.**
+  The shared `deform_head` gained a gated DINO path (RT-DETR / RF-DETR untouched): a
+  learned `tgt_embed` content query (vs memory-gather), a query position conditioned on
+  the `gen_sineembed_for_position` sine embedding of the reference (`ref_point_head`
+  MLP(2d,d,d,2)), and a decoder-output `norm` feeding the prediction heads while the
+  reference trajectory keeps the un-normed output. `DinoImpl` also uses the DINO
+  position-encoding temperature (20, not 10000). A new `UpstreamRemapper` loads the
+  authors' `checkpoint0033_4scale` 0 missing / 0 unexpected (577 tensors), including the
+  decoder norm1<->norm2 swap (DINO normalizes self-attn with norm2, cross-attn with
+  norm1). End-to-end parity vs native DINO (its pure-PyTorch deformable-attn) is exact:
+  logits max|diff| 4e-5, boxes 7e-6 (`test_dino_parity.cpp`).
 - **Deformable-DETR loads its native `fundamentalvision/Deformable-DETR` checkpoint
   directly** (switching off the prior Hugging Face source). New `UpstreamRemapper`:
   `backbone.0.body.` -> `backbone.`, strip the `transformer.` wrapper, and collapse the

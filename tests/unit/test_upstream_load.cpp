@@ -31,6 +31,7 @@ struct UpstreamCase {
 
 // Grows as each family's UpstreamRemapper is implemented + its weights are linked.
 const UpstreamCase kCases[] = {
+    {"dino", "dino_checkpoint0033_4scale.pth"},
     {"anchor-detr", "AnchorDETR_r50.pth"},
     {"anchor-detr-dc5", "AnchorDETR_r50_dc5.pth"},
     {"deformable-detr", "r50_deformable_detr-checkpoint.pth"},

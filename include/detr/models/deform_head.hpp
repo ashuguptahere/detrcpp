@@ -37,14 +37,22 @@ struct DeformDetectHead {
   torch::nn::ModuleList dec_bbox{nullptr};
   int num_levels{0};
   int num_queries{0};
+  // DINO-4scale path (gated; RT-DETR / RF-DETR leave these null and `dino`=false): a
+  // learned content query (`tgt_embed`) instead of memory-gather, a sine-embedded
+  // reference fed to `query_pos_head` (MLP(2d,d,d,2)), and a decoder-output `norm` whose
+  // result feeds the prediction heads while the reference trajectory stays un-normed.
+  bool dino{false};
+  torch::nn::Embedding tgt_embed{nullptr};
+  torch::nn::LayerNorm decoder_norm{nullptr};
 };
 
 // `deim`: the DEIM-RT-DETRv2 variant of the head — SiLU activation throughout and a
 // 3-layer query_pos_head MLP(4,d,d,3) (vs RT-DETR's ReLU + 2-layer MLP(4,2d,d,2)).
+// `dino`: the DINO-4scale path (learned tgt + sine-embedded query pos + decoder norm).
 DeformDetectHead BuildDeformDetectHead(torch::nn::Module& model, int d, int levels, int heads,
                                        int points, int ff, int dec_layers, int num_classes,
                                        int num_queries, bool discrete_sample = false,
-                                       bool deim = false);
+                                       bool deim = false, bool dino = false);
 
 // Optional contrastive-denoising prefix (DINO-CDN). When active, num_dn denoising
 // queries are PREPENDED to the topk matching queries and the joint decoder runs

@@ -62,6 +62,7 @@ if(DETR_ENABLE_TORCH)
     unit/test_anchor_detr.cpp
     unit/test_dino.cpp
     unit/test_dino_cdn.cpp
+    unit/test_dino_parity.cpp
     unit/test_train.cpp
     unit/test_loader.cpp
     unit/test_io.cpp

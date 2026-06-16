@@ -18,6 +18,8 @@ cmake_minimum_required(VERSION 3.24)
 # direct usercontent form "gdrive:<FILE_ID>" (resolved below) since the authors of
 # several repos publish only on Drive.
 set(MANIFEST
+  # DINO (IDEA-Research/DINO) — DINO-4scale R50, 36-epoch, Google-Drive release.
+  "dino|dino_checkpoint0033_4scale.pth|gdrive:1AwUn5EebmmLBo7njjW_Ng1q9zDrqkNbB"
   # Anchor-DETR (megvii-research/AnchorDETR) — R50 C5 / DC5, Google-Drive releases.
   "anchor-detr|AnchorDETR_r50.pth|gdrive:1ktLJyw4PGdaXkOn61W537Z67WHcttXDs"
   "anchor-detr-dc5|AnchorDETR_r50_dc5.pth|gdrive:1lJZWdIlHj6KKmAdU28Y01tTyO0hc6Jxs"

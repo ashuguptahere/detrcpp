@@ -19,6 +19,25 @@ torch::Tensor InverseSigmoid(torch::Tensor x, double eps = 1e-5) {
   return torch::log(x.clamp_min(eps) / (1 - x).clamp_min(eps));
 }
 
+// DINO's gen_sineembed_for_position for a 4D reference [cx, cy, w, h] in (0,1):
+// returns a [B, N, 4*d/2] = [B, N, 2*d] embedding (cat of Y, X, W, H), each coord
+// expanded to d/2 with the interleaved sin(even)/cos(odd) layout. d = embed_dim.
+torch::Tensor SineEmbed(const torch::Tensor& ref, int d) {
+  const double scale = 2.0 * M_PI;
+  const int half = d / 2;  // 128 for d=256
+  auto opts = ref.options();
+  auto dim_t = torch::arange(half, opts);
+  dim_t = torch::pow(10000.0, 2.0 * torch::floor(dim_t / 2.0) / half);  // [half]
+  auto embed = [&](const torch::Tensor& c) {                            // c: [B, N]
+    auto pos = (c * scale).unsqueeze(-1) / dim_t;                       // [B, N, half]
+    auto s = pos.slice(-1, 0, half, 2).sin();                          // even indices
+    auto co = pos.slice(-1, 1, half, 2).cos();                         // odd indices
+    return torch::stack({s, co}, -1).flatten(-2);                       // [B, N, half]
+  };
+  return torch::cat({embed(ref.select(-1, 1)), embed(ref.select(-1, 0)),  // Y, X,
+                     embed(ref.select(-1, 2)), embed(ref.select(-1, 3))}, -1);  // W, H
+}
+
 // Grid-center anchors in inverse-sigmoid space: [1, Sum(H*W), 4].
 torch::Tensor GenerateAnchors(const SpatialShapes& shapes, const torch::TensorOptions& opts) {
   std::vector<torch::Tensor> anchors;
@@ -100,18 +119,26 @@ torch::Tensor MlpImpl::forward(torch::Tensor x) {
 
 DeformDetectHead BuildDeformDetectHead(nn::Module& m, int d, int levels, int heads, int points,
                                        int ff, int dec_layers, int num_classes, int num_queries,
-                                       bool discrete_sample, bool deim) {
+                                       bool discrete_sample, bool deim, bool dino) {
   DeformDetectHead h;
   h.num_levels = levels;
   h.num_queries = num_queries;
+  h.dino = dino;
   h.enc_output = m.register_module("enc_output", nn::Linear(d, d));
   h.enc_output_norm =
       m.register_module("enc_output_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
   h.enc_score_head = m.register_module("enc_score_head", nn::Linear(d, num_classes));
   h.enc_bbox_head = m.register_module("enc_bbox_head", Mlp(d, d, 4, 3, deim));
-  // DEIM-RT-DETRv2 uses a 3-layer query_pos_head MLP(4,d,d,3); RT-DETR uses MLP(4,2d,d,2).
+  // query_pos_head input: DINO feeds a 2d-wide sine embedding of the 4D reference
+  // (MLP(2d,d,d,2)); DEIM-RT-DETRv2 uses MLP(4,d,d,3); RT-DETR uses MLP(4,2d,d,2).
   h.query_pos_head = m.register_module(
-      "query_pos_head", deim ? Mlp(4, d, d, 3, true) : Mlp(4, 2 * d, d, 2));
+      "query_pos_head",
+      dino ? Mlp(2 * d, d, d, 2) : (deim ? Mlp(4, d, d, 3, true) : Mlp(4, 2 * d, d, 2)));
+  if (dino) {
+    // Learned content query + the decoder-output norm feeding the prediction heads.
+    h.tgt_embed = m.register_module("tgt_embed", nn::Embedding(num_queries, d));
+    h.decoder_norm = m.register_module("decoder_norm", nn::LayerNorm(nn::LayerNormOptions({d})));
+  }
   h.decoder = m.register_module("decoder", nn::ModuleList());
   h.dec_score = m.register_module("dec_score_head", nn::ModuleList());
   h.dec_bbox = m.register_module("dec_bbox_head", nn::ModuleList());
@@ -143,6 +170,8 @@ Detections RunCore(const DeformDetectHead& head, torch::Tensor memory, const Spa
   auto decoder = head.decoder;
   auto dec_score = head.dec_score;
   auto dec_bbox = head.dec_bbox;
+  auto tgt_embed = head.tgt_embed;        // null unless DINO
+  auto decoder_norm = head.decoder_norm;  // null unless DINO
 
   auto anchors = GenerateAnchors(shapes, memory.options());
   auto out_mem = enc_output_norm->forward(enc_output->forward(memory));
@@ -152,7 +181,10 @@ Detections RunCore(const DeformDetectHead& head, torch::Tensor memory, const Spa
   auto topk = std::get<1>(std::get<0>(enc_class.max(-1)).topk(nq, 1));
   auto gi = topk.unsqueeze(-1);
   auto ref_unact = enc_coord.gather(1, gi.expand({b, nq, 4})).detach();
-  auto tgt = out_mem.gather(1, gi.expand({b, nq, d})).detach();
+  // DINO initializes the content query from a learned embedding (embed_init_tgt); the
+  // RT-DETR-style head gathers it from the selected encoder memory.
+  auto tgt = head.dino ? tgt_embed->weight.unsqueeze(0).expand({b, nq, d}).contiguous()
+                       : out_mem.gather(1, gi.expand({b, nq, d})).detach();
   auto ref = ref_unact.sigmoid();
 
   // In training, keep each layer's prediction for deep supervision.
@@ -173,15 +205,21 @@ Detections RunCore(const DeformDetectHead& head, torch::Tensor memory, const Spa
   Detections det;
   torch::Tensor logits;
   torch::Tensor boxes;
+  const double inv_eps = head.dino ? 1e-3 : 1e-5;  // DINO's inverse_sigmoid uses eps=1e-3
   for (int i = 0; i < n; ++i) {
     auto ref_input = ref.unsqueeze(2).expand({b, Lq, head.num_levels, 4});
-    auto query_pos = query_pos_head->forward(ref);
+    // DINO conditions the query position on a sine embedding of the reference.
+    auto query_pos = head.dino ? query_pos_head->forward(SineEmbed(ref, static_cast<int>(d)))
+                               : query_pos_head->forward(ref);
     tgt = decoder[static_cast<std::size_t>(i)]->as<DeformDecoderLayerImpl>()->forward(
         tgt, query_pos, ref_input, memory, shapes, add_mask);
-    auto bbox =
-        (dec_bbox[static_cast<std::size_t>(i)]->as<MlpImpl>()->forward(tgt) + InverseSigmoid(ref))
-            .sigmoid();
-    logits = dec_score[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(tgt);
+    // DINO feeds the decoder-normed output to the prediction heads while the reference
+    // trajectory (next layer's deformable-attn anchor) keeps the un-normed output.
+    auto head_in = head.dino ? decoder_norm->forward(tgt) : tgt;
+    auto bbox = (dec_bbox[static_cast<std::size_t>(i)]->as<MlpImpl>()->forward(head_in) +
+                 InverseSigmoid(ref, inv_eps))
+                    .sigmoid();
+    logits = dec_score[static_cast<std::size_t>(i)]->as<nn::LinearImpl>()->forward(head_in);
     boxes = bbox;
     if (collect_aux && i + 1 < n) {
       if (num_dn > 0) {
@@ -194,7 +232,13 @@ Detections RunCore(const DeformDetectHead& head, torch::Tensor memory, const Spa
         det.aux_boxes.push_back(boxes);
       }
     }
-    ref = bbox.detach();
+    // DINO advances the reference from the un-normed output (bbox uses the normed head_in);
+    // the RT-DETR head reuses its single box prediction as the next reference.
+    ref = head.dino ? (dec_bbox[static_cast<std::size_t>(i)]->as<MlpImpl>()->forward(tgt) +
+                       InverseSigmoid(ref, inv_eps))
+                          .sigmoid()
+                          .detach()
+                    : bbox.detach();
   }
 
   if (num_dn > 0) {
