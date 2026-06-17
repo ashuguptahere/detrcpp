@@ -37,7 +37,6 @@ models/*.pt
 models/*.onnx
 models/*.engine
 models/*.safetensors
-models/*.pdparams
 *.tracy
 *.nsys-rep
 *.qdrep

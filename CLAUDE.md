@@ -58,6 +58,11 @@ they win.
   as a "reliable" fallback. HF is acceptable ONLY as a read-only architecture-parity
   reference when the original repo is unavailable, and never as a weight source. This
   is a hard, non-negotiable user rule.
+- **PyTorch weights only — no PaddlePaddle.** The framework loads PyTorch `.pth`/`.pt`
+  (and writes them); do NOT add support for paddle `.pdparams` (the protocol-4 pickle of
+  inline numpy arrays) or any other framework's serialization format. Paddle-origin
+  checkpoints (e.g. RT-DETRv3, which the authors ship only as `.pdparams`) are out of
+  scope — don't port a `.pdparams` reader/converter. This is a hard user rule.
 - **Commit after every fix or feature.** One logical change per commit; do not batch
   unrelated work into one commit. Branch off `main` first — never commit directly to
   `main`. End commit messages with a `Co-Authored-By:` trailer.

@@ -43,29 +43,14 @@ inline std::optional<DType> StorageDType(std::string_view name) {
   return std::nullopt;
 }
 
-// numpy dtype short string (the first arg of numpy.dtype, e.g. 'f4') -> our DType.
-// Used by the paddle `.pdparams` reader, which pickles weights as inline numpy arrays.
-inline std::optional<DType> NumpyDType(std::string_view s) {
-  if (s == "f4") return DType::F32;
-  if (s == "f8") return DType::F64;
-  if (s == "f2") return DType::F16;
-  if (s == "i8") return DType::I64;
-  if (s == "i4") return DType::I32;
-  if (s == "i2") return DType::I16;
-  if (s == "i1") return DType::I8;
-  if (s == "u1") return DType::U8;
-  if (s == "b1") return DType::Bool;
-  return std::nullopt;
-}
-
 // A value on the pickle stack. Recognized torch constructs (Storage/Tensor) carry the
 // descriptor we actually need; everything else is opaque stack manipulation.
 struct Value {
-  enum class Kind { None, Bool, Int, Str, Bytes, Tuple, Dict, Mark, Global, Storage, Tensor, Opaque };
+  enum class Kind { None, Bool, Int, Str, Tuple, Dict, Mark, Global, Storage, Tensor, Opaque };
   Kind kind{Kind::None};
   bool b{false};
   std::int64_t i{0};  // Int value, or Tensor storage_offset
-  std::string s;      // Str; Bytes blob; Global module; Storage/Tensor storage key OR inline data
+  std::string s;      // Str; Global module; Storage/Tensor storage key
   std::string s2;     // Global name
   std::vector<Value> items;                      // Tuple elements
   std::vector<std::pair<Value, Value>> entries;  // Dict
@@ -73,8 +58,6 @@ struct Value {
   std::int64_t numel{0};                          // Storage element count
   std::vector<std::int64_t> shape;               // Tensor size
   std::vector<std::int64_t> stride;              // Tensor stride
-  bool inline_bytes{false};   // Tensor: data is in `s` (paddle/numpy), not a zip storage
-  bool numpy_pending{false};  // a numpy ndarray awaiting its BUILD (__setstate__)
 };
 
 // A minimal protocol-2 pickle interpreter. The memo holds value copies, which is
@@ -95,11 +78,6 @@ class Unpickler {
       if (err_) return Err(code_, msg_);
       switch (op) {
         case 0x80: U8(); break;                                    // PROTO (skip version)
-        case 0x95: SkipBytes(8); break;                            // FRAME (8-byte length, proto 4)
-        case 0x94: Memoize(); break;                               // MEMOIZE (proto 4)
-        case 0x43: Push(MakeBytes(Bytes(U8()))); break;            // SHORT_BINBYTES ('C')
-        case 0x42: Push(MakeBytes(Bytes(U32()))); break;           // BINBYTES ('B')
-        case 0x8e: Push(MakeBytes(Bytes(U64()))); break;           // BINBYTES8
         case 0x7d: Push(MakeKind(Value::Kind::Dict)); break;       // EMPTY_DICT
         case 0x29: Push(MakeKind(Value::Kind::Tuple)); break;      // EMPTY_TUPLE
         case 0x5d: Push(MakeKind(Value::Kind::Tuple)); break;      // EMPTY_LIST (as tuple)
@@ -150,7 +128,6 @@ class Unpickler {
   std::size_t pos_;
   std::vector<Value> stack_;
   std::unordered_map<std::uint32_t, Value> memo_;
-  std::uint32_t memo_count_{0};  // next MEMOIZE index
   std::map<std::string, DType> storages_;
   bool err_{false};
   core::ErrorCode code_{core::ErrorCode::ParseError};
@@ -164,7 +141,6 @@ class Unpickler {
   static Value MakeInt(std::int64_t n) { Value v; v.kind = Value::Kind::Int; v.i = n; return v; }
   static Value MakeBool(bool x) { Value v; v.kind = Value::Kind::Bool; v.b = x; return v; }
   static Value MakeStr(std::string s) { Value v; v.kind = Value::Kind::Str; v.s = std::move(s); return v; }
-  static Value MakeBytes(std::string s) { Value v; v.kind = Value::Kind::Bytes; v.s = std::move(s); return v; }
 
   std::uint8_t U8() {
     if (pos_ >= buf_.size()) { Fail(core::ErrorCode::ParseError, "pickle: truncated"); return 0; }
@@ -178,11 +154,6 @@ class Unpickler {
   std::uint32_t U32() {
     std::uint32_t v = 0;
     for (std::size_t k = 0; k < 4; ++k) v |= static_cast<std::uint32_t>(U8()) << (8 * k);
-    return v;
-  }
-  std::uint64_t U64() {
-    std::uint64_t v = 0;
-    for (std::size_t k = 0; k < 8; ++k) v |= static_cast<std::uint64_t>(U8()) << (8 * k);
     return v;
   }
   std::int32_t I32() { return static_cast<std::int32_t>(U32()); }
@@ -240,8 +211,6 @@ class Unpickler {
   }
 
   void MemoPut(std::uint32_t key) { if (!stack_.empty()) memo_[key] = stack_.back(); }
-  // MEMOIZE (proto 4): store the stack top at the next auto-incrementing memo index.
-  void Memoize() { if (!stack_.empty()) memo_[memo_count_++] = stack_.back(); }
   void MemoGet(std::uint32_t key) {
     const auto it = memo_.find(key);
     if (it == memo_.end()) { Fail(core::ErrorCode::ParseError, "pickle: bad memo get"); return; }
@@ -333,47 +302,12 @@ class Unpickler {
       }
     } else if (fn.s2 == "OrderedDict") {
       Push(MakeKind(Value::Kind::Dict));
-    } else if (fn.s == "numpy.core.multiarray" && fn.s2 == "_reconstruct") {
-      // paddle/numpy: an empty ndarray, filled by the following BUILD (__setstate__).
-      Value t = MakeKind(Value::Kind::Tensor);
-      t.numpy_pending = true;
-      Push(std::move(t));
-    } else if (fn.s == "numpy" && fn.s2 == "dtype") {
-      // numpy.dtype('f4', ...) -> keep the type short-string; its own BUILD state is inert.
-      if (args.kind == Value::Kind::Tuple && !args.items.empty() &&
-          args.items[0].kind == Value::Kind::Str) {
-        Push(MakeStr(args.items[0].s));
-      } else {
-        Push(MakeKind(Value::Kind::Opaque));
-      }
     } else {
       Push(MakeKind(Value::Kind::Opaque));  // unknown reduce -> inert, never called
     }
   }
 
-  // For a numpy ndarray, BUILD is __setstate__((version, shape, dtype, fortran, raw_bytes)):
-  // fill the pending Tensor with its inline data. For everything else (torch backward
-  // hooks, numpy.dtype state) the state is inert and discarded.
-  void DoBuild() {
-    Value state = Pop();
-    if (err_ || stack_.empty()) return;
-    Value& obj = stack_.back();
-    if (obj.kind != Value::Kind::Tensor || !obj.numpy_pending) return;
-    obj.numpy_pending = false;
-    if (state.kind != Value::Kind::Tuple || state.items.size() < 5) return;
-    for (const Value& e : state.items[1].items) obj.shape.push_back(e.i);
-    if (state.items[2].kind == Value::Kind::Str) {
-      const auto dt = NumpyDType(state.items[2].s);
-      if (!dt) {
-        Fail(core::ErrorCode::Unsupported,
-             fmt::format("pickle: numpy dtype '{}'", state.items[2].s));
-        return;
-      }
-      obj.dt = *dt;
-    }
-    obj.s = std::move(state.items[4].s);  // inline little-endian row-major data
-    obj.inline_bytes = true;
-  }
+  void DoBuild() { Pop(); }  // state (backward hooks etc.) — discarded
 
   void DoAppend() {
     Value v = Pop();
