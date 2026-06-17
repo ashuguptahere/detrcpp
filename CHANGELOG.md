@@ -11,6 +11,16 @@ file; use `scripts/bump_version.cmake` (via `cmake -P`) to bump it and promote t
 ## [Unreleased]
 
 ### Added
+- **PaddlePaddle `.pdparams` reader (pure C++).** `LoadPth` now also reads paddle
+  checkpoints — a protocol-4 pickle of inline numpy arrays (no zip, no persistent_id
+  storages). The restricted pickle VM gained the protocol-4 opcodes (FRAME, MEMOIZE,
+  SHORT_BINBYTES/BINBYTES/BINBYTES8) and numpy `_reconstruct` / `dtype` / `ndarray`
+  `__setstate__` handling, producing inline-data tensors; a new `LoadPdparams` path builds
+  them (the format is sniffed, falling back to the legacy torch reader). Verified against
+  the native RT-DETRv3 R18 `.pdparams` (571 tensors, exact values). The VM stays safe on
+  untrusted files (no code execution; unknown opcodes are a hard error). This unblocks
+  paddle-origin models; note `rt-detrv3` itself still needs its config made faithful to
+  paddle RT-DETRv3 (the decoder/heads currently shape-mismatch) — tracked in TODO.
 - **LW-DETR family (×5) loads its native `Atten4Vis/LW-DETR` checkpoints directly, and
   `WeightRemapper` gained tensor-reshaping ops.** Two new remapper rules handle structural
   (not just naming) differences without touching the model or the stored weights:

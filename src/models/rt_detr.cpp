@@ -365,6 +365,10 @@ class RtDetrImpl : public IModel {
   // tree so the authors' own EMA `.pth` loads 1:1.
   weights::WeightRemapper UpstreamRemapper() const override {
     weights::WeightRemapper r;
+    // NOTE: RT-DETRv3 ships PaddleDetection `.pdparams` (now readable by LoadPth). Loading
+    // it 1:1 is not done here: our rt-detrv3 config (FFN width, num_points, head dims)
+    // diverges from paddle RT-DETRv3 R18, so the decoder/heads shape-mismatch. Making the
+    // model faithful (and validating it) is a follow-up; see TODO.md.
     // Training/derived buffers our module recomputes or folds inline.
     r.Drop("num_points_scale")
         .Drop("denoising_class_embed")

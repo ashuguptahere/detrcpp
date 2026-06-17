@@ -272,17 +272,62 @@ Result<void> SavePth(const std::filesystem::path& path, const StateDict& state) 
   return w->Finish();
 }
 
+// Reads a PaddlePaddle `.pdparams`: a single pickle whose values are inline numpy arrays
+// (no zip, no persistent_id storages). Returns Unsupported when the pickle yields no
+// inline-data tensors (i.e. it is a legacy torch pickle, handled elsewhere).
+Result<StateDict> LoadPdparams(const std::filesystem::path& path) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) return Err(ErrorCode::Io, fmt::format("cannot open '{}'", path.string()));
+  std::vector<std::byte> buf;
+  {
+    f.seekg(0, std::ios::end);
+    const auto n = f.tellg();
+    if (n <= 0) return Err(ErrorCode::ParseError, ".pdparams is empty");
+    buf.resize(static_cast<std::size_t>(n));
+    f.seekg(0);
+    f.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+  }
+  Unpickler up(std::span<const std::byte>(buf.data(), buf.size()), 0);
+  auto root = up.Run();
+  if (!root) return Err(root.error().code, root.error().message);
+  if (root->kind != Value::Kind::Dict) return Err(ErrorCode::Unsupported, ".pdparams not a dict");
+
+  StateDict sd;
+  for (const auto& [name, t] : PickTensors(*root)) {
+    if (!t.inline_bytes) continue;  // a torch storage-ref tensor: not paddle
+    std::int64_t prod = 1;
+    for (const std::int64_t d : t.shape) {
+      if (d < 0 || prod > kMaxItems) return Err(ErrorCode::ParseError, ".pdparams bad shape");
+      prod *= d;
+    }
+    const std::size_t need = static_cast<std::size_t>(prod) * DTypeSize(t.dt);
+    if (t.s.size() != need) {
+      return Err(ErrorCode::ParseError, fmt::format(".pdparams tensor '{}' data size mismatch", name));
+    }
+    RawTensor rt;
+    rt.dtype = t.dt;
+    rt.shape = t.shape;
+    const auto* p = reinterpret_cast<const std::byte*>(t.s.data());
+    rt.data.assign(p, p + t.s.size());
+    sd.Set(name, std::move(rt));
+  }
+  if (sd.Size() == 0) return Err(ErrorCode::Unsupported, "no inline tensors (not a .pdparams)");
+  return sd;
+}
+
 Result<StateDict> LoadPth(const std::filesystem::path& path) {
   std::ifstream f(path, std::ios::binary);
   if (!f) return Err(ErrorCode::Io, fmt::format("cannot open '{}'", path.string()));
   char magic[2] = {0, 0};
   f.read(magic, 2);
-  // A "PK" local-file-header is a modern torch.save zip; 0x80 is a legacy pickle PROTO.
+  // A "PK" local-file-header is a modern torch.save zip; 0x80 is a pickle PROTO — which is
+  // either a paddle `.pdparams` (inline numpy arrays) or a legacy torch pickle.
   if (magic[0] == 'P' && magic[1] == 'K') {
     auto zip = ZipReader::Open(path);
     if (!zip) return Err(zip.error().code, zip.error().message);
     return LoadModern(*zip);
   }
+  if (auto pd = LoadPdparams(path); pd.has_value()) return pd;
   return LoadLegacyPth(path);
 }
 

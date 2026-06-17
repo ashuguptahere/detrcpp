@@ -36,8 +36,12 @@ module).
 - [x] **lw-detr ×5** — fused-qkv / fused-in_proj split + group-DETR query slice via new
       `WeightRemapper::SplitRows`/`SliceRows`. (Weights are HF-only upstream, so not in the
       auto-download manifest — pass `--weights`.)
-- [ ] Tier C remaining: rt-detrv3 ×6 (paddle-format checkpoints), conditional-detr
-      (Atten4Vis SharePoint needs auth).
+- [~] **rt-detrv3 ×6** — paddle `.pdparams` reading is DONE (pure-C++ pickle-4 + numpy in
+      pickle_vm/pth). Native load still blocked on model faithfulness: our config (FFN
+      width, num_points, head dims) diverges from paddle RT-DETRv3 R18, so the
+      decoder/heads shape-mismatch, and the paddle ResNet uses `res2.res2a` block naming.
+      Needs the config matched + verified (no paddle runtime here to parity-check).
+- [ ] Tier C remaining: conditional-detr (Atten4Vis SharePoint needs auth).
 
 ## Phase 0 — Skeleton ✅
 

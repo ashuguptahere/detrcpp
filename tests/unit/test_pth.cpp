@@ -91,5 +91,30 @@ TEST(Pth, InteropFixtureForTorchLoad) {
   EXPECT_EQ(loaded->Keys().size(), 2U);
 }
 
+// Paddle `.pdparams` (pickle-of-inline-numpy-arrays) reader, against the native
+// RT-DETRv3 R18 checkpoint. Gated on its presence (skipped when absent).
+TEST(Pth, ReadsPaddlePdparams) {
+  const auto path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+                    "models" / "rtdetrv3_r18.pdparams";
+  if (!std::filesystem::exists(path)) {
+    GTEST_SKIP() << "rtdetrv3_r18.pdparams absent";
+  }
+  auto sd = LoadPth(path);
+  ASSERT_TRUE(sd.has_value()) << sd.error().message;
+  EXPECT_EQ(sd->Size(), 571U);  // 572 pickle entries minus the StructuredToParameterName@@ map
+  const RawTensor* w = sd->Find("backbone.conv1.conv1_1.conv.weight");
+  ASSERT_NE(w, nullptr);
+  EXPECT_EQ(w->dtype, DType::F32);
+  EXPECT_EQ(w->shape, (std::vector<std::int64_t>{32, 3, 3, 3}));
+  std::vector<float> f(static_cast<std::size_t>(w->Numel()));
+  std::memcpy(f.data(), w->data.data(), w->data.size());
+  EXPECT_NEAR(f[0], -0.06270183F, 1e-6F);
+  EXPECT_NEAR(f[100], 0.04673597F, 1e-6F);
+  // Paddle BatchNorm stores running stats as `_mean` / `_variance` (i64-free f32).
+  const RawTensor* m = sd->Find("backbone.conv1.conv1_1.norm._mean");
+  ASSERT_NE(m, nullptr);
+  EXPECT_EQ(m->shape, (std::vector<std::int64_t>{32}));
+}
+
 }  // namespace
 }  // namespace detr::weights
